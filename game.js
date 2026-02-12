@@ -410,6 +410,7 @@
     audio: {
       enabled: loadAudioEnabled(),
       started: false,
+      primed: false,
       context: null,
       masterGain: null,
       musicGain: null,
@@ -619,6 +620,13 @@
       discard: sanitizeCardList(encounterLike.discard),
       playerHand: sanitizeCardList(encounterLike.playerHand),
       dealerHand: sanitizeCardList(encounterLike.dealerHand),
+      splitQueue: Array.isArray(encounterLike.splitQueue)
+        ? encounterLike.splitQueue
+            .map((hand) => sanitizeCardList(hand))
+            .filter((hand) => hand.length > 0)
+            .slice(0, 3)
+        : [],
+      splitUsed: Boolean(encounterLike.splitUsed),
       hideDealerHole: Boolean(encounterLike.hideDealerHole),
       phase: ["player", "dealer", "resolve", "done"].includes(encounterLike.phase) ? encounterLike.phase : "player",
       resultText: typeof encounterLike.resultText === "string" ? encounterLike.resultText : "",
@@ -627,7 +635,7 @@
       doubleDown: Boolean(encounterLike.doubleDown),
       bustGuardTriggered: Boolean(encounterLike.bustGuardTriggered),
       critTriggered: Boolean(encounterLike.critTriggered),
-      lastPlayerAction: ["hit", "stand", "double", "none"].includes(encounterLike.lastPlayerAction)
+      lastPlayerAction: ["hit", "stand", "double", "split", "none"].includes(encounterLike.lastPlayerAction)
         ? encounterLike.lastPlayerAction
         : "none",
     };
@@ -1070,9 +1078,29 @@
       return;
     }
     state.audio.started = true;
-    syncAudioEnabled();
-    if (context.state === "suspended" && state.audio.enabled) {
-      context.resume().catch(() => {});
+    const prime = () => {
+      if (!state.audio.primed) {
+        try {
+          const osc = context.createOscillator();
+          const gain = context.createGain();
+          gain.gain.value = 0.00001;
+          osc.frequency.setValueAtTime(440, context.currentTime);
+          osc.connect(gain);
+          gain.connect(state.audio.masterGain);
+          osc.start(context.currentTime);
+          osc.stop(context.currentTime + 0.03);
+          state.audio.primed = true;
+        } catch {
+          // Ignore priming failures on browsers with stricter policies.
+        }
+      }
+      syncAudioEnabled();
+    };
+
+    if (context.state !== "running" && state.audio.enabled) {
+      context.resume().then(prime).catch(() => {});
+    } else {
+      prime();
     }
   }
 
@@ -1413,7 +1441,7 @@
 
   function handCardPosition(handType, index, count) {
     const spacing = 96;
-    const portraitOffset = state.viewport?.portraitZoomed ? 72 : 0;
+    const portraitOffset = state.viewport?.portraitZoomed ? 24 : 0;
     const y = handType === "dealer" ? 190 + portraitOffset : 430 + portraitOffset;
     const startX = WIDTH * 0.5 - ((count - 1) * spacing) * 0.5 - CARD_W * 0.5;
     return { x: startX + index * spacing, y };
@@ -1456,6 +1484,8 @@
       discard: [],
       playerHand: [],
       dealerHand: [],
+      splitQueue: [],
+      splitUsed: false,
       hideDealerHole: true,
       phase: "player",
       resultText: "",
@@ -1476,6 +1506,8 @@
 
     encounter.playerHand = [];
     encounter.dealerHand = [];
+    encounter.splitQueue = [];
+    encounter.splitUsed = false;
     encounter.hideDealerHole = true;
     encounter.phase = "player";
     encounter.resultText = "";
@@ -1494,7 +1526,10 @@
     const dealerNatural = isBlackjack(encounter.dealerHand);
     if (playerNatural || dealerNatural) {
       resolveDealerThenShowdown(true);
+      return;
     }
+
+    saveRunSnapshot();
   }
 
   function beginEncounter() {
@@ -1504,6 +1539,7 @@
 
     state.mode = "playing";
     state.encounter = createEncounter(state.run);
+    state.run.player.hp = clampNumber(state.run.player.hp, 0, state.run.player.maxHp, state.run.player.maxHp);
     state.run.player.bustGuardsLeft = state.run.player.stats.bustGuardPerEncounter;
     if (state.run.player.stats.healOnEncounterStart > 0) {
       const heal = Math.min(state.run.player.stats.healOnEncounterStart, state.run.player.maxHp - state.run.player.hp);
@@ -1531,6 +1567,7 @@
     }
     state.autosaveTimer = 0;
     state.run = createRun();
+    state.run.player.hp = state.run.player.maxHp;
     state.rewardOptions = [];
     state.shopStock = [];
     state.selectionIndex = 0;
@@ -1554,6 +1591,18 @@
       state.encounter.phase === "player" &&
       state.encounter.resolveTimer <= 0
     );
+  }
+
+  function canSplitCurrentHand() {
+    if (!canPlayerAct() || !state.encounter) {
+      return false;
+    }
+    const encounter = state.encounter;
+    if (encounter.splitUsed || encounter.doubleDown || encounter.playerHand.length !== 2) {
+      return false;
+    }
+    const [a, b] = encounter.playerHand;
+    return Boolean(a && b && a.rank === b.rank);
   }
 
   function tryActivateBustGuard(encounter) {
@@ -1604,7 +1653,7 @@
     }
 
     const encounter = state.encounter;
-    if (encounter.doubleDown || encounter.playerHand.length !== 2) {
+    if (encounter.doubleDown || encounter.splitUsed || encounter.playerHand.length !== 2) {
       playUiSfx("error");
       return;
     }
@@ -1621,6 +1670,69 @@
     }
 
     resolveDealerThenShowdown(false);
+  }
+
+  function beginQueuedSplitHand(encounter) {
+    if (!encounter || !Array.isArray(encounter.splitQueue) || encounter.splitQueue.length === 0) {
+      return false;
+    }
+
+    const seedHand = encounter.splitQueue.shift();
+    encounter.playerHand = seedHand.map((card) => ({ rank: card.rank, suit: card.suit }));
+    encounter.dealerHand = [];
+    encounter.hideDealerHole = true;
+    encounter.phase = "player";
+    encounter.resultText = "";
+    encounter.resolveTimer = 0;
+    encounter.doubleDown = false;
+    encounter.bustGuardTriggered = false;
+    encounter.critTriggered = false;
+    encounter.lastPlayerAction = "none";
+
+    dealCard(encounter, "dealer");
+    dealCard(encounter, "player");
+    dealCard(encounter, "dealer");
+    setAnnouncement("Split hand is live.", 1.1);
+
+    const playerNatural = isBlackjack(encounter.playerHand);
+    const dealerNatural = isBlackjack(encounter.dealerHand);
+    if (playerNatural || dealerNatural) {
+      resolveDealerThenShowdown(true);
+    }
+
+    return true;
+  }
+
+  function splitAction() {
+    if (!canSplitCurrentHand()) {
+      playUiSfx("error");
+      return;
+    }
+
+    const encounter = state.encounter;
+    const [first, second] = encounter.playerHand;
+    encounter.playerHand = [{ rank: first.rank, suit: first.suit }];
+    encounter.splitQueue = [[{ rank: second.rank, suit: second.suit }]];
+    encounter.splitUsed = true;
+    encounter.doubleDown = false;
+    encounter.lastPlayerAction = "split";
+
+    playActionSfx("double");
+    setAnnouncement("Hand split. Play the first split hand.", 1.2);
+    addLog("Hand split.");
+
+    dealCard(encounter, "player");
+    const total = handTotal(encounter.playerHand).total;
+    if (total > 21 && !tryActivateBustGuard(encounter)) {
+      resolveHand("player_bust");
+      return;
+    }
+
+    const playerNatural = isBlackjack(encounter.playerHand);
+    const dealerNatural = isBlackjack(encounter.dealerHand);
+    if (playerNatural || dealerNatural) {
+      resolveDealerThenShowdown(true);
+    }
   }
 
   function resolveDealerThenShowdown(naturalCheck) {
@@ -1959,6 +2071,13 @@
       return;
     }
 
+    if (item.type === "relic" && state.shopStock.some((entry) => entry.type === "relic" && entry.sold)) {
+      playUiSfx("error");
+      addLog("Only one relic can be bought per shop.");
+      setAnnouncement("Only one relic per shop visit.", 1.2);
+      return;
+    }
+
     if (run.player.gold < item.cost) {
       playUiSfx("error");
       addLog("Not enough chips.");
@@ -2039,6 +2158,9 @@
       if (action === "double") {
         return "Space";
       }
+      if (action === "confirm") {
+        return "S";
+      }
       return "";
     }
 
@@ -2098,6 +2220,9 @@
       return state.mode === "shop" || label === "Buy" ? "🛒" : "×2";
     }
     if (action === "confirm") {
+      if (state.mode === "playing") {
+        return "⇄";
+      }
       if (state.mode === "reward") {
         return "";
       }
@@ -2228,13 +2353,19 @@
 
     if (state.mode === "playing") {
       const canAct = canPlayerAct();
-      const canDouble = canAct && state.encounter && state.encounter.playerHand.length === 2 && !state.encounter.doubleDown;
+      const canDouble =
+        canAct &&
+        state.encounter &&
+        state.encounter.playerHand.length === 2 &&
+        !state.encounter.doubleDown &&
+        !state.encounter.splitUsed;
+      const canSplit = canSplitCurrentHand();
       setMobileButton(mobileButtons.hit, "Hit", canAct, true);
       setMobileButton(mobileButtons.stand, "Stand", canAct, true);
       setMobileButton(mobileButtons.double, "Double", canDouble, true);
+      setMobileButton(mobileButtons.confirm, "Split", canSplit, true);
       setMobileButton(mobileButtons.left, "Left", false, false);
       setMobileButton(mobileButtons.right, "Right", false, false);
-      setMobileButton(mobileButtons.confirm, "Confirm", false, false);
       return;
     }
 
@@ -2251,7 +2382,9 @@
 
     if (state.mode === "shop") {
       const selectedItem = state.shopStock[state.selectionIndex];
-      const canBuy = Boolean(selectedItem && !selectedItem.sold);
+      const relicAlreadyBought = state.shopStock.some((entry) => entry.type === "relic" && entry.sold);
+      const relicLocked = Boolean(selectedItem && selectedItem.type === "relic" && relicAlreadyBought && !selectedItem.sold);
+      const canBuy = Boolean(selectedItem && !selectedItem.sold && !relicLocked);
       setMobileButton(mobileButtons.left, "Prev", false, false);
       setMobileButton(mobileButtons.right, "Next", false, false);
       setMobileButton(mobileButtons.double, "Buy", canBuy, true);
@@ -2317,6 +2450,8 @@
     if (action === "confirm") {
       if (state.mode === "menu") {
         startRun();
+      } else if (state.mode === "playing") {
+        splitAction();
       } else if (state.mode === "reward") {
         claimReward();
       } else if (state.mode === "shop") {
@@ -2594,7 +2729,7 @@
     }
     if (raw.length === 1) {
       const low = raw.toLowerCase();
-      if (low === "a" || low === "b" || low === "r" || low === "m") {
+      if (low === "a" || low === "b" || low === "s" || low === "r" || low === "m") {
         return low;
       }
     }
@@ -2642,6 +2777,8 @@
         hitAction();
       } else if (key === "b") {
         standAction();
+      } else if (key === "s") {
+        splitAction();
       } else if (key === "space") {
         doubleAction();
       }
@@ -2773,7 +2910,9 @@
       state.encounter.resolveTimer -= dt;
       if (state.encounter.resolveTimer <= 0) {
         state.encounter.handIndex += 1;
-        startHand();
+        if (!beginQueuedSplitHand(state.encounter)) {
+          startHand();
+        }
       }
     }
   }
@@ -2793,11 +2932,15 @@
     const viewportWidth = Math.floor(
       window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || WIDTH
     );
-    let mobileBoost = 1;
-    if (state.compactControls && viewportWidth <= 700) {
-      mobileBoost = state.viewport?.portraitZoomed ? 1.08 : 1.18;
+    let mobileScale = 1;
+    if (state.compactControls) {
+      if (state.viewport?.portraitZoomed) {
+        mobileScale = 0.82;
+      } else if (viewportWidth <= 700) {
+        mobileScale = 0.94;
+      }
     }
-    const tunedSize = Math.round(size * mobileBoost);
+    const tunedSize = Math.max(10, Math.round(size * mobileScale));
     ctx.font = `${weight} ${tunedSize}px ${useDisplay ? FONT_DISPLAY : FONT_UI}`;
   }
 
@@ -2970,7 +3113,7 @@
 
     const encounter = state.encounter;
     const enemy = encounter.enemy;
-    const portraitShift = state.viewport?.portraitZoomed ? 72 : 0;
+    const portraitShift = state.viewport?.portraitZoomed ? 44 : 0;
 
     ctx.textAlign = "center";
     ctx.fillStyle = enemy.color;
@@ -2998,7 +3141,14 @@
       WIDTH * 0.5,
       342 + portraitShift
     );
-    ctx.fillText(`You: ${playerTotal}`, WIDTH * 0.5, 610 + portraitShift);
+    ctx.fillText(`You: ${playerTotal}`, WIDTH * 0.5, (state.viewport?.portraitZoomed ? 598 : 610) + portraitShift);
+
+    if (encounter.splitUsed) {
+      const splitIndex = encounter.splitQueue.length > 0 ? 1 : 2;
+      ctx.fillStyle = "#a8c6df";
+      setFont(15, 600, false);
+      ctx.fillText(`Split hand ${splitIndex}/2`, WIDTH * 0.5, (state.viewport?.portraitZoomed ? 620 : 634) + portraitShift);
+    }
 
   }
 
@@ -3113,18 +3263,21 @@
       ctx.fillStyle = "#9ec4e2";
       setFont(14, 600, false);
       const passiveText = fitText(`Passives: ${passiveLine}`, hud.passiveMaxWidth);
-      ctx.fillText(passiveText, hud.left + 2, hud.portrait ? 144 : 94);
+      ctx.fillText(passiveText, hud.left + 2, hud.portrait ? 142 : 94);
     }
 
     const relicEntries = Object.entries(run.player.relics).slice(0, 5);
     if (relicEntries.length > 0) {
-      ctx.textAlign = "right";
-      ctx.fillStyle = "#9fc2de";
-      setFont(14, 600, false);
       if (hud.portrait) {
         const relicTotal = Object.values(run.player.relics).reduce((sum, value) => sum + nonNegInt(value, 0), 0);
-        ctx.fillText(`Relics: ${relicTotal}`, hud.right - 2, 144);
+        ctx.textAlign = "left";
+        ctx.fillStyle = "#9fc2de";
+        setFont(14, 600, false);
+        ctx.fillText(`Relics: ${relicTotal}`, hud.left + 2, 164);
       } else {
+        ctx.textAlign = "right";
+        ctx.fillStyle = "#9fc2de";
+        setFont(14, 600, false);
         const lines = relicEntries.map(([id, count]) => {
           const relic = RELIC_BY_ID.get(id);
           return `${relic ? relic.name : id} x${count}`;
@@ -3150,24 +3303,32 @@
 
   function rewardCarouselLayout() {
     const compact = state.compactControls;
+    const portrait = Boolean(state.viewport?.portraitZoomed);
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
-    const visibleW = Math.max(760, WIDTH - cropX * 2);
-    const panelW = Math.max(700, Math.min(compact ? 1080 : 980, visibleW - (compact ? 22 : 46)));
-    const panelH = compact ? 524 : 500;
+    const visibleW = Math.max(portrait ? 320 : 760, WIDTH - cropX * 2);
+    const panelW = portrait
+      ? Math.max(336, Math.min(468, visibleW - 16))
+      : Math.max(700, Math.min(compact ? 1080 : 980, visibleW - (compact ? 22 : 46)));
+    const panelH = portrait ? 454 : compact ? 524 : 500;
     const panelX = WIDTH * 0.5 - panelW * 0.5;
-    const panelY = compact ? 106 : 116;
-    const viewportPad = compact ? 30 : 44;
+    const panelY = portrait ? 114 : compact ? 106 : 116;
+    const viewportPad = portrait ? 14 : compact ? 30 : 44;
     const viewportX = panelX + viewportPad;
-    const viewportY = panelY + 160;
+    const viewportY = panelY + (portrait ? 132 : 160);
     const viewportW = panelW - viewportPad * 2;
-    const viewportH = compact ? 258 : 248;
-    const mainW = Math.round(Math.min(compact ? 358 : 372, viewportW * 0.64));
-    const mainH = compact ? 240 : 248;
-    const spacing = Math.round(Math.min(compact ? 244 : 270, viewportW * (compact ? 0.35 : 0.37)));
-    const arrowRadius = compact ? 34 : 30;
-    const arrowOffset = viewportW * 0.5 + (compact ? 38 : 44);
+    const viewportH = portrait ? 218 : compact ? 258 : 248;
+    const mainW = portrait
+      ? Math.round(Math.min(318, viewportW * 0.9))
+      : Math.round(Math.min(compact ? 358 : 372, viewportW * 0.64));
+    const mainH = portrait ? 198 : compact ? 240 : 248;
+    const spacing = portrait
+      ? Math.round(Math.min(206, viewportW * 0.56))
+      : Math.round(Math.min(compact ? 244 : 270, viewportW * (compact ? 0.35 : 0.37)));
+    const arrowRadius = portrait ? 20 : compact ? 34 : 30;
     const centerX = WIDTH * 0.5;
     const centerY = viewportY + viewportH * 0.5;
+    const leftArrowX = portrait ? viewportX + 16 : centerX - (viewportW * 0.5 + (compact ? 38 : 44));
+    const rightArrowX = portrait ? viewportX + viewportW - 16 : centerX + (viewportW * 0.5 + (compact ? 38 : 44));
     return {
       panelX,
       panelY,
@@ -3182,13 +3343,13 @@
       mainW,
       mainH,
       spacing,
-      sideScale: compact ? 0.82 : 0.84,
-      farScale: compact ? 0.67 : 0.69,
+      sideScale: portrait ? 0.72 : compact ? 0.82 : 0.84,
+      farScale: portrait ? 0.58 : compact ? 0.67 : 0.69,
       arrowRadius,
-      leftArrowX: centerX - arrowOffset,
-      rightArrowX: centerX + arrowOffset,
+      leftArrowX,
+      rightArrowX,
       arrowY: centerY,
-      indicatorY: panelY + panelH - 34,
+      indicatorY: panelY + panelH - (portrait ? 24 : 34),
     };
   }
 
@@ -3281,12 +3442,13 @@
     ctx.stroke();
 
     ctx.textAlign = "center";
+    const portrait = Boolean(state.viewport?.portraitZoomed);
     ctx.fillStyle = "#f6e6a6";
-    setFont(40, 700, true);
+    setFont(portrait ? 34 : 40, 700, true);
     ctx.fillText("Relic Draft", WIDTH * 0.5, layout.panelY + 48);
 
     ctx.fillStyle = "#97bddb";
-    setFont(15, 600, false);
+    setFont(portrait ? 14 : 15, 600, false);
     ctx.fillText("Relics are passive and activate immediately.", WIDTH * 0.5, layout.panelY + 90);
 
     roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
@@ -3334,15 +3496,15 @@
       }
 
       ctx.fillStyle = relic.color;
-      setFont(card.selected ? 33 : 24, 700, true);
+      setFont(card.selected ? (portrait ? 28 : 33) : portrait ? 20 : 24, 700, true);
       ctx.fillText(relic.name, card.x + card.w * 0.5, card.y + (card.selected ? 60 : 48));
 
       ctx.fillStyle = "#d0e4f5";
       if (card.selected) {
-        setFont(18, 600, false);
-        wrapText(passiveDescription(relic.description), card.x + 34, card.y + 120, card.w - 68, 24, "center");
+        setFont(portrait ? 16 : 18, 600, false);
+        wrapText(passiveDescription(relic.description), card.x + 24, card.y + (portrait ? 106 : 120), card.w - 48, portrait ? 20 : 24, "center");
       } else {
-        setFont(15, 600, false);
+        setFont(portrait ? 13 : 15, 600, false);
         ctx.fillText("Tap to select", card.x + card.w * 0.5, card.y + card.h - 34);
       }
 
@@ -3444,12 +3606,13 @@
     ctx.stroke();
 
     ctx.textAlign = "center";
+    const portrait = Boolean(state.viewport?.portraitZoomed);
     ctx.fillStyle = "#f2c587";
-    setFont(40, 700, true);
+    setFont(portrait ? 34 : 40, 700, true);
     ctx.fillText("Black Market", WIDTH * 0.5, layout.panelY + 48);
 
     ctx.fillStyle = "#97bddb";
-    setFont(15, 600, false);
+    setFont(portrait ? 14 : 15, 600, false);
     ctx.fillText("Buy once to activate immediately.", WIDTH * 0.5, layout.panelY + 90);
 
     roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
@@ -3493,20 +3656,20 @@
       }
 
       ctx.fillStyle = item.sold ? "#8f9aa7" : "#f4e1aa";
-      setFont(card.selected ? 33 : 24, 700, true);
+      setFont(card.selected ? (portrait ? 28 : 33) : portrait ? 20 : 24, 700, true);
       ctx.fillText(shopItemName(item), card.x + card.w * 0.5, card.y + (card.selected ? 60 : 48));
 
       ctx.fillStyle = item.sold ? "#78818d" : "#d4e6f4";
       if (card.selected) {
-        setFont(18, 600, false);
-        wrapText(shopItemDescription(item), card.x + 34, card.y + 118, card.w - 68, 24, "center");
+        setFont(portrait ? 16 : 18, 600, false);
+        wrapText(shopItemDescription(item), card.x + 24, card.y + (portrait ? 106 : 118), card.w - 48, portrait ? 20 : 24, "center");
       } else {
-        setFont(15, 600, false);
+        setFont(portrait ? 13 : 15, 600, false);
         ctx.fillText(item.sold ? "Sold out" : "Tap to select", card.x + card.w * 0.5, card.y + card.h - 62);
       }
 
       ctx.fillStyle = item.sold ? "#9ca5af" : "#ffd58f";
-      setFont(card.selected ? 24 : 20, 700, false);
+      setFont(card.selected ? (portrait ? 22 : 24) : portrait ? 18 : 20, 700, false);
       ctx.fillText(item.sold ? "SOLD" : `${item.cost} chips`, card.x + card.w * 0.5, card.y + card.h - 28);
 
       ctx.restore();
@@ -3633,6 +3796,76 @@
   function drawMenu() {
     const resumeReady = hasSavedRun();
     const compact = state.compactControls;
+    if (compact) {
+      const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+      const leftBound = cropX + 10;
+      const rightBound = WIDTH - cropX - 10;
+      const visibleW = Math.max(260, rightBound - leftBound);
+      const centerX = (leftBound + rightBound) * 0.5;
+      const panelW = Math.min(430, visibleW);
+      const panelX = centerX - panelW * 0.5;
+      const panelY = 18;
+
+      const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      bg.addColorStop(0, "#081420");
+      bg.addColorStop(1, "#040b12");
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      const artDrawn = drawImageCover(menuArtImage, 0, 0, WIDTH, HEIGHT, 0.5, 0.28);
+      const darken = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      darken.addColorStop(0, artDrawn ? "rgba(5, 10, 18, 0.38)" : "rgba(5, 10, 18, 0.2)");
+      darken.addColorStop(0.55, "rgba(5, 10, 18, 0.7)");
+      darken.addColorStop(1, "rgba(5, 10, 18, 0.9)");
+      ctx.fillStyle = darken;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      const panelPad = 20;
+      const subtitle = "Roguelike deck duels where each hand hits like combat.";
+      const profileLine = state.profile
+        ? `Lifetime: ${state.profile.totals.runsStarted} runs | ${state.profile.totals.runsWon} wins | ${state.profile.totals.enemiesDefeated} enemies`
+        : "";
+      const prompt = resumeReady ? "Tap New Run or Resume below." : "Tap New Run below to begin.";
+
+      setFont(18, 600, false);
+      const subtitleLines = wrappedLines(subtitle, panelW - panelPad * 2);
+      setFont(23, 700, false);
+      const promptLines = wrappedLines(prompt, panelW - panelPad * 2);
+      const panelH = Math.max(208, 100 + subtitleLines.length * 18 + promptLines.length * 22 + (profileLine ? 26 : 0));
+      roundRect(panelX, panelY, panelW, panelH, 20);
+      const panelFill = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+      panelFill.addColorStop(0, "rgba(11, 28, 43, 0.82)");
+      panelFill.addColorStop(1, "rgba(7, 19, 30, 0.9)");
+      ctx.fillStyle = panelFill;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(178, 216, 245, 0.32)";
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#f3d193";
+      setFont(34, 700, true);
+      ctx.fillText(fitText("BLACKJACK ABYSS", panelW - 26), centerX, panelY + 52);
+
+      ctx.fillStyle = "#d7e6f4";
+      setFont(18, 600, false);
+      let y = panelY + 84;
+      wrapText(subtitle, panelX + panelPad, y, panelW - panelPad * 2, 18, "center");
+      y += subtitleLines.length * 18 + 8;
+
+      if (profileLine) {
+        ctx.fillStyle = "#a6c8e2";
+        setFont(14, 600, false);
+        ctx.fillText(fitText(profileLine, panelW - panelPad * 2), centerX, y);
+        y += 24;
+      }
+
+      ctx.fillStyle = "#f2cf91";
+      setFont(23, 700, false);
+      wrapText(prompt, panelX + panelPad, y, panelW - panelPad * 2, 22, "center");
+      return;
+    }
+
     const sideMargin = Math.max(88, Math.min(220, WIDTH * 0.17));
     const art = compact
       ? { x: 0, y: 0, w: WIDTH, h: HEIGHT, radius: 0 }
@@ -3856,6 +4089,42 @@
       const anchor = announcementAnchor();
       const centerX = anchor.centerX;
       const centerY = anchor.centerY;
+      const compactToast =
+        state.compactControls &&
+        (state.mode === "playing" || state.mode === "reward" || state.mode === "shop");
+
+      if (compactToast) {
+        const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+        const visibleW = Math.max(260, WIDTH - cropX * 2);
+        const maxW = Math.max(210, Math.min(450, visibleW - 24));
+        setFont(24, 700, true);
+        const lines = wrappedLines(state.announcement, maxW - 36).slice(0, 2);
+        const lineHeight = 24;
+        const panelW = Math.max(220, Math.min(maxW, Math.max(...lines.map((line) => ctx.measureText(line).width)) + 44));
+        const panelH = Math.max(48, 20 + lines.length * lineHeight);
+        const toastY = state.viewport?.portraitZoomed ? 186 : 136;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        roundRect(centerX - panelW * 0.5, toastY - panelH * 0.5, panelW, panelH, 13);
+        const panel = ctx.createLinearGradient(0, toastY - panelH * 0.5, 0, toastY + panelH * 0.5);
+        panel.addColorStop(0, "rgba(25, 44, 62, 0.96)");
+        panel.addColorStop(1, "rgba(14, 27, 40, 0.94)");
+        ctx.fillStyle = panel;
+        ctx.fill();
+        ctx.strokeStyle = "rgba(242, 210, 132, 0.7)";
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = "rgba(255, 241, 198, 0.95)";
+        ctx.textAlign = "center";
+        setFont(24, 700, true);
+        lines.forEach((line, idx) => {
+          const y = toastY - ((lines.length - 1) * lineHeight) * 0.5 + idx * lineHeight + 8;
+          ctx.fillText(line, centerX, y);
+        });
+        ctx.restore();
+        return;
+      }
+
       const ringExpand = easeOutCubic(Math.min(1, progress / 0.45));
       const ringRadius = 72 + ringExpand * 210;
 
@@ -3981,9 +4250,18 @@
         state.encounter &&
         state.encounter.phase === "player" &&
         state.encounter.playerHand.length === 2 &&
-        !state.encounter.doubleDown
+        !state.encounter.doubleDown &&
+        !state.encounter.splitUsed
       );
-      return canDouble ? ["a(hit)", "b(stand)", "space(double)"] : ["a(hit)", "b(stand)"];
+      const canSplit = canSplitCurrentHand();
+      const actions = ["a(hit)", "b(stand)"];
+      if (canSplit) {
+        actions.push("s(split)");
+      }
+      if (canDouble) {
+        actions.push("space(double)");
+      }
+      return actions;
     }
     if (state.mode === "reward") {
       return ["left(prev)", "right(next)", "enter(claim)", "space(claim)"];
@@ -4042,6 +4320,8 @@
             dealerVisibleTotal: visibleDealerTotal(encounter),
             resultText: encounter.resultText,
             doubleDown: encounter.doubleDown,
+            splitQueueHands: Array.isArray(encounter.splitQueue) ? encounter.splitQueue.length : 0,
+            splitUsed: Boolean(encounter.splitUsed),
           }
         : null,
       rewards:
@@ -4065,6 +4345,11 @@
       banner: state.announcement,
       hasSavedRun: hasSavedRun(),
       mobileControls: state.mobileActive,
+      audio: {
+        enabled: state.audio.enabled,
+        started: state.audio.started,
+        contextState: state.audio.context ? state.audio.context.state : "none",
+      },
       profile: state.profile
         ? {
             runsStarted: state.profile.totals.runsStarted,
@@ -4179,6 +4464,9 @@
   state.savedRunSnapshot = loadSavedRunSnapshot();
 
   window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("pointerdown", unlockAudio, { passive: true });
+  window.addEventListener("touchstart", unlockAudio, { passive: true });
+  window.addEventListener("click", unlockAudio, { passive: true });
   window.addEventListener("resize", resizeCanvas);
   window.addEventListener("orientationchange", resizeCanvas);
   document.addEventListener("fullscreenchange", resizeCanvas);
