@@ -3801,6 +3801,22 @@
     return true;
   }
 
+  function drawImageContain(image, x, y, w, h, alignX = 0.5, alignY = 0.5) {
+    const imageW = Number(image?.naturalWidth);
+    const imageH = Number(image?.naturalHeight);
+    if (!Number.isFinite(imageW) || !Number.isFinite(imageH) || imageW <= 0 || imageH <= 0) {
+      return false;
+    }
+
+    const scale = Math.min(w / imageW, h / imageH);
+    const drawW = imageW * scale;
+    const drawH = imageH * scale;
+    const dx = x + (w - drawW) * clampNumber(alignX, 0, 1, 0.5);
+    const dy = y + (h - drawH) * clampNumber(alignY, 0, 1, 0.5);
+    ctx.drawImage(image, dx, dy, drawW, drawH);
+    return true;
+  }
+
   function drawMenu() {
     const resumeReady = hasSavedRun();
     const compact = state.compactControls;
@@ -3820,7 +3836,7 @@
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-      const artDrawn = drawImageCover(menuArtImage, 0, 0, WIDTH, HEIGHT, 0.5, 0.28);
+      const artDrawn = drawImageContain(menuArtImage, 0, 0, WIDTH, HEIGHT, 0.5, 0.5);
       const darken = ctx.createLinearGradient(0, 0, 0, HEIGHT);
       darken.addColorStop(0, artDrawn ? "rgba(5, 10, 18, 0.38)" : "rgba(5, 10, 18, 0.2)");
       darken.addColorStop(0.55, "rgba(5, 10, 18, 0.7)");
@@ -3833,13 +3849,10 @@
       const profileLine = state.profile
         ? `Lifetime: ${state.profile.totals.runsStarted} runs | ${state.profile.totals.runsWon} wins | ${state.profile.totals.enemiesDefeated} enemies`
         : "";
-      const prompt = resumeReady ? "Tap New Run or Resume below." : "Tap New Run below to begin.";
 
       setFont(18, 600, false);
       const subtitleLines = wrappedLines(subtitle, panelW - panelPad * 2);
-      setFont(23, 700, false);
-      const promptLines = wrappedLines(prompt, panelW - panelPad * 2);
-      const panelH = Math.max(208, 100 + subtitleLines.length * 18 + promptLines.length * 22 + (profileLine ? 26 : 0));
+      const panelH = Math.max(170, 90 + subtitleLines.length * 18 + (profileLine ? 24 : 0));
       roundRect(panelX, panelY, panelW, panelH, 20);
       const panelFill = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
       panelFill.addColorStop(0, "rgba(11, 28, 43, 0.82)");
@@ -3865,12 +3878,7 @@
         ctx.fillStyle = "#a6c8e2";
         setFont(14, 600, false);
         ctx.fillText(fitText(profileLine, panelW - panelPad * 2), centerX, y);
-        y += 24;
       }
-
-      ctx.fillStyle = "#f2cf91";
-      setFont(23, 700, false);
-      wrapText(prompt, panelX + panelPad, y, panelW - panelPad * 2, 22, "center");
       return;
     }
 
@@ -3891,7 +3899,7 @@
       roundRect(art.x, art.y, art.w, art.h, art.radius);
       ctx.clip();
     }
-    artDrawn = drawImageCover(menuArtImage, art.x, art.y, art.w, art.h, 0.5, compact ? 0.3 : 0.34);
+    artDrawn = drawImageContain(menuArtImage, art.x, art.y, art.w, art.h, 0.5, 0.5);
     ctx.restore();
 
     if (!artDrawn) {
@@ -3923,21 +3931,17 @@
     const panelW = Math.max(340, Math.min(compact ? WIDTH - 34 : 860, art.w - (compact ? 24 : 86)));
     const panelPad = compact ? 22 : 30;
     const subtitle = "Roguelike deck duels where each hand hits like combat.";
-    const prompt = resumeReady ? "Tap New Run below, or Resume to continue your save." : "Tap New Run below to begin your descent.";
     const subtitleLineH = compact ? 24 : 28;
-    const promptLineH = compact ? 22 : 26;
 
     setFont(compact ? 18 : 22, 600, false);
     const subtitleLines = wrappedLines(subtitle, panelW - panelPad * 2);
-    setFont(compact ? 18 : 22, 700, false);
-    const promptLines = wrappedLines(prompt, panelW - panelPad * 2);
 
     const profileLine = state.profile
       ? `Lifetime: ${state.profile.totals.runsStarted} runs | ${state.profile.totals.runsWon} wins | ${state.profile.totals.enemiesDefeated} enemies`
       : "";
     const panelH = Math.max(
-      compact ? 196 : 208,
-      108 + subtitleLines.length * subtitleLineH + promptLines.length * promptLineH + (profileLine ? (compact ? 28 : 32) : 0)
+      compact ? 164 : 186,
+      104 + subtitleLines.length * subtitleLineH + (profileLine ? (compact ? 28 : 32) : 0)
     );
     const panelX = WIDTH * 0.5 - panelW * 0.5;
     const safeBottom = compact ? 152 : 86;
@@ -3968,12 +3972,7 @@
       ctx.fillStyle = "#a6c8e2";
       setFont(compact ? 14 : 17, 600, false);
       wrapText(profileLine, panelX + panelPad, cursorY, panelW - panelPad * 2, compact ? 20 : 22, "center");
-      cursorY += compact ? 24 : 28;
     }
-
-    ctx.fillStyle = "#f2cf91";
-    setFont(compact ? 18 : 22, 700, false);
-    wrapText(prompt, panelX + panelPad, cursorY, panelW - panelPad * 2, promptLineH, "center");
   }
 
   function wrapText(text, x, y, maxWidth, lineHeight, align) {
