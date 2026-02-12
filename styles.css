@@ -37,6 +37,10 @@ body.mobile-ui-active {
   padding-bottom: calc(136px + env(safe-area-inset-bottom));
 }
 
+body.compact-controls.mobile-ui-active {
+  padding-bottom: calc(170px + env(safe-area-inset-bottom));
+}
+
 #game-shell {
   position: relative;
   overflow: hidden;
@@ -70,7 +74,9 @@ body.mobile-ui-active #game-shell {
   right: 8px;
   bottom: calc(8px + env(safe-area-inset-bottom));
   display: none;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: stretch;
   gap: 9px;
   padding: 10px;
   border-radius: 16px;
@@ -94,7 +100,7 @@ body.mobile-ui-active #game-shell {
 }
 
 #mobile-controls.active {
-  display: grid;
+  display: flex;
 }
 
 #mobile-controls button {
@@ -108,10 +114,40 @@ body.mobile-ui-active #game-shell {
   color: #e8f4ff;
   background:
     linear-gradient(180deg, rgba(62, 105, 140, 0.95) 0%, rgba(32, 61, 86, 0.95) 100%);
+  display: inline-flex;
+  flex: 0 1 clamp(128px, 30%, 280px);
+  max-width: 300px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  column-gap: 7px;
+  row-gap: 2px;
+  padding: 7px 10px;
   box-shadow:
     inset 0 0 0 1px rgba(189, 225, 248, 0.24),
     0 4px 10px rgba(0, 0, 0, 0.22);
   transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+}
+
+#mobile-controls button .mobile-control-icon {
+  font-size: 19px;
+  line-height: 1;
+  opacity: 0.92;
+}
+
+#mobile-controls button .mobile-control-label {
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+#mobile-controls button .mobile-control-shortcut {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.74;
 }
 
 #mobile-controls button:disabled {
@@ -127,6 +163,48 @@ body.mobile-ui-active #game-shell {
   color: #132135;
   background: linear-gradient(180deg, #f2cf91 0%, #dcab55 100%);
   box-shadow: inset 0 0 0 1px rgba(255, 244, 215, 0.35), 0 5px 12px rgba(56, 38, 10, 0.24);
+}
+
+#mobile-controls.reward-claim-only button[data-mobile-action="confirm"] {
+  flex-basis: min(380px, 58%);
+  max-width: min(380px, 58%);
+}
+
+body.compact-controls #mobile-controls button {
+  min-height: 70px;
+  font-size: 18px;
+  border-radius: 14px;
+  padding: 9px 10px;
+  column-gap: 8px;
+  row-gap: 2px;
+  flex-basis: clamp(152px, 31%, 320px);
+  max-width: 320px;
+}
+
+body.compact-controls #mobile-controls {
+  left: 6px;
+  right: 6px;
+  bottom: calc(6px + env(safe-area-inset-bottom));
+  gap: 12px;
+  padding: 12px;
+}
+
+body.compact-controls #mobile-controls button .mobile-control-icon {
+  font-size: 25px;
+}
+
+body.compact-controls #mobile-controls button .mobile-control-label {
+  font-size: 17px;
+  line-height: 1.08;
+}
+
+body.compact-controls #mobile-controls button .mobile-control-shortcut {
+  display: none;
+}
+
+body.compact-controls #mobile-controls.reward-claim-only button[data-mobile-action="confirm"] {
+  flex-basis: min(520px, 76%);
+  max-width: min(520px, 76%);
 }
 
 @keyframes canvas-breath {
@@ -165,7 +243,16 @@ body.mobile-ui-active #game-shell {
 
 @media (max-width: 520px), (pointer: coarse) {
   #mobile-controls button {
-    min-height: 50px;
-    font-size: 15px;
+    min-height: 64px;
+    font-size: 16px;
+  }
+
+  body.compact-controls #mobile-controls button .mobile-control-icon {
+    font-size: 22px;
+  }
+
+  body.compact-controls #mobile-controls button .mobile-control-label {
+    font-size: 16px;
+    line-height: 1.06;
   }
 }

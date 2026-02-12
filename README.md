@@ -8,7 +8,7 @@ Roguelike blackjack combat game built in plain HTML/CSS/JS on a single canvas.
 - Floor/room progression with normal, elite, and boss encounters.
 - Relics and shop items with passive effects.
 - Run persistence in browser localStorage (resume supported).
-- Mobile-friendly touch controls and keyboard controls.
+- Always-on action button tray (desktop includes keyboard shortcut hints on each button).
 
 ## Quick Start
 
@@ -41,13 +41,14 @@ npm run start
 - `F`: toggle fullscreen
 - `Esc`: exit fullscreen
 
-### Mobile
+### Action Buttons (All Devices)
 
-Use the bottom button tray:
+Use the bottom button tray on desktop and mobile:
 
 - Combat: `Hit`, `Stand`, `Double`
 - Reward/shop: `Left`, `Right`, `Confirm` (and `Buy` in shop)
 - Menu: `Resume` / `New Run`
+- Desktop only: each button also shows its keyboard shortcut hint.
 
 ## Persistence
 
@@ -61,7 +62,7 @@ Storage keys:
 ## Project Files
 
 - `index.html` - page shell and canvas container
-- `styles.css` - global styles + mobile controls
+- `styles.css` - global styles + bottom action controls
 - `game.js` - game logic, rendering, input, persistence
 - `test-actions.json` - short Playwright action burst
 - `test-actions-long.json` - longer Playwright scenario

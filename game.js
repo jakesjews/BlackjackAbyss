@@ -363,6 +363,7 @@
     profile: null,
     savedRunSnapshot: null,
     mobileActive: false,
+    compactControls: false,
     mobilePortrait: false,
     autosaveTimer: 0,
     encounter: null,
@@ -378,6 +379,10 @@
     screenShakePower: 0,
     announcement: "",
     announcementTimer: 0,
+    announcementDuration: 0,
+    rewardUi: null,
+    rewardTouch: null,
+    rewardDragOffset: 0,
     worldTime: 0,
     viewport: {
       width: WIDTH,
@@ -711,8 +716,7 @@
       : [];
     state.shopStock = hydrateShopStock(snapshot.shopStock);
     state.selectionIndex = nonNegInt(snapshot.selectionIndex, 0);
-    state.announcement = "Run resumed.";
-    state.announcementTimer = 1.8;
+    setAnnouncement("Run resumed.", 1.8);
     state.floatingTexts = [];
     state.cardBursts = [];
     state.sparkParticles = [];
@@ -721,6 +725,9 @@
     state.screenShakeDuration = 0;
     state.screenShakePower = 0;
     state.autosaveTimer = 0;
+    if (state.run && Array.isArray(state.run.log)) {
+      state.run.log = [];
+    }
     state.savedRunSnapshot = snapshot;
     updateProfileBest(run);
     resizeCanvas();
@@ -957,6 +964,13 @@
     if (state.run.log.length > 6) {
       state.run.log.length = 6;
     }
+  }
+
+  function setAnnouncement(message, duration = 1.8) {
+    state.announcement = typeof message === "string" ? message : "";
+    const safeDuration = Math.max(0.25, Number(duration) || 1.8);
+    state.announcementTimer = safeDuration;
+    state.announcementDuration = safeDuration;
   }
 
   function spawnFloatText(text, x, y, color) {
@@ -1196,9 +1210,7 @@
     state.selectionIndex = 0;
 
     const enemy = state.encounter.enemy;
-    addLog(`Encounter ${state.run.floor}-${state.run.room}: ${enemy.name}`);
-    state.announcement = `${enemy.name} enters the table.`;
-    state.announcementTimer = 1.9;
+    setAnnouncement(`${enemy.name} enters the table.`, 1.9);
 
     startHand();
     saveRunSnapshot();
@@ -1221,8 +1233,7 @@
     state.screenShakeTime = 0;
     state.screenShakeDuration = 0;
     state.screenShakePower = 0;
-    state.announcement = "Deal the first hand.";
-    state.announcementTimer = 2.2;
+    setAnnouncement("Deal the first hand.", 2.2);
     clearSavedRun();
     beginEncounter();
     resizeCanvas();
@@ -1471,9 +1482,9 @@
       triggerScreenShake(8.5, 0.24);
     }
 
-    encounter.resultText = text;
+    encounter.resultText = "";
+    setAnnouncement(text, 1.45);
     run.totalHands += 1;
-    addLog(text);
     updateProfileBest(run);
 
     if (run.player.hp <= 0) {
@@ -1517,8 +1528,7 @@
       if (run.floor >= run.maxFloor) {
         finalizeRun("victory");
         state.mode = "victory";
-        state.announcement = "The House collapses.";
-        state.announcementTimer = 2.8;
+        setAnnouncement("The House collapses.", 2.8);
         return;
       }
 
@@ -1529,8 +1539,7 @@
       state.mode = "reward";
       state.selectionIndex = 0;
       state.rewardOptions = generateRewardOptions(3, true);
-      state.announcement = `Floor cleared. Restored ${heal} HP.`;
-      state.announcementTimer = 2.4;
+      setAnnouncement(`Floor cleared. Restored ${heal} HP.`, 2.4);
       saveRunSnapshot();
       return;
     }
@@ -1541,14 +1550,12 @@
       state.mode = "reward";
       state.selectionIndex = 0;
       state.rewardOptions = generateRewardOptions(3, false);
-      state.announcement = "Relic draft unlocked.";
-      state.announcementTimer = 2;
+      setAnnouncement("Relic draft unlocked.", 2);
     } else {
       state.mode = "shop";
       state.selectionIndex = 0;
       state.shopStock = generateShopStock(3);
-      state.announcement = "Black market table unlocked.";
-      state.announcementTimer = 2;
+      setAnnouncement("Black market table unlocked.", 2);
     }
     saveRunSnapshot();
   }
@@ -1637,8 +1644,7 @@
 
     if (run.player.gold < item.cost) {
       addLog("Not enough chips.");
-      state.announcement = "Need more chips.";
-      state.announcementTimer = 1.2;
+      setAnnouncement("Need more chips.", 1.2);
       saveRunSnapshot();
       return;
     }
@@ -1686,10 +1692,138 @@
       return false;
     }
     const coarsePointer = window.matchMedia ? window.matchMedia("(pointer: coarse)").matches : false;
-    const viewportWidth = Math.floor(
-      window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || WIDTH
-    );
-    return coarsePointer || "ontouchstart" in window || viewportWidth <= 980;
+    return coarsePointer || "ontouchstart" in window || navigator.maxTouchPoints > 0;
+  }
+
+  function shortcutHintForAction(action) {
+    if (state.mode === "menu") {
+      if (action === "left") {
+        return "R";
+      }
+      if (action === "confirm") {
+        return "Enter / Space";
+      }
+      return "";
+    }
+
+    if (state.mode === "playing") {
+      if (action === "hit") {
+        return "A";
+      }
+      if (action === "stand") {
+        return "B";
+      }
+      if (action === "double") {
+        return "Space";
+      }
+      return "";
+    }
+
+    if (state.mode === "reward") {
+      if (action === "left") {
+        return "←";
+      }
+      if (action === "right") {
+        return "→";
+      }
+      if (action === "confirm") {
+        return "Enter / Space";
+      }
+      return "";
+    }
+
+    if (state.mode === "shop") {
+      if (action === "left") {
+        return "←";
+      }
+      if (action === "right") {
+        return "→";
+      }
+      if (action === "double") {
+        return "Space";
+      }
+      if (action === "confirm") {
+        return "Enter";
+      }
+      return "";
+    }
+
+    if (state.mode === "gameover" || state.mode === "victory") {
+      if (action === "confirm") {
+        return "Enter / Space";
+      }
+      return "";
+    }
+
+    return "";
+  }
+
+  function iconForAction(action, label) {
+    if (action === "left") {
+      return state.mode === "menu" ? "↺" : "◀";
+    }
+    if (action === "right") {
+      return "▶";
+    }
+    if (action === "hit") {
+      return "✚";
+    }
+    if (action === "stand") {
+      return "■";
+    }
+    if (action === "double") {
+      return state.mode === "shop" || label === "Buy" ? "🛒" : "×2";
+    }
+    if (action === "confirm") {
+      if (state.mode === "reward") {
+        return "";
+      }
+      if (state.mode === "menu") {
+        return "▶";
+      }
+      if (state.mode === "shop") {
+        return "↵";
+      }
+      return "✓";
+    }
+    return "•";
+  }
+
+  function ensureMobileButtonText(button) {
+    let iconNode = button.querySelector(".mobile-control-icon");
+    let labelNode = button.querySelector(".mobile-control-label");
+    let shortcutNode = button.querySelector(".mobile-control-shortcut");
+
+    if (!labelNode) {
+      const initialLabel = button.textContent ? button.textContent.trim() : "";
+      button.textContent = "";
+      iconNode = document.createElement("span");
+      iconNode.className = "mobile-control-icon";
+      iconNode.textContent = "•";
+      iconNode.setAttribute("aria-hidden", "true");
+      button.appendChild(iconNode);
+      labelNode = document.createElement("span");
+      labelNode.className = "mobile-control-label";
+      labelNode.textContent = initialLabel;
+      button.appendChild(labelNode);
+    }
+
+    if (!iconNode) {
+      iconNode = document.createElement("span");
+      iconNode.className = "mobile-control-icon";
+      iconNode.textContent = "•";
+      iconNode.setAttribute("aria-hidden", "true");
+      button.prepend(iconNode);
+    }
+
+    if (!shortcutNode) {
+      shortcutNode = document.createElement("span");
+      shortcutNode.className = "mobile-control-shortcut";
+      shortcutNode.setAttribute("aria-hidden", "true");
+      button.appendChild(shortcutNode);
+    }
+
+    return { iconNode, labelNode, shortcutNode };
   }
 
   function setMobileButton(button, label, enabled, visible = true) {
@@ -1698,35 +1832,57 @@
     }
     button.style.display = visible ? "inline-flex" : "none";
     button.disabled = !enabled;
-    if (label) {
-      button.textContent = label;
+    const { iconNode, labelNode, shortcutNode } = ensureMobileButtonText(button);
+    if (labelNode.textContent !== label) {
+      labelNode.textContent = label;
     }
+    const icon = iconForAction(button.dataset.mobileAction || "", label);
+    if (iconNode.textContent !== icon) {
+      iconNode.textContent = icon;
+    }
+    iconNode.hidden = !icon;
+    const shortcut = shortcutHintForAction(button.dataset.mobileAction || "");
+    if (shortcutNode.textContent !== shortcut) {
+      shortcutNode.textContent = shortcut;
+    }
+    shortcutNode.hidden = !shortcut;
+    button.setAttribute("aria-label", label);
   }
 
   function updateMobileControls() {
     if (!mobileControls || !mobileButtons) {
       state.mobileActive = false;
+      state.compactControls = false;
       state.mobilePortrait = false;
       document.body.classList.remove("mobile-ui-active");
       document.body.classList.remove("mobile-portrait-ui");
+      document.body.classList.remove("compact-controls");
       return;
     }
 
-    state.mobileActive = shouldUseMobileControls();
+    state.mobileActive = true;
+    state.compactControls = shouldUseMobileControls();
     const viewportWidth = Math.floor(
       window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || WIDTH
     );
     const viewportHeight = Math.floor(
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
-    state.mobilePortrait = state.mobileActive && viewportHeight > viewportWidth;
+    state.mobilePortrait = state.compactControls && viewportHeight > viewportWidth;
     mobileControls.classList.toggle("active", state.mobileActive);
     document.body.classList.toggle("mobile-ui-active", state.mobileActive);
     document.body.classList.toggle("mobile-portrait-ui", state.mobilePortrait);
+    document.body.classList.toggle("compact-controls", state.compactControls);
+    mobileControls.classList.remove("reward-claim-only");
 
-    if (!state.mobileActive) {
-      return;
-    }
+    Object.values(mobileButtons).forEach((button) => {
+      if (!button) {
+        return;
+      }
+      button.style.gridColumn = "auto";
+      button.style.width = "auto";
+      button.style.justifySelf = "stretch";
+    });
 
     setMobileButton(mobileButtons.left, "Left", false, true);
     setMobileButton(mobileButtons.hit, "Hit", false, true);
@@ -1758,12 +1914,13 @@
     }
 
     if (state.mode === "reward") {
-      setMobileButton(mobileButtons.left, "Prev", state.rewardOptions.length > 1, true);
-      setMobileButton(mobileButtons.right, "Next", state.rewardOptions.length > 1, true);
+      setMobileButton(mobileButtons.left, "Left", false, false);
+      setMobileButton(mobileButtons.right, "Right", false, false);
       setMobileButton(mobileButtons.confirm, "Claim", state.rewardOptions.length > 0, true);
       setMobileButton(mobileButtons.hit, "Hit", false, false);
       setMobileButton(mobileButtons.stand, "Stand", false, false);
       setMobileButton(mobileButtons.double, "Double", false, false);
+      mobileControls.classList.add("reward-claim-only");
       return;
     }
 
@@ -1839,6 +1996,175 @@
       } else if (state.mode === "gameover" || state.mode === "victory") {
         startRun();
       }
+    }
+  }
+
+  function canvasPointToWorld(clientX, clientY) {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+    const x = ((clientX - rect.left) / rect.width) * WIDTH;
+    const y = ((clientY - rect.top) / rect.height) * HEIGHT;
+    return { x, y };
+  }
+
+  function pointInRect(px, py, rect) {
+    return (
+      !!rect &&
+      Number.isFinite(px) &&
+      Number.isFinite(py) &&
+      px >= rect.x &&
+      px <= rect.x + rect.w &&
+      py >= rect.y &&
+      py <= rect.y + rect.h
+    );
+  }
+
+  function pointInCircle(px, py, circle) {
+    if (!circle || !Number.isFinite(px) || !Number.isFinite(py)) {
+      return false;
+    }
+    const dx = px - circle.x;
+    const dy = py - circle.y;
+    return dx * dx + dy * dy <= circle.r * circle.r;
+  }
+
+  function handleRewardPointerTap(worldX, worldY) {
+    if (state.mode !== "reward" || !state.rewardUi || !state.rewardOptions.length) {
+      return false;
+    }
+
+    if (state.rewardUi.leftArrow && pointInCircle(worldX, worldY, state.rewardUi.leftArrow)) {
+      moveSelection(-1, state.rewardOptions.length);
+      state.rewardDragOffset = rewardCarouselLayout().spacing * 0.24;
+      return true;
+    }
+
+    if (state.rewardUi.rightArrow && pointInCircle(worldX, worldY, state.rewardUi.rightArrow)) {
+      moveSelection(1, state.rewardOptions.length);
+      state.rewardDragOffset = -rewardCarouselLayout().spacing * 0.24;
+      return true;
+    }
+
+    const cards = [...state.rewardUi.cards].sort((a, b) => Number(b.selected) - Number(a.selected));
+    for (const card of cards) {
+      if (!pointInRect(worldX, worldY, card)) {
+        continue;
+      }
+      if (!card.selected) {
+        const shift = carouselDelta(card.index, state.selectionIndex, state.rewardOptions.length);
+        moveSelection(shift, state.rewardOptions.length);
+        state.rewardDragOffset = -Math.sign(shift || 0) * rewardCarouselLayout().spacing * 0.18;
+      }
+      return true;
+    }
+
+    return false;
+  }
+
+  function onCanvasPointerDown(event) {
+    if (state.mode !== "reward") {
+      state.rewardTouch = null;
+      return;
+    }
+    const point = canvasPointToWorld(event.clientX, event.clientY);
+    if (!point) {
+      state.rewardTouch = null;
+      return;
+    }
+
+    const swipeEnabled = state.compactControls && event.pointerType !== "mouse";
+    state.rewardTouch = {
+      pointerId: event.pointerId,
+      startX: point.x,
+      startY: point.y,
+      startOffset: state.rewardDragOffset || 0,
+      dragX: state.rewardDragOffset || 0,
+      moved: false,
+      swipeEnabled,
+    };
+
+    if (canvas.setPointerCapture) {
+      canvas.setPointerCapture(event.pointerId);
+    }
+
+    event.preventDefault();
+  }
+
+  function onCanvasPointerMove(event) {
+    if (!state.rewardTouch || state.rewardTouch.pointerId !== event.pointerId) {
+      return;
+    }
+    const point = canvasPointToWorld(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+
+    const dx = point.x - state.rewardTouch.startX;
+    const dy = point.y - state.rewardTouch.startY;
+    if (state.rewardTouch.swipeEnabled) {
+      const layout = rewardCarouselLayout();
+      const maxDrag = layout.spacing * 1.35;
+      const dragged = state.rewardTouch.startOffset + dx;
+      state.rewardTouch.dragX = Math.max(-maxDrag, Math.min(maxDrag, dragged));
+      event.preventDefault();
+    }
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      state.rewardTouch.moved = true;
+    }
+
+    if (!state.rewardTouch.swipeEnabled || state.rewardOptions.length < 2) {
+      return;
+    }
+  }
+
+  function onCanvasPointerUp(event) {
+    if (!state.rewardTouch || state.rewardTouch.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const touch = state.rewardTouch;
+    state.rewardTouch = null;
+
+    const point = canvasPointToWorld(event.clientX, event.clientY);
+    if (!point) {
+      return;
+    }
+
+    const dx = Number.isFinite(touch.dragX) ? touch.dragX : touch.startOffset + (point.x - touch.startX);
+    const dy = point.y - touch.startY;
+    const horizontalSwipe = touch.swipeEnabled && state.rewardOptions.length > 1 && Math.abs(dx) > Math.abs(dy) * 1.05;
+
+    if (horizontalSwipe) {
+      const spacing = rewardCarouselLayout().spacing;
+      const shift = Math.round(-dx / Math.max(1, spacing));
+      if (shift !== 0) {
+        moveSelection(shift, state.rewardOptions.length);
+      }
+      state.rewardDragOffset = dx + shift * spacing;
+    } else {
+      state.rewardDragOffset = 0;
+    }
+
+    const moved = touch.moved || Math.abs(dx) > 14;
+    if (!moved) {
+      handleRewardPointerTap(point.x, point.y);
+    }
+
+    if (canvas.releasePointerCapture) {
+      try {
+        canvas.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore release errors.
+      }
+    }
+  }
+
+  function onCanvasPointerCancel(event) {
+    if (state.rewardTouch && state.rewardTouch.pointerId === event.pointerId) {
+      state.rewardTouch = null;
+      state.rewardDragOffset = 0;
     }
   }
 
@@ -1997,7 +2323,22 @@
     }
 
     if (state.announcementTimer > 0) {
-      state.announcementTimer -= dt;
+      state.announcementTimer = Math.max(0, state.announcementTimer - dt);
+      if (state.announcementTimer <= 0) {
+        state.announcement = "";
+        state.announcementDuration = 0;
+      }
+    }
+
+    if (state.mode !== "reward") {
+      state.rewardUi = null;
+      state.rewardTouch = null;
+      state.rewardDragOffset = 0;
+    } else if (!state.rewardTouch) {
+      state.rewardDragOffset *= Math.max(0, 1 - dt * 10);
+      if (Math.abs(state.rewardDragOffset) < 0.45) {
+        state.rewardDragOffset = 0;
+      }
     }
 
     if (state.run) {
@@ -2040,7 +2381,7 @@
       window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || WIDTH
     );
     let mobileBoost = 1;
-    if (state.mobileActive && viewportWidth <= 700) {
+    if (state.compactControls && viewportWidth <= 700) {
       mobileBoost = state.viewport?.portraitZoomed ? 1.08 : 1.18;
     }
     const tunedSize = Math.round(size * mobileBoost);
@@ -2246,52 +2587,6 @@
     );
     ctx.fillText(`You: ${playerTotal}`, WIDTH * 0.5, 610 + portraitShift);
 
-    if (encounter.resultText) {
-      roundRect(WIDTH * 0.5 - 390, 622, 780, 35, 11);
-      ctx.fillStyle = "rgba(13, 26, 39, 0.72)";
-      ctx.fill();
-      ctx.fillStyle = "#f8d37b";
-      setFont(19, 700, false);
-      ctx.fillText(encounter.resultText, WIDTH * 0.5, 646 + (state.viewport?.portraitZoomed ? 30 : 0));
-    }
-
-    if (state.mode === "playing") {
-      if (state.mobileActive) {
-        ctx.textAlign = "center";
-        setFont(14, 600, false);
-        ctx.fillStyle = "#9cb9d4";
-        ctx.fillText(
-          "Tap buttons below. Left / Right picks items.",
-          WIDTH * 0.5,
-          state.viewport?.portraitZoomed ? 674 : 698
-        );
-      } else {
-        setFont(17, 700, false);
-        const canDoubleNow = canPlayerAct() && encounter.playerHand.length === 2 && !encounter.doubleDown;
-        const actionBits = [
-          { text: "A: Hit", color: "#acc5de" },
-          { text: "  |  ", color: "rgba(157, 186, 213, 0.62)" },
-          { text: "B: Stand", color: "#acc5de" },
-          { text: "  |  ", color: "rgba(157, 186, 213, 0.62)" },
-          {
-            text: "Space: Double Down",
-            color: canDoubleNow ? "#acc5de" : "rgba(142, 163, 183, 0.4)",
-          },
-        ];
-        ctx.textAlign = "left";
-        const widths = actionBits.map((bit) => ctx.measureText(bit.text).width);
-        let drawX = WIDTH * 0.5 - widths.reduce((sum, width) => sum + width, 0) * 0.5;
-        actionBits.forEach((bit, idx) => {
-          ctx.fillStyle = bit.color;
-          ctx.fillText(bit.text, drawX, 672);
-          drawX += widths[idx];
-        });
-        setFont(15, 600, false);
-        ctx.fillStyle = "#9cb9d4";
-        ctx.textAlign = "center";
-        ctx.fillText("Left / Right: Pick relics and shop items", WIDTH * 0.5, 698);
-      }
-    }
   }
 
   function hudMetrics() {
@@ -2427,80 +2722,278 @@
       }
     }
 
-    if (run.log.length > 0) {
-      ctx.textAlign = "left";
-      setFont(15, 500, false);
-      run.log.slice(0, 3).forEach((entry, idx) => {
-        ctx.fillStyle = idx === 0 ? "#e3f0ff" : "rgba(227, 240, 255, 0.65)";
-        const clipped = fitText(entry.message, hud.logMaxWidth);
-        ctx.fillText(clipped, hud.left + 2, HEIGHT - 92 + idx * 18);
-      });
+  }
+
+  function carouselDelta(index, selected, length) {
+    let delta = index - selected;
+    const half = length * 0.5;
+    if (delta > half) {
+      delta -= length;
+    } else if (delta < -half) {
+      delta += length;
     }
+    return delta;
+  }
+
+  function rewardCarouselLayout() {
+    const compact = state.compactControls;
+    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+    const visibleW = Math.max(760, WIDTH - cropX * 2);
+    const panelW = Math.max(700, Math.min(compact ? 1080 : 980, visibleW - (compact ? 22 : 46)));
+    const panelH = compact ? 524 : 500;
+    const panelX = WIDTH * 0.5 - panelW * 0.5;
+    const panelY = compact ? 106 : 116;
+    const viewportPad = compact ? 30 : 44;
+    const viewportX = panelX + viewportPad;
+    const viewportY = panelY + 160;
+    const viewportW = panelW - viewportPad * 2;
+    const viewportH = compact ? 258 : 248;
+    const mainW = Math.round(Math.min(compact ? 358 : 372, viewportW * 0.64));
+    const mainH = compact ? 240 : 248;
+    const spacing = Math.round(Math.min(compact ? 244 : 270, viewportW * (compact ? 0.35 : 0.37)));
+    const arrowRadius = compact ? 34 : 30;
+    const arrowOffset = viewportW * 0.5 + (compact ? 38 : 44);
+    const centerX = WIDTH * 0.5;
+    const centerY = viewportY + viewportH * 0.5;
+    return {
+      panelX,
+      panelY,
+      panelW,
+      panelH,
+      viewportX,
+      viewportY,
+      viewportW,
+      viewportH,
+      centerX,
+      centerY,
+      mainW,
+      mainH,
+      spacing,
+      sideScale: compact ? 0.82 : 0.84,
+      farScale: compact ? 0.67 : 0.69,
+      arrowRadius,
+      leftArrowX: centerX - arrowOffset,
+      rightArrowX: centerX + arrowOffset,
+      arrowY: centerY,
+      indicatorY: panelY + panelH - 34,
+    };
+  }
+
+  function drawRewardCarouselArrow(x, y, radius, symbol, enabled) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = enabled ? "rgba(18, 40, 58, 0.92)" : "rgba(18, 40, 58, 0.52)";
+    ctx.fill();
+    ctx.strokeStyle = enabled ? "rgba(196, 226, 246, 0.5)" : "rgba(130, 151, 170, 0.24)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    if (enabled) {
+      const pulse = 0.28 + Math.sin(state.worldTime * 6.2) * 0.08;
+      ctx.beginPath();
+      ctx.arc(x, y, radius - 5, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(138, 193, 231, ${pulse})`;
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+    }
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = enabled ? "#e8f5ff" : "rgba(171, 194, 216, 0.65)";
+    setFont(28, 700, false);
+    ctx.fillText(symbol, x, y + 10);
+    ctx.restore();
   }
 
   function drawRewardScreen() {
     if (state.mode !== "reward" || !state.rewardOptions.length) {
+      state.rewardUi = null;
       return;
     }
+
+    const layout = rewardCarouselLayout();
+    const total = state.rewardOptions.length;
+    const selected = state.selectionIndex;
+    const dragPx =
+      state.mode === "reward" &&
+      state.rewardTouch &&
+      state.rewardTouch.swipeEnabled &&
+      Number.isFinite(state.rewardTouch.dragX)
+        ? state.rewardTouch.dragX
+        : state.rewardDragOffset || 0;
+    const dragSteps = dragPx / layout.spacing;
 
     ctx.fillStyle = "rgba(5, 10, 16, 0.72)";
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
+    roundRect(layout.panelX, layout.panelY, layout.panelW, layout.panelH, 26);
+    const panelFill = ctx.createLinearGradient(layout.panelX, layout.panelY, layout.panelX, layout.panelY + layout.panelH);
+    panelFill.addColorStop(0, "rgba(18, 33, 48, 0.97)");
+    panelFill.addColorStop(1, "rgba(11, 24, 36, 0.95)");
+    ctx.fillStyle = panelFill;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(168, 206, 234, 0.34)";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
     ctx.textAlign = "center";
     ctx.fillStyle = "#f6e6a6";
     setFont(40, 700, true);
-    ctx.fillText("Relic Draft", WIDTH * 0.5, 124);
+    ctx.fillText("Relic Draft", WIDTH * 0.5, layout.panelY + 48);
 
     ctx.fillStyle = "#bdd6ec";
     setFont(18, 600, false);
-    ctx.fillText(
-      state.mobileActive ? "Use Left / Right and Claim on the control bar" : "Arrow keys to select, Enter or Space to claim",
-      WIDTH * 0.5,
-      156
-    );
+    const hint = state.compactControls
+      ? "Swipe the carousel or tap cards/arrows. Claim below."
+      : "Arrow keys or click arrows to browse. Enter or Space to claim.";
+    wrapText(hint, layout.panelX + 52, layout.panelY + 82, layout.panelW - 104, 24, "center");
     ctx.fillStyle = "#97bddb";
     setFont(15, 600, false);
-    ctx.fillText("All relics are passive and auto-apply.", WIDTH * 0.5, 178);
+    ctx.fillText("All relics are passive and auto-apply.", WIDTH * 0.5, layout.panelY + 124);
 
-    const cardWidth = 322;
-    const cardHeight = 238;
-    const gap = 28;
-    const totalW = state.rewardOptions.length * cardWidth + (state.rewardOptions.length - 1) * gap;
-    let x = WIDTH * 0.5 - totalW * 0.5;
+    roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
+    ctx.fillStyle = "rgba(8, 18, 29, 0.76)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(138, 182, 213, 0.25)";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
 
-    state.rewardOptions.forEach((relic, idx) => {
-      const y = 210;
-      const selected = idx === state.selectionIndex;
+    ctx.save();
+    roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
+    ctx.clip();
 
-      roundRect(x, y, cardWidth, cardHeight, 18);
-      ctx.fillStyle = selected ? "rgba(24, 43, 62, 0.95)" : "rgba(17, 30, 44, 0.9)";
+    const renderCards = state.rewardOptions
+      .map((relic, idx) => {
+        const delta = carouselDelta(idx, selected, total) + dragSteps;
+        const abs = Math.abs(delta);
+        if (abs > 2) {
+          return null;
+        }
+        const selectedCard = idx === selected;
+        const sideT = Math.max(0, Math.min(1, abs));
+        const farT = Math.max(0, Math.min(1, abs - 1));
+        const scale = abs <= 1 ? lerp(1, layout.sideScale, sideT) : lerp(layout.sideScale, layout.farScale, farT);
+        const w = Math.floor(layout.mainW * scale);
+        const h = Math.floor(layout.mainH * scale);
+        const x = Math.floor(layout.centerX + delta * layout.spacing - w * 0.5);
+        const yShift = abs <= 1 ? lerp(0, 26, sideT) : lerp(26, 38, farT);
+        const y = Math.floor(layout.centerY - h * 0.5 + yShift);
+        const alpha = abs <= 1 ? lerp(1, 0.46, sideT) : lerp(0.46, 0.2, farT);
+        return {
+          idx,
+          relic,
+          delta,
+          selected: selectedCard,
+          x,
+          y,
+          w,
+          h,
+          alpha,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+    renderCards.forEach((card) => {
+      const radius = Math.max(12, Math.floor(18 * (card.w / layout.mainW)));
+      ctx.save();
+      ctx.globalAlpha = card.alpha;
+      roundRect(card.x, card.y, card.w, card.h, radius);
+      ctx.fillStyle = card.selected ? "rgba(24, 43, 62, 0.95)" : "rgba(17, 30, 44, 0.92)";
       ctx.fill();
 
-      ctx.strokeStyle = selected ? relic.color : "rgba(145, 186, 220, 0.35)";
-      ctx.lineWidth = selected ? 3 : 1.2;
+      ctx.strokeStyle = card.selected ? card.relic.color : "rgba(145, 186, 220, 0.35)";
+      ctx.lineWidth = card.selected ? 3 : 1.2;
       ctx.stroke();
 
-      if (selected) {
-        const shimmerX = x - 60 + ((state.worldTime * 260) % (cardWidth + 120));
-        const shimmer = ctx.createLinearGradient(shimmerX, y, shimmerX + 90, y + cardHeight);
+      if (card.selected) {
+        const shimmerX = card.x - 70 + ((state.worldTime * 280) % (card.w + 140));
+        const shimmer = ctx.createLinearGradient(shimmerX, card.y, shimmerX + 110, card.y + card.h);
         shimmer.addColorStop(0, "rgba(255,255,255,0)");
-        shimmer.addColorStop(0.5, "rgba(255,255,255,0.12)");
+        shimmer.addColorStop(0.5, "rgba(255,255,255,0.14)");
         shimmer.addColorStop(1, "rgba(255,255,255,0)");
         ctx.fillStyle = shimmer;
-        roundRect(x + 3, y + 3, cardWidth - 6, cardHeight - 6, 16);
+        roundRect(card.x + 3, card.y + 3, card.w - 6, card.h - 6, Math.max(10, radius - 2));
         ctx.fill();
+      } else {
+        const fade = ctx.createLinearGradient(
+          card.delta < 0 ? card.x + card.w : card.x,
+          card.y,
+          card.delta < 0 ? card.x : card.x + card.w,
+          card.y
+        );
+        fade.addColorStop(0, "rgba(5, 11, 18, 0.06)");
+        fade.addColorStop(1, "rgba(5, 11, 18, 0.75)");
+        ctx.save();
+        roundRect(card.x + 2, card.y + 2, card.w - 4, card.h - 4, Math.max(10, radius - 3));
+        ctx.clip();
+        ctx.fillStyle = fade;
+        ctx.fillRect(card.x, card.y, card.w, card.h);
+        ctx.restore();
       }
 
-      ctx.fillStyle = relic.color;
-      setFont(30, 700, true);
-      ctx.fillText(relic.name, x + cardWidth * 0.5, y + 56);
+      ctx.fillStyle = card.relic.color;
+      setFont(card.selected ? 33 : 24, 700, true);
+      ctx.fillText(card.relic.name, card.x + card.w * 0.5, card.y + (card.selected ? 60 : 48));
 
       ctx.fillStyle = "#d0e4f5";
-      setFont(18, 600, false);
-      wrapText(passiveDescription(relic.description), x + 30, y + 108, cardWidth - 60, 24, "center");
+      if (card.selected) {
+        setFont(18, 600, false);
+        wrapText(passiveDescription(card.relic.description), card.x + 34, card.y + 120, card.w - 68, 24, "center");
+      } else {
+        setFont(15, 600, false);
+        ctx.fillText("Tap to select", card.x + card.w * 0.5, card.y + card.h - 34);
+      }
 
-      x += cardWidth + gap;
+      ctx.restore();
     });
+
+    const edgeFadeW = Math.min(120, layout.viewportW * 0.16);
+    const leftFade = ctx.createLinearGradient(layout.viewportX, 0, layout.viewportX + edgeFadeW, 0);
+    leftFade.addColorStop(0, "rgba(8, 18, 29, 0.92)");
+    leftFade.addColorStop(1, "rgba(8, 18, 29, 0)");
+    ctx.fillStyle = leftFade;
+    ctx.fillRect(layout.viewportX, layout.viewportY, edgeFadeW, layout.viewportH);
+
+    const rightFade = ctx.createLinearGradient(layout.viewportX + layout.viewportW - edgeFadeW, 0, layout.viewportX + layout.viewportW, 0);
+    rightFade.addColorStop(0, "rgba(8, 18, 29, 0)");
+    rightFade.addColorStop(1, "rgba(8, 18, 29, 0.92)");
+    ctx.fillStyle = rightFade;
+    ctx.fillRect(layout.viewportX + layout.viewportW - edgeFadeW, layout.viewportY, edgeFadeW, layout.viewportH);
+    ctx.restore();
+
+    const canScroll = state.rewardOptions.length > 1;
+    drawRewardCarouselArrow(layout.leftArrowX, layout.arrowY, layout.arrowRadius, "◀", canScroll);
+    drawRewardCarouselArrow(layout.rightArrowX, layout.arrowY, layout.arrowRadius, "▶", canScroll);
+
+    const indicatorY = layout.indicatorY;
+    const dotGap = 22;
+    const startDotX = layout.centerX - (Math.max(0, total - 1) * dotGap) * 0.5;
+    for (let i = 0; i < total; i += 1) {
+      const selectedDot = i === selected;
+      const radius = selectedDot ? 6 : 4;
+      ctx.beginPath();
+      ctx.arc(startDotX + i * dotGap, indicatorY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = selectedDot ? "#f2cf91" : "rgba(156, 188, 215, 0.46)";
+      ctx.fill();
+    }
+
+    state.rewardUi = {
+      cards: renderCards.map((card) => ({
+        index: card.idx,
+        selected: card.selected,
+        x: card.x,
+        y: card.y,
+        w: card.w,
+        h: card.h,
+      })),
+      leftArrow: canScroll
+        ? { x: layout.leftArrowX, y: layout.arrowY, r: layout.arrowRadius }
+        : null,
+      rightArrow: canScroll
+        ? { x: layout.rightArrowX, y: layout.arrowY, r: layout.arrowRadius }
+        : null,
+    };
   }
 
   function shopItemName(item) {
@@ -2533,7 +3026,9 @@
     ctx.fillStyle = "#c4d9ec";
     setFont(18, 600, false);
     ctx.fillText(
-      state.mobileActive ? "Use Left / Right, Buy, and Continue on control bar" : "Arrow keys to select, Space to buy, Enter to continue",
+      state.compactControls
+        ? "Use Left / Right, Buy, and Continue on control bar"
+        : "Use Left / Right, Buy, and Continue below, or Arrow keys plus Space/Enter",
       WIDTH * 0.5,
       154
     );
@@ -2660,11 +3155,11 @@
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    const controls = state.mobileActive
+    const controls = state.compactControls
       ? [
           "Tap New Run (or Resume) on the control bar below",
           "Hit / Stand / Double buttons appear in combat",
-          "Left / Right buttons pick relics and shop cards",
+          "Swipe/tap relic carousel; Left / Right buttons pick shop cards",
           "Relics are passive and activate instantly",
         ]
       : [
@@ -2674,6 +3169,7 @@
           "B: Stand hand",
           "Space: Double down (one-card commit)",
           "Left / Right: Pick relics and shop items",
+          "Buttons below show each shortcut for quick reference",
           "Relics are passive: effects are always active once collected",
           "F: Toggle fullscreen, Esc: leave fullscreen",
         ];
@@ -2681,7 +3177,7 @@
     ctx.fillStyle = "#e2f0ff";
     setFont(20, 600, false);
     controls.forEach((line, idx) => {
-      ctx.fillText(line, WIDTH * 0.5, 362 + idx * (state.mobileActive ? 36 : 30));
+      ctx.fillText(line, WIDTH * 0.5, 362 + idx * (state.compactControls ? 36 : 30));
     });
 
     const pulse = 0.5 + Math.sin(state.worldTime * 4.6) * 0.5;
@@ -2711,6 +3207,29 @@
     if (line.length > 0) {
       ctx.fillText(line, align === "center" ? x + maxWidth * 0.5 : x, drawY);
     }
+  }
+
+  function wrappedLines(text, maxWidth) {
+    const source = typeof text === "string" ? text : "";
+    if (!source) {
+      return [""];
+    }
+    const words = source.split(" ");
+    const lines = [];
+    let line = "";
+    for (let i = 0; i < words.length; i += 1) {
+      const candidate = line.length === 0 ? words[i] : `${line} ${words[i]}`;
+      if (line.length > 0 && ctx.measureText(candidate).width > maxWidth) {
+        lines.push(line);
+        line = words[i];
+      } else {
+        line = candidate;
+      }
+    }
+    if (line.length > 0) {
+      lines.push(line);
+    }
+    return lines;
   }
 
   function fitText(text, maxWidth) {
@@ -2754,15 +3273,73 @@
     }
 
     if (state.announcementTimer > 0 && state.announcement) {
-      const alpha = Math.max(0, Math.min(1, state.announcementTimer / 1.2));
-      const bannerY = state.viewport?.portraitZoomed ? 158 : 90;
-      roundRect(WIDTH * 0.5 - 250, bannerY, 500, 36, 12);
-      ctx.fillStyle = `rgba(9, 17, 27, ${0.65 * alpha})`;
+      const duration = Math.max(0.25, state.announcementDuration || state.announcementTimer || 1.4);
+      const progress = Math.max(0, Math.min(1, 1 - state.announcementTimer / duration));
+      const intro = Math.max(0, Math.min(1, progress / 0.24));
+      const settle = Math.max(0, Math.min(1, (progress - 0.24) / 0.18));
+      const fade = progress > 0.74 ? 1 - (progress - 0.74) / 0.26 : 1;
+      const scale = progress < 0.24 ? 0.68 + easeOutBack(intro) * 0.54 : 1.12 - settle * 0.14;
+      const alpha = Math.max(0, Math.min(1, (0.2 + intro * 0.8) * fade));
+      const centerX = WIDTH * 0.5;
+      const centerY = state.viewport?.portraitZoomed ? 182 : 124;
+      const ringExpand = easeOutCubic(Math.min(1, progress / 0.45));
+      const ringRadius = 72 + ringExpand * 210;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, ringRadius, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(248, 214, 132, ${0.34 * (1 - Math.min(1, progress / 0.65))})`;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      for (let i = 0; i < 10; i += 1) {
+        const angle = (Math.PI * 2 * i) / 10 + state.worldTime * 0.35;
+        const inner = 40 + ringExpand * 26;
+        const outer = inner + 16 + ringExpand * 26;
+        const x1 = centerX + Math.cos(angle) * inner;
+        const y1 = centerY + Math.sin(angle) * inner;
+        const x2 = centerX + Math.cos(angle) * outer;
+        const y2 = centerY + Math.sin(angle) * outer;
+        ctx.strokeStyle = `rgba(244, 205, 118, ${0.18 * fade})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      setFont(30, 700, true);
+      const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+      const visibleW = Math.max(420, WIDTH - cropX * 2);
+      const messageMaxW = Math.max(260, Math.min(720, visibleW - 110));
+      const lines = wrappedLines(state.announcement, messageMaxW - 80);
+      const lineHeight = 30;
+      const messageWidth = Math.max(280, Math.min(messageMaxW, Math.max(...lines.map((line) => ctx.measureText(line).width)) + 84));
+      const panelH = Math.max(62, 30 + lines.length * lineHeight);
+
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = alpha;
+      roundRect(-messageWidth * 0.5, -panelH * 0.5, messageWidth, panelH, 15);
+      const panel = ctx.createLinearGradient(0, -panelH * 0.5, 0, panelH * 0.5);
+      panel.addColorStop(0, "rgba(25, 44, 62, 0.98)");
+      panel.addColorStop(1, "rgba(14, 27, 40, 0.95)");
+      ctx.fillStyle = panel;
       ctx.fill();
+      ctx.strokeStyle = "rgba(242, 210, 132, 0.82)";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = "rgba(255, 241, 198, 0.95)";
       ctx.textAlign = "center";
-      ctx.fillStyle = `rgba(244, 222, 170, ${0.88 * alpha})`;
-      setFont(19, 600, false);
-      ctx.fillText(state.announcement, WIDTH * 0.5, bannerY + 24);
+      setFont(28, 700, true);
+      lines.forEach((line, idx) => {
+        const y = -((lines.length - 1) * lineHeight) * 0.5 + idx * lineHeight + 10;
+        ctx.fillText(line, 0, y);
+      });
+      ctx.restore();
     }
   }
 
@@ -2944,17 +3521,17 @@
     const viewportHeight = Math.floor(
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
-    const reservedHeight = state.mobileActive && mobileControls ? mobileControls.offsetHeight + 12 : 0;
-    const availableHeight = Math.max(220, viewportHeight - reservedHeight);
-    const availableWidth = Math.max(320, viewportWidth);
-    const portraitZoomed = state.mobilePortrait && state.mode !== "menu";
+    const reservedHeight = state.mobileActive && mobileControls ? mobileControls.offsetHeight + (state.compactControls ? 8 : 12) : 0;
+    const availableHeight = Math.max(140, viewportHeight - reservedHeight - (state.compactControls ? 6 : 0));
+    const availableWidth = Math.max(280, viewportWidth);
+    const portraitZoomed = state.mobilePortrait;
 
     if (portraitZoomed) {
       const shellW = availableWidth;
       const shellH = availableHeight;
       const scale = shellH / HEIGHT;
       const canvasW = Math.max(shellW, Math.floor(WIDTH * scale));
-      const canvasH = Math.max(220, Math.floor(HEIGHT * scale));
+      const canvasH = Math.max(140, Math.floor(HEIGHT * scale));
       const left = Math.floor((shellW - canvasW) * 0.5);
       const cropDisplayX = Math.max(0, canvasW - shellW) * 0.5;
       const cropWorldX = scale > 0 ? cropDisplayX / scale : 0;
@@ -2977,8 +3554,8 @@
     }
 
     const scale = Math.min(availableWidth / WIDTH, availableHeight / HEIGHT);
-    const displayW = Math.max(320, Math.floor(WIDTH * scale));
-    const displayH = Math.max(180, Math.floor(HEIGHT * scale));
+    const displayW = Math.max(280, Math.floor(WIDTH * scale));
+    const displayH = Math.max(140, Math.floor(HEIGHT * scale));
 
     gameShell.style.width = `${displayW}px`;
     gameShell.style.height = `${displayH}px`;
@@ -3016,6 +3593,11 @@
       });
     });
   }
+
+  canvas.addEventListener("pointerdown", onCanvasPointerDown);
+  canvas.addEventListener("pointermove", onCanvasPointerMove);
+  canvas.addEventListener("pointerup", onCanvasPointerUp);
+  canvas.addEventListener("pointercancel", onCanvasPointerCancel);
 
   state.profile = loadProfile();
   state.savedRunSnapshot = loadSavedRunSnapshot();
