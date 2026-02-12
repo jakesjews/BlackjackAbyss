@@ -38,8 +38,16 @@
   const STORAGE_KEYS = {
     profile: "blackjack-abyss.profile.v1",
     run: "blackjack-abyss.run.v1",
+    settings: "blackjack-abyss.settings.v1",
   };
   const MAX_RUN_HISTORY = 24;
+  const MUSIC_CHORDS = [
+    [0, 3, 7],
+    [2, 5, 9],
+    [5, 8, 12],
+    [7, 10, 14],
+  ];
+  const MUSIC_STEP_SECONDS = 0.24;
 
   function defaultPlayerStats() {
     return {
@@ -109,6 +117,43 @@
     } catch {
       // Ignore storage failures and continue gameplay.
     }
+  }
+
+  function loadAudioEnabled() {
+    const raw = safeGetStorage(STORAGE_KEYS.settings);
+    if (!raw) {
+      return true;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.audioEnabled === "boolean") {
+        return parsed.audioEnabled;
+      }
+    } catch {
+      // Ignore invalid settings payloads.
+    }
+    return true;
+  }
+
+  function saveAudioEnabled(enabled) {
+    let payload = {};
+    const raw = safeGetStorage(STORAGE_KEYS.settings);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          payload = parsed;
+        }
+      } catch {
+        // Ignore invalid settings payloads.
+      }
+    }
+    payload.audioEnabled = Boolean(enabled);
+    safeSetStorage(STORAGE_KEYS.settings, JSON.stringify(payload));
+  }
+
+  function semitoneToFreq(base, semitone) {
+    return base * 2 ** (semitone / 12);
   }
 
   const RELICS = [
@@ -386,6 +431,17 @@
       cropWorldX: 0,
       portraitZoomed: false,
     },
+    audio: {
+      enabled: true,
+      started: false,
+      context: null,
+      masterGain: null,
+      musicGain: null,
+      sfxGain: null,
+      stepTimer: MUSIC_STEP_SECONDS,
+      stepIndex: 0,
+      lastMusicMode: "menu",
+    },
   };
 
   function clampNumber(value, min, max, fallback) {
@@ -402,6 +458,260 @@
       return fallback;
     }
     return Math.max(0, Math.floor(n));
+  }
+
+  function getAudioContextCtor() {
+    return window.AudioContext || window.webkitAudioContext || null;
+  }
+
+  function ensureAudioGraph() {
+    if (state.audio.context) {
+      return state.audio.context;
+    }
+
+    const Ctor = getAudioContextCtor();
+    if (!Ctor) {
+      return null;
+    }
+
+    const context = new Ctor();
+    const masterGain = context.createGain();
+    const musicGain = context.createGain();
+    const sfxGain = context.createGain();
+
+    masterGain.gain.value = 0;
+    musicGain.gain.value = 0.19;
+    sfxGain.gain.value = 0.5;
+
+    musicGain.connect(masterGain);
+    sfxGain.connect(masterGain);
+    masterGain.connect(context.destination);
+
+    state.audio.context = context;
+    state.audio.masterGain = masterGain;
+    state.audio.musicGain = musicGain;
+    state.audio.sfxGain = sfxGain;
+    state.audio.stepTimer = MUSIC_STEP_SECONDS;
+    state.audio.stepIndex = 0;
+    return context;
+  }
+
+  function syncAudioEnabled() {
+    if (!state.audio.context || !state.audio.masterGain) {
+      return;
+    }
+    const target = state.audio.enabled ? 0.86 : 0;
+    state.audio.masterGain.gain.setTargetAtTime(target, state.audio.context.currentTime, 0.08);
+  }
+
+  function unlockAudio() {
+    const context = ensureAudioGraph();
+    if (!context) {
+      return;
+    }
+    state.audio.started = true;
+    syncAudioEnabled();
+    if (context.state === "suspended" && state.audio.enabled) {
+      context.resume().catch(() => {});
+    }
+  }
+
+  function setAudioEnabled(enabled) {
+    state.audio.enabled = Boolean(enabled);
+    saveAudioEnabled(state.audio.enabled);
+    if (state.audio.enabled) {
+      unlockAudio();
+    }
+    syncAudioEnabled();
+    if (state.run) {
+      addLog(state.audio.enabled ? "Sound enabled." : "Sound muted.");
+    } else {
+      state.announcement = state.audio.enabled ? "Sound enabled." : "Sound muted.";
+      state.announcementTimer = 1.1;
+    }
+  }
+
+  function toggleAudio() {
+    setAudioEnabled(!state.audio.enabled);
+  }
+
+  function canPlayAudio() {
+    return (
+      state.audio.enabled &&
+      state.audio.started &&
+      Boolean(state.audio.context) &&
+      state.audio.context.state === "running"
+    );
+  }
+
+  function playTone(freq, duration, opts = {}) {
+    if (!canPlayAudio()) {
+      return;
+    }
+    const context = state.audio.context;
+    const bus = opts.bus === "music" ? state.audio.musicGain : state.audio.sfxGain;
+    if (!bus) {
+      return;
+    }
+
+    const when = Math.max(context.currentTime, Number(opts.when) || context.currentTime);
+    const attack = Math.max(0.001, Number(opts.attack) || 0.002);
+    const release = Math.max(0.012, Number(opts.release) || 0.09);
+    const gainLevel = Math.max(0.001, Number(opts.gain) || 0.08);
+    const sustainLevel = Math.max(0, Math.min(gainLevel, Number(opts.sustainGain) || gainLevel * 0.72));
+
+    const osc = context.createOscillator();
+    const gain = context.createGain();
+    osc.type = opts.type || "triangle";
+    osc.frequency.setValueAtTime(Math.max(20, freq), when);
+    if (Number.isFinite(opts.detune)) {
+      osc.detune.setValueAtTime(opts.detune, when);
+    }
+
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime(gainLevel, when + attack);
+    gain.gain.linearRampToValueAtTime(sustainLevel, when + Math.max(attack + 0.01, duration * 0.55));
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + duration + release);
+
+    osc.connect(gain);
+    gain.connect(bus);
+
+    osc.start(when);
+    osc.stop(when + duration + release + 0.01);
+  }
+
+  function playImpactSfx(amount, target) {
+    const hit = Math.max(1, Number(amount) || 1);
+    const base = target === "enemy" ? 168 : 110;
+    const length = Math.min(0.28, 0.09 + hit * 0.009);
+    playTone(base, length, { type: "triangle", gain: Math.min(0.25, 0.08 + hit * 0.01), release: 0.18 });
+    playTone(base * 1.62, Math.max(0.05, length * 0.7), {
+      type: "square",
+      gain: Math.min(0.14, 0.035 + hit * 0.006),
+      release: 0.08,
+      detune: target === "enemy" ? 6 : -9,
+    });
+  }
+
+  function playDealSfx(target) {
+    const base = target === "player" ? 590 : 470;
+    playTone(base, 0.05, { type: "square", gain: 0.04, release: 0.03 });
+  }
+
+  function playUiSfx(kind) {
+    if (kind === "select") {
+      playTone(820, 0.045, { type: "sine", gain: 0.034, release: 0.025 });
+      return;
+    }
+    if (kind === "confirm") {
+      playTone(600, 0.06, { type: "triangle", gain: 0.06, release: 0.04 });
+      playTone(900, 0.09, { type: "sine", gain: 0.05, release: 0.06, when: state.audio.context?.currentTime + 0.045 });
+      return;
+    }
+    if (kind === "error") {
+      playTone(230, 0.09, { type: "square", gain: 0.06, release: 0.08 });
+      return;
+    }
+    if (kind === "coin") {
+      const now = state.audio.context?.currentTime || 0;
+      playTone(760, 0.06, { type: "triangle", gain: 0.06, release: 0.04, when: now });
+      playTone(1180, 0.08, { type: "sine", gain: 0.055, release: 0.06, when: now + 0.05 });
+    }
+  }
+
+  function playActionSfx(action) {
+    if (action === "hit") {
+      playTone(510, 0.05, { type: "square", gain: 0.05, release: 0.04 });
+      return;
+    }
+    if (action === "stand") {
+      playTone(360, 0.08, { type: "triangle", gain: 0.055, release: 0.08 });
+      return;
+    }
+    if (action === "double") {
+      const now = state.audio.context?.currentTime || 0;
+      playTone(460, 0.09, { type: "square", gain: 0.08, release: 0.08, when: now });
+      playTone(690, 0.12, { type: "triangle", gain: 0.07, release: 0.1, when: now + 0.06 });
+    }
+  }
+
+  function playOutcomeSfx(outcome, outgoing, incoming) {
+    if (outcome === "blackjack") {
+      const now = state.audio.context?.currentTime || 0;
+      playTone(440, 0.12, { type: "triangle", gain: 0.085, release: 0.1, when: now });
+      playTone(660, 0.14, { type: "triangle", gain: 0.075, release: 0.12, when: now + 0.05 });
+      playTone(990, 0.2, { type: "sine", gain: 0.07, release: 0.16, when: now + 0.1 });
+      return;
+    }
+
+    if (outgoing > 0) {
+      playImpactSfx(outgoing, "enemy");
+    }
+    if (incoming > 0) {
+      playImpactSfx(incoming, "player");
+    }
+
+    if (outcome === "push") {
+      playTone(420, 0.06, { type: "sine", gain: 0.03, release: 0.04 });
+    }
+  }
+
+  function updateMusic(dt) {
+    if (!canPlayAudio()) {
+      return;
+    }
+
+    const context = state.audio.context;
+    const calmMode = state.mode === "menu";
+    const tenseMode = state.mode === "playing";
+    const targetMusicGain = calmMode ? 0.12 : tenseMode ? 0.2 : 0.15;
+    state.audio.musicGain.gain.setTargetAtTime(targetMusicGain, context.currentTime, 0.35);
+
+    if (state.audio.lastMusicMode !== state.mode) {
+      state.audio.lastMusicMode = state.mode;
+      state.audio.stepTimer = Math.min(state.audio.stepTimer, MUSIC_STEP_SECONDS * 0.5);
+    }
+
+    state.audio.stepTimer -= dt;
+    while (state.audio.stepTimer <= 0) {
+      state.audio.stepTimer += MUSIC_STEP_SECONDS;
+
+      const step = state.audio.stepIndex++;
+      const bar = Math.floor(step / 16);
+      const beat = step % 16;
+      const chord = MUSIC_CHORDS[bar % MUSIC_CHORDS.length];
+      const base = 116;
+      const bass = chord[0] - 12;
+
+      if (beat % 4 === 0) {
+        playTone(semitoneToFreq(base, bass), 0.16, {
+          type: "triangle",
+          gain: tenseMode ? 0.085 : 0.055,
+          release: 0.1,
+          bus: "music",
+        });
+      }
+
+      if (beat % 2 === 0) {
+        const arp = chord[(Math.floor(beat / 2) + bar) % chord.length] + 12;
+        playTone(semitoneToFreq(base, arp), 0.12, {
+          type: "sine",
+          gain: tenseMode ? 0.05 : 0.035,
+          release: 0.09,
+          bus: "music",
+          detune: beat % 4 === 0 ? 3 : -2,
+        });
+      }
+
+      if (tenseMode && beat % 4 === 2) {
+        playTone(semitoneToFreq(base, chord[2] + 19), 0.07, {
+          type: "square",
+          gain: 0.023,
+          release: 0.05,
+          bus: "music",
+        });
+      }
+    }
   }
 
   function mergePlayerStats(statsLike) {
@@ -1123,6 +1433,7 @@
       maxLife: 0.28,
     });
     spawnSparkBurst(pos.x + CARD_W * 0.5, pos.y + CARD_H * 0.5, target === "player" ? "#76e5ff" : "#ffbb84", 5, 88);
+    playDealSfx(target);
 
     return hand[hand.length - 1];
   }
@@ -1205,6 +1516,8 @@
   }
 
   function startRun() {
+    unlockAudio();
+    playUiSfx("confirm");
     if (state.profile) {
       state.profile.totals.runsStarted += 1;
       saveProfile();
@@ -1256,6 +1569,7 @@
 
     const encounter = state.encounter;
     encounter.lastPlayerAction = "hit";
+    playActionSfx("hit");
     dealCard(encounter, "player");
     const total = handTotal(encounter.playerHand).total;
 
@@ -1273,6 +1587,7 @@
     if (!canPlayerAct()) {
       return;
     }
+    playActionSfx("stand");
     state.encounter.lastPlayerAction = "stand";
     resolveDealerThenShowdown(false);
   }
@@ -1284,11 +1599,13 @@
 
     const encounter = state.encounter;
     if (encounter.doubleDown || encounter.playerHand.length !== 2) {
+      playUiSfx("error");
       return;
     }
 
     encounter.doubleDown = true;
     encounter.lastPlayerAction = "double";
+    playActionSfx("double");
     dealCard(encounter, "player");
     const total = handTotal(encounter.playerHand).total;
 
@@ -1471,6 +1788,8 @@
       triggerScreenShake(8.5, 0.24);
     }
 
+    playOutcomeSfx(outcome, outgoing, incoming);
+
     encounter.resultText = text;
     run.totalHands += 1;
     addLog(text);
@@ -1509,6 +1828,7 @@
     spawnSparkBurst(WIDTH * 0.5, 96, "#ffd687", 34, 280);
     triggerScreenShake(7, 0.2);
     triggerFlash("#ffd687", 0.09, 0.2);
+    playUiSfx("coin");
     addLog(`${enemy.name} defeated. +${payout} chips.`);
 
     encounter.phase = "done";
@@ -1616,6 +1936,7 @@
 
     const relic = state.rewardOptions[state.selectionIndex] || state.rewardOptions[0];
     applyRelic(relic);
+    playUiSfx("confirm");
     addLog(`Relic claimed: ${relic.name}.`);
     addLog(passiveDescription(relic.description));
 
@@ -1639,6 +1960,7 @@
       addLog("Not enough chips.");
       state.announcement = "Need more chips.";
       state.announcementTimer = 1.2;
+      playUiSfx("error");
       saveRunSnapshot();
       return;
     }
@@ -1648,6 +1970,7 @@
 
     if (item.type === "relic") {
       applyRelic(item.relic);
+      playUiSfx("confirm");
       addLog(`Bought ${item.relic.name}.`);
       addLog(passiveDescription(item.relic.description));
     } else {
@@ -1657,6 +1980,7 @@
       if (heal > 0) {
         spawnFloatText(`+${heal}`, WIDTH * 0.27, 541, "#8df0b2");
       }
+      playUiSfx("confirm");
     }
 
     item.sold = true;
@@ -1675,6 +1999,7 @@
       return;
     }
     state.selectionIndex = (state.selectionIndex + delta + length) % length;
+    playUiSfx("select");
   }
 
   function hasSavedRun() {
@@ -1873,7 +2198,7 @@
     }
     if (raw.length === 1) {
       const low = raw.toLowerCase();
-      if (low === "a" || low === "b" || low === "r") {
+      if (low === "a" || low === "b" || low === "r" || low === "m") {
         return low;
       }
     }
@@ -1898,6 +2223,12 @@
     }
 
     event.preventDefault();
+    unlockAudio();
+
+    if (key === "m") {
+      toggleAudio();
+      return;
+    }
 
     if (state.mode === "menu") {
       if (key === "enter" || key === "space") {
@@ -1952,6 +2283,7 @@
 
   function update(dt) {
     state.worldTime += dt;
+    updateMusic(dt);
 
     for (const orb of AMBIENT_ORBS) {
       orb.y += orb.speed * dt;
@@ -2209,6 +2541,101 @@
     }
   }
 
+  function rewardCardLayout() {
+    if (!state.rewardOptions.length) {
+      return [];
+    }
+    const cardWidth = 322;
+    const cardHeight = 238;
+    const gap = 28;
+    const totalW = state.rewardOptions.length * cardWidth + (state.rewardOptions.length - 1) * gap;
+    let x = WIDTH * 0.5 - totalW * 0.5;
+    const y = 210;
+
+    return state.rewardOptions.map((_, idx) => {
+      const rect = { idx, x, y, width: cardWidth, height: cardHeight };
+      x += cardWidth + gap;
+      return rect;
+    });
+  }
+
+  function shopCardLayout() {
+    if (!state.shopStock.length) {
+      return [];
+    }
+    const cardWidth = 322;
+    const cardHeight = 248;
+    const gap = 28;
+    const totalW = state.shopStock.length * cardWidth + (state.shopStock.length - 1) * gap;
+    let x = WIDTH * 0.5 - totalW * 0.5;
+    const y = 206;
+
+    return state.shopStock.map((_, idx) => {
+      const rect = { idx, x, y, width: cardWidth, height: cardHeight };
+      x += cardWidth + gap;
+      return rect;
+    });
+  }
+
+  function worldPointFromPointer(event) {
+    const rect = canvas.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return null;
+    }
+    const x = ((event.clientX - rect.left) / rect.width) * WIDTH;
+    const y = ((event.clientY - rect.top) / rect.height) * HEIGHT;
+    return { x, y };
+  }
+
+  function pointInRect(point, rect) {
+    return (
+      point.x >= rect.x &&
+      point.x <= rect.x + rect.width &&
+      point.y >= rect.y &&
+      point.y <= rect.y + rect.height
+    );
+  }
+
+  function handleCanvasTap(event) {
+    if (!state.mobileActive) {
+      return;
+    }
+
+    const point = worldPointFromPointer(event);
+    if (!point) {
+      return;
+    }
+
+    if (state.mode === "reward") {
+      const hit = rewardCardLayout().find((rect) => pointInRect(point, rect));
+      if (!hit) {
+        return;
+      }
+      if (state.selectionIndex !== hit.idx) {
+        state.selectionIndex = hit.idx;
+        playUiSfx("select");
+      } else {
+        claimReward();
+      }
+      return;
+    }
+
+    if (state.mode === "shop") {
+      const hit = shopCardLayout().find((rect) => pointInRect(point, rect));
+      if (!hit) {
+        return;
+      }
+      if (state.selectionIndex !== hit.idx) {
+        state.selectionIndex = hit.idx;
+        playUiSfx("select");
+      } else if (!state.shopStock[hit.idx]?.sold) {
+        buyShopItem();
+      } else {
+        playUiSfx("error");
+      }
+    }
+  }
+
   function drawEncounter() {
     if (!state.encounter || !state.run) {
       return;
@@ -2216,14 +2643,16 @@
 
     const encounter = state.encounter;
     const enemy = encounter.enemy;
-    const portraitShift = state.viewport?.portraitZoomed ? 72 : 0;
+    const portraitShift = state.viewport?.portraitZoomed ? 116 : 0;
 
     ctx.textAlign = "center";
     ctx.fillStyle = enemy.color;
-    setFont(53, 700, true);
-    ctx.globalAlpha = 0.16;
-    ctx.fillText(enemy.name, WIDTH * 0.5, 136 + portraitShift);
-    ctx.globalAlpha = 1;
+    if (!state.viewport?.portraitZoomed) {
+      setFont(53, 700, true);
+      ctx.globalAlpha = 0.16;
+      ctx.fillText(enemy.name, WIDTH * 0.5, 136 + portraitShift);
+      ctx.globalAlpha = 1;
+    }
     setFont(36, 700, true);
     ctx.fillText(enemy.name, WIDTH * 0.5, 132 + portraitShift);
 
@@ -2257,14 +2686,12 @@
 
     if (state.mode === "playing") {
       if (state.mobileActive) {
-        ctx.textAlign = "center";
-        setFont(14, 600, false);
-        ctx.fillStyle = "#9cb9d4";
-        ctx.fillText(
-          "Tap buttons below. Left / Right picks items.",
-          WIDTH * 0.5,
-          state.viewport?.portraitZoomed ? 674 : 698
-        );
+        if (!state.viewport?.portraitZoomed) {
+          ctx.textAlign = "center";
+          setFont(14, 600, false);
+          ctx.fillStyle = "#9cb9d4";
+          ctx.fillText("Tap buttons below. Left / Right picks items.", WIDTH * 0.5, 698);
+        }
       } else {
         setFont(17, 700, false);
         const canDoubleNow = canPlayerAct() && encounter.playerHand.length === 2 && !encounter.doubleDown;
@@ -2405,7 +2832,7 @@
       ctx.fillStyle = "#9ec4e2";
       setFont(14, 600, false);
       const passiveText = fitText(`Passives: ${passiveLine}`, hud.passiveMaxWidth);
-      ctx.fillText(passiveText, hud.left + 2, hud.portrait ? 144 : 94);
+      ctx.fillText(passiveText, hud.left + 2, hud.portrait ? 136 : 94);
     }
 
     const relicEntries = Object.entries(run.player.relics).slice(0, 5);
@@ -2415,7 +2842,7 @@
       setFont(14, 600, false);
       if (hud.portrait) {
         const relicTotal = Object.values(run.player.relics).reduce((sum, value) => sum + nonNegInt(value, 0), 0);
-        ctx.fillText(`Relics: ${relicTotal}`, hud.right - 2, 144);
+        ctx.fillText(`Relics: ${relicTotal}`, hud.right - 2, 136);
       } else {
         const lines = relicEntries.map(([id, count]) => {
           const relic = RELIC_BY_ID.get(id);
@@ -2454,7 +2881,9 @@
     ctx.fillStyle = "#bdd6ec";
     setFont(18, 600, false);
     ctx.fillText(
-      state.mobileActive ? "Use Left / Right and Claim on the control bar" : "Arrow keys to select, Enter or Space to claim",
+      state.mobileActive
+        ? "Tap a relic card to select (tap again to claim)"
+        : "Arrow keys to select, Enter or Space to claim",
       WIDTH * 0.5,
       156
     );
@@ -2462,14 +2891,13 @@
     setFont(15, 600, false);
     ctx.fillText("All relics are passive and auto-apply.", WIDTH * 0.5, 178);
 
-    const cardWidth = 322;
-    const cardHeight = 238;
-    const gap = 28;
-    const totalW = state.rewardOptions.length * cardWidth + (state.rewardOptions.length - 1) * gap;
-    let x = WIDTH * 0.5 - totalW * 0.5;
-
-    state.rewardOptions.forEach((relic, idx) => {
-      const y = 210;
+    rewardCardLayout().forEach((rect) => {
+      const relic = state.rewardOptions[rect.idx];
+      const idx = rect.idx;
+      const x = rect.x;
+      const y = rect.y;
+      const cardWidth = rect.width;
+      const cardHeight = rect.height;
       const selected = idx === state.selectionIndex;
 
       roundRect(x, y, cardWidth, cardHeight, 18);
@@ -2498,8 +2926,6 @@
       ctx.fillStyle = "#d0e4f5";
       setFont(18, 600, false);
       wrapText(passiveDescription(relic.description), x + 30, y + 108, cardWidth - 60, 24, "center");
-
-      x += cardWidth + gap;
     });
   }
 
@@ -2533,7 +2959,9 @@
     ctx.fillStyle = "#c4d9ec";
     setFont(18, 600, false);
     ctx.fillText(
-      state.mobileActive ? "Use Left / Right, Buy, and Continue on control bar" : "Arrow keys to select, Space to buy, Enter to continue",
+      state.mobileActive
+        ? "Tap an item card to select (tap again to buy)"
+        : "Arrow keys to select, Space to buy, Enter to continue",
       WIDTH * 0.5,
       154
     );
@@ -2541,14 +2969,13 @@
     setFont(15, 600, false);
     ctx.fillText("Relics are passive. Buy once to activate immediately.", WIDTH * 0.5, 176);
 
-    const cardWidth = 322;
-    const cardHeight = 248;
-    const gap = 28;
-    const totalW = state.shopStock.length * cardWidth + (state.shopStock.length - 1) * gap;
-    let x = WIDTH * 0.5 - totalW * 0.5;
-
-    state.shopStock.forEach((item, idx) => {
-      const y = 206;
+    shopCardLayout().forEach((rect) => {
+      const idx = rect.idx;
+      const item = state.shopStock[idx];
+      const x = rect.x;
+      const y = rect.y;
+      const cardWidth = rect.width;
+      const cardHeight = rect.height;
       const selected = idx === state.selectionIndex;
 
       roundRect(x, y, cardWidth, cardHeight, 18);
@@ -2578,8 +3005,6 @@
       ctx.fillStyle = item.sold ? "#9ca5af" : "#ffd58f";
       setFont(23, 700, false);
       ctx.fillText(item.sold ? "SOLD" : `${item.cost} chips`, x + cardWidth * 0.5, y + cardHeight - 42);
-
-      x += cardWidth + gap;
     });
   }
 
@@ -2687,7 +3112,17 @@
     const pulse = 0.5 + Math.sin(state.worldTime * 4.6) * 0.5;
     ctx.fillStyle = `rgba(248, 212, 125, ${0.5 + pulse * 0.5})`;
     setFont(28, 700, true);
-    ctx.fillText(resumeReady ? "Press Enter for a new run, or R to resume" : "Press Enter to begin", WIDTH * 0.5, 642);
+    ctx.fillText(
+      state.mobileActive
+        ? resumeReady
+          ? "Tap Resume or New Run"
+          : "Tap New Run to begin"
+        : resumeReady
+          ? "Press Enter for a new run, or R to resume"
+          : "Press Enter to begin",
+      WIDTH * 0.5,
+      642
+    );
   }
 
   function wrapText(text, x, y, maxWidth, lineHeight, align) {
@@ -2755,7 +3190,7 @@
 
     if (state.announcementTimer > 0 && state.announcement) {
       const alpha = Math.max(0, Math.min(1, state.announcementTimer / 1.2));
-      const bannerY = state.viewport?.portraitZoomed ? 158 : 90;
+      const bannerY = state.viewport?.portraitZoomed ? 154 : 90;
       roundRect(WIDTH * 0.5 - 250, bannerY, 500, 36, 12);
       ctx.fillStyle = `rgba(9, 17, 27, ${0.65 * alpha})`;
       ctx.fill();
@@ -2811,9 +3246,17 @@
     } else if (state.mode === "shop") {
       drawShopScreen();
     } else if (state.mode === "gameover") {
-      drawEndOverlay("Run Lost", "The House keeps your soul this time.", "Press Enter to run it back");
+      drawEndOverlay(
+        "Run Lost",
+        "The House keeps your soul this time.",
+        state.mobileActive ? "Tap New Run below to run it back" : "Press Enter to run it back"
+      );
     } else if (state.mode === "victory") {
-      drawEndOverlay("House Broken", "You shattered the final dealer.", "Press Enter for another run");
+      drawEndOverlay(
+        "House Broken",
+        "You shattered the final dealer.",
+        state.mobileActive ? "Tap New Run below for another run" : "Press Enter for another run"
+      );
     }
 
     drawEffects();
@@ -2944,7 +3387,7 @@
     const viewportHeight = Math.floor(
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
-    const reservedHeight = state.mobileActive && mobileControls ? mobileControls.offsetHeight + 12 : 0;
+    const reservedHeight = state.mobileActive && mobileControls ? mobileControls.offsetHeight + 26 : 0;
     const availableHeight = Math.max(220, viewportHeight - reservedHeight);
     const availableWidth = Math.max(320, viewportWidth);
     const portraitZoomed = state.mobilePortrait && state.mode !== "menu";
@@ -3012,22 +3455,35 @@
       }
       button.addEventListener("pointerdown", (event) => {
         event.preventDefault();
+        unlockAudio();
         handleMobileAction(action);
       });
     });
   }
 
+  canvas.addEventListener("pointerdown", (event) => {
+    unlockAudio();
+    handleCanvasTap(event);
+  });
+
+  state.audio.enabled = loadAudioEnabled();
   state.profile = loadProfile();
   state.savedRunSnapshot = loadSavedRunSnapshot();
 
   window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("pointerdown", unlockAudio, { passive: true });
   window.addEventListener("resize", resizeCanvas);
   window.addEventListener("orientationchange", resizeCanvas);
   document.addEventListener("fullscreenchange", resizeCanvas);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
+      if (state.audio.context && state.audio.context.state === "running") {
+        state.audio.context.suspend().catch(() => {});
+      }
       saveRunSnapshot();
       saveProfile();
+    } else if (state.audio.context && state.audio.enabled) {
+      state.audio.context.resume().catch(() => {});
     }
   });
   window.addEventListener("beforeunload", () => {
