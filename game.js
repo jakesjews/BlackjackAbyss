@@ -35,11 +35,23 @@
     speed: 3 + Math.random() * 12,
     alpha: 0.05 + Math.random() * 0.11,
   }));
+  const MENU_ART_SRC = "public/images/splash_art.png";
+  const menuArtImage = new window.Image();
+  menuArtImage.decoding = "async";
+  menuArtImage.src = MENU_ART_SRC;
   const STORAGE_KEYS = {
     profile: "blackjack-abyss.profile.v1",
     run: "blackjack-abyss.run.v1",
+    audioEnabled: "blackjack-abyss.audio-enabled.v1",
   };
   const MAX_RUN_HISTORY = 24;
+  const MUSIC_STEP_SECONDS = 0.235;
+  const MUSIC_CHORDS = [
+    [0, 3, 7],
+    [2, 5, 9],
+    [3, 7, 10],
+    [5, 8, 12],
+  ];
 
   function defaultPlayerStats() {
     return {
@@ -109,6 +121,21 @@
     } catch {
       // Ignore storage failures and continue gameplay.
     }
+  }
+
+  function loadAudioEnabled() {
+    const raw = safeGetStorage(STORAGE_KEYS.audioEnabled);
+    if (raw === "0" || raw === "false") {
+      return false;
+    }
+    if (raw === "1" || raw === "true") {
+      return true;
+    }
+    return true;
+  }
+
+  function saveAudioEnabled(enabled) {
+    safeSetStorage(STORAGE_KEYS.audioEnabled, enabled ? "1" : "0");
   }
 
   const RELICS = [
@@ -380,9 +407,23 @@
     announcement: "",
     announcementTimer: 0,
     announcementDuration: 0,
+    audio: {
+      enabled: loadAudioEnabled(),
+      started: false,
+      context: null,
+      masterGain: null,
+      musicGain: null,
+      sfxGain: null,
+      stepTimer: MUSIC_STEP_SECONDS,
+      stepIndex: 0,
+      lastMusicMode: "menu",
+    },
     rewardUi: null,
     rewardTouch: null,
     rewardDragOffset: 0,
+    shopUi: null,
+    shopTouch: null,
+    shopDragOffset: 0,
     worldTime: 0,
     viewport: {
       width: WIDTH,
@@ -730,6 +771,8 @@
     }
     state.savedRunSnapshot = snapshot;
     updateProfileBest(run);
+    unlockAudio();
+    playUiSfx("confirm");
     resizeCanvas();
     return true;
   }
@@ -973,6 +1016,268 @@
     state.announcementDuration = safeDuration;
   }
 
+  function semitoneToFreq(base, semitoneOffset) {
+    return base * 2 ** (semitoneOffset / 12);
+  }
+
+  function getAudioContextCtor() {
+    return window.AudioContext || window.webkitAudioContext || null;
+  }
+
+  function ensureAudioGraph() {
+    if (state.audio.context) {
+      return state.audio.context;
+    }
+
+    const Ctor = getAudioContextCtor();
+    if (!Ctor) {
+      return null;
+    }
+
+    const context = new Ctor();
+    const masterGain = context.createGain();
+    const musicGain = context.createGain();
+    const sfxGain = context.createGain();
+
+    masterGain.gain.value = 0;
+    musicGain.gain.value = 0.19;
+    sfxGain.gain.value = 0.5;
+
+    musicGain.connect(masterGain);
+    sfxGain.connect(masterGain);
+    masterGain.connect(context.destination);
+
+    state.audio.context = context;
+    state.audio.masterGain = masterGain;
+    state.audio.musicGain = musicGain;
+    state.audio.sfxGain = sfxGain;
+    state.audio.stepTimer = MUSIC_STEP_SECONDS;
+    state.audio.stepIndex = 0;
+    return context;
+  }
+
+  function syncAudioEnabled() {
+    if (!state.audio.context || !state.audio.masterGain) {
+      return;
+    }
+    const target = state.audio.enabled ? 0.86 : 0;
+    state.audio.masterGain.gain.setTargetAtTime(target, state.audio.context.currentTime, 0.08);
+  }
+
+  function unlockAudio() {
+    const context = ensureAudioGraph();
+    if (!context) {
+      return;
+    }
+    state.audio.started = true;
+    syncAudioEnabled();
+    if (context.state === "suspended" && state.audio.enabled) {
+      context.resume().catch(() => {});
+    }
+  }
+
+  function setAudioEnabled(enabled) {
+    state.audio.enabled = Boolean(enabled);
+    saveAudioEnabled(state.audio.enabled);
+    if (state.audio.enabled) {
+      unlockAudio();
+    }
+    syncAudioEnabled();
+    const line = state.audio.enabled ? "Sound enabled." : "Sound muted.";
+    if (state.run) {
+      addLog(line);
+    } else {
+      setAnnouncement(line, 1.1);
+    }
+  }
+
+  function toggleAudio() {
+    setAudioEnabled(!state.audio.enabled);
+  }
+
+  function canPlayAudio() {
+    return (
+      state.audio.enabled &&
+      state.audio.started &&
+      Boolean(state.audio.context) &&
+      state.audio.context.state === "running"
+    );
+  }
+
+  function playTone(freq, duration, opts = {}) {
+    if (!canPlayAudio()) {
+      return;
+    }
+    const context = state.audio.context;
+    const bus = opts.bus === "music" ? state.audio.musicGain : state.audio.sfxGain;
+    if (!context || !bus) {
+      return;
+    }
+
+    const when = Math.max(context.currentTime, Number(opts.when) || context.currentTime);
+    const attack = Math.max(0.001, Number(opts.attack) || 0.002);
+    const release = Math.max(0.012, Number(opts.release) || 0.09);
+    const gainLevel = Math.max(0.001, Number(opts.gain) || 0.08);
+    const sustainLevel = Math.max(0, Math.min(gainLevel, Number(opts.sustainGain) || gainLevel * 0.72));
+
+    const osc = context.createOscillator();
+    const gain = context.createGain();
+    osc.type = opts.type || "triangle";
+    osc.frequency.setValueAtTime(Math.max(20, freq), when);
+    if (Number.isFinite(opts.detune)) {
+      osc.detune.setValueAtTime(opts.detune, when);
+    }
+
+    gain.gain.setValueAtTime(0.0001, when);
+    gain.gain.linearRampToValueAtTime(gainLevel, when + attack);
+    gain.gain.linearRampToValueAtTime(sustainLevel, when + Math.max(attack + 0.01, duration * 0.55));
+    gain.gain.exponentialRampToValueAtTime(0.0001, when + duration + release);
+
+    osc.connect(gain);
+    gain.connect(bus);
+
+    osc.start(when);
+    osc.stop(when + duration + release + 0.01);
+  }
+
+  function playImpactSfx(amount, target) {
+    const hit = Math.max(1, Number(amount) || 1);
+    const base = target === "enemy" ? 168 : 110;
+    const length = Math.min(0.28, 0.09 + hit * 0.009);
+    playTone(base, length, { type: "triangle", gain: Math.min(0.25, 0.08 + hit * 0.01), release: 0.18 });
+    playTone(base * 1.62, Math.max(0.05, length * 0.7), {
+      type: "square",
+      gain: Math.min(0.14, 0.035 + hit * 0.006),
+      release: 0.08,
+      detune: target === "enemy" ? 6 : -9,
+    });
+  }
+
+  function playDealSfx(target) {
+    const base = target === "player" ? 590 : 470;
+    playTone(base, 0.05, { type: "square", gain: 0.04, release: 0.03 });
+  }
+
+  function playUiSfx(kind) {
+    if (kind === "select") {
+      playTone(820, 0.045, { type: "sine", gain: 0.034, release: 0.025 });
+      return;
+    }
+    if (kind === "confirm") {
+      const now = state.audio.context?.currentTime || 0;
+      playTone(600, 0.06, { type: "triangle", gain: 0.06, release: 0.04 });
+      playTone(900, 0.09, { type: "sine", gain: 0.05, release: 0.06, when: now + 0.045 });
+      return;
+    }
+    if (kind === "error") {
+      playTone(230, 0.09, { type: "square", gain: 0.06, release: 0.08 });
+      return;
+    }
+    if (kind === "coin") {
+      const now = state.audio.context?.currentTime || 0;
+      playTone(760, 0.06, { type: "triangle", gain: 0.06, release: 0.04, when: now });
+      playTone(1180, 0.08, { type: "sine", gain: 0.055, release: 0.06, when: now + 0.05 });
+    }
+  }
+
+  function playActionSfx(action) {
+    if (action === "hit") {
+      playTone(510, 0.05, { type: "square", gain: 0.05, release: 0.04 });
+      return;
+    }
+    if (action === "stand") {
+      playTone(360, 0.08, { type: "triangle", gain: 0.055, release: 0.08 });
+      return;
+    }
+    if (action === "double") {
+      const now = state.audio.context?.currentTime || 0;
+      playTone(460, 0.09, { type: "square", gain: 0.08, release: 0.08, when: now });
+      playTone(690, 0.12, { type: "triangle", gain: 0.07, release: 0.1, when: now + 0.06 });
+    }
+  }
+
+  function playOutcomeSfx(outcome, outgoing, incoming) {
+    if (outcome === "blackjack") {
+      const now = state.audio.context?.currentTime || 0;
+      playTone(440, 0.12, { type: "triangle", gain: 0.085, release: 0.1, when: now });
+      playTone(660, 0.14, { type: "triangle", gain: 0.075, release: 0.12, when: now + 0.05 });
+      playTone(990, 0.2, { type: "sine", gain: 0.07, release: 0.16, when: now + 0.1 });
+      return;
+    }
+
+    if (outgoing > 0) {
+      playImpactSfx(outgoing, "enemy");
+    }
+    if (incoming > 0) {
+      playImpactSfx(incoming, "player");
+    }
+
+    if (outcome === "push") {
+      playTone(420, 0.06, { type: "sine", gain: 0.03, release: 0.04 });
+    }
+  }
+
+  function updateMusic(dt) {
+    if (!canPlayAudio()) {
+      return;
+    }
+
+    const context = state.audio.context;
+    if (!context || !state.audio.musicGain) {
+      return;
+    }
+    const calmMode = state.mode === "menu";
+    const tenseMode = state.mode === "playing";
+    const targetMusicGain = calmMode ? 0.12 : tenseMode ? 0.2 : 0.15;
+    state.audio.musicGain.gain.setTargetAtTime(targetMusicGain, context.currentTime, 0.35);
+
+    if (state.audio.lastMusicMode !== state.mode) {
+      state.audio.lastMusicMode = state.mode;
+      state.audio.stepTimer = Math.min(state.audio.stepTimer, MUSIC_STEP_SECONDS * 0.5);
+    }
+
+    state.audio.stepTimer -= dt;
+    while (state.audio.stepTimer <= 0) {
+      state.audio.stepTimer += MUSIC_STEP_SECONDS;
+
+      const step = state.audio.stepIndex++;
+      const bar = Math.floor(step / 16);
+      const beat = step % 16;
+      const chord = MUSIC_CHORDS[bar % MUSIC_CHORDS.length];
+      const base = 116;
+      const bass = chord[0] - 12;
+
+      if (beat % 4 === 0) {
+        playTone(semitoneToFreq(base, bass), 0.16, {
+          type: "triangle",
+          gain: tenseMode ? 0.085 : 0.055,
+          release: 0.1,
+          bus: "music",
+        });
+      }
+
+      if (beat % 2 === 0) {
+        const arp = chord[(Math.floor(beat / 2) + bar) % chord.length] + 12;
+        playTone(semitoneToFreq(base, arp), 0.12, {
+          type: "sine",
+          gain: tenseMode ? 0.05 : 0.035,
+          release: 0.09,
+          bus: "music",
+          detune: beat % 4 === 0 ? 3 : -2,
+        });
+      }
+
+      if (tenseMode && beat % 4 === 2) {
+        playTone(semitoneToFreq(base, chord[2] + 19), 0.07, {
+          type: "square",
+          gain: 0.023,
+          release: 0.05,
+          bus: "music",
+        });
+      }
+    }
+  }
+
   function spawnFloatText(text, x, y, color) {
     state.floatingTexts.push({ text, x, y, color, life: 1.2, maxLife: 1.2, vy: 24 });
   }
@@ -1137,6 +1442,7 @@
       maxLife: 0.28,
     });
     spawnSparkBurst(pos.x + CARD_W * 0.5, pos.y + CARD_H * 0.5, target === "player" ? "#76e5ff" : "#ffbb84", 5, 88);
+    playDealSfx(target);
 
     return hand[hand.length - 1];
   }
@@ -1217,6 +1523,8 @@
   }
 
   function startRun() {
+    unlockAudio();
+    playUiSfx("confirm");
     if (state.profile) {
       state.profile.totals.runsStarted += 1;
       saveProfile();
@@ -1265,6 +1573,7 @@
       return;
     }
 
+    playActionSfx("hit");
     const encounter = state.encounter;
     encounter.lastPlayerAction = "hit";
     dealCard(encounter, "player");
@@ -1284,6 +1593,7 @@
     if (!canPlayerAct()) {
       return;
     }
+    playActionSfx("stand");
     state.encounter.lastPlayerAction = "stand";
     resolveDealerThenShowdown(false);
   }
@@ -1295,9 +1605,11 @@
 
     const encounter = state.encounter;
     if (encounter.doubleDown || encounter.playerHand.length !== 2) {
+      playUiSfx("error");
       return;
     }
 
+    playActionSfx("double");
     encounter.doubleDown = true;
     encounter.lastPlayerAction = "double";
     dealCard(encounter, "player");
@@ -1429,6 +1741,8 @@
       incoming = Math.max(1, incoming - run.player.stats.block);
     }
 
+    playOutcomeSfx(outcome, outgoing, incoming);
+
     if (outgoing > 0) {
       enemy.hp = Math.max(0, enemy.hp - outgoing);
       run.player.totalDamageDealt += outgoing;
@@ -1520,6 +1834,7 @@
     spawnSparkBurst(WIDTH * 0.5, 96, "#ffd687", 34, 280);
     triggerScreenShake(7, 0.2);
     triggerFlash("#ffd687", 0.09, 0.2);
+    playUiSfx("coin");
     addLog(`${enemy.name} defeated. +${payout} chips.`);
 
     encounter.phase = "done";
@@ -1623,6 +1938,7 @@
 
     const relic = state.rewardOptions[state.selectionIndex] || state.rewardOptions[0];
     applyRelic(relic);
+    playUiSfx("confirm");
     addLog(`Relic claimed: ${relic.name}.`);
     addLog(passiveDescription(relic.description));
 
@@ -1639,16 +1955,19 @@
     const run = state.run;
     const item = state.shopStock[state.selectionIndex];
     if (!item || item.sold) {
+      playUiSfx("error");
       return;
     }
 
     if (run.player.gold < item.cost) {
+      playUiSfx("error");
       addLog("Not enough chips.");
       setAnnouncement("Need more chips.", 1.2);
       saveRunSnapshot();
       return;
     }
 
+    playUiSfx("coin");
     gainChips(-item.cost);
     spawnFloatText(`-${item.cost}`, WIDTH * 0.5, 646, "#ffd28a");
 
@@ -1673,12 +1992,16 @@
     if (state.mode !== "shop") {
       return;
     }
+    playUiSfx("confirm");
     beginEncounter();
   }
 
   function moveSelection(delta, length) {
     if (!length) {
       return;
+    }
+    if (delta !== 0) {
+      playUiSfx("select");
     }
     state.selectionIndex = (state.selectionIndex + delta + length) % length;
   }
@@ -1857,6 +2180,7 @@
       document.body.classList.remove("mobile-ui-active");
       document.body.classList.remove("mobile-portrait-ui");
       document.body.classList.remove("compact-controls");
+      document.body.classList.remove("menu-screen");
       return;
     }
 
@@ -1873,6 +2197,7 @@
     document.body.classList.toggle("mobile-ui-active", state.mobileActive);
     document.body.classList.toggle("mobile-portrait-ui", state.mobilePortrait);
     document.body.classList.toggle("compact-controls", state.compactControls);
+    document.body.classList.toggle("menu-screen", state.mode === "menu");
     mobileControls.classList.remove("reward-claim-only");
 
     Object.values(mobileButtons).forEach((button) => {
@@ -1925,9 +2250,11 @@
     }
 
     if (state.mode === "shop") {
-      setMobileButton(mobileButtons.left, "Prev", state.shopStock.length > 1, true);
-      setMobileButton(mobileButtons.right, "Next", state.shopStock.length > 1, true);
-      setMobileButton(mobileButtons.double, "Buy", state.shopStock.length > 0, true);
+      const selectedItem = state.shopStock[state.selectionIndex];
+      const canBuy = Boolean(selectedItem && !selectedItem.sold);
+      setMobileButton(mobileButtons.left, "Prev", false, false);
+      setMobileButton(mobileButtons.right, "Next", false, false);
+      setMobileButton(mobileButtons.double, "Buy", canBuy, true);
       setMobileButton(mobileButtons.confirm, "Continue", true, true);
       setMobileButton(mobileButtons.hit, "Hit", false, false);
       setMobileButton(mobileButtons.stand, "Stand", false, false);
@@ -1945,6 +2272,7 @@
   }
 
   function handleMobileAction(action) {
+    unlockAudio();
     if (action === "left") {
       if (state.mode === "menu") {
         if (hasSavedRun() && resumeSavedRun()) {
@@ -2063,27 +2391,75 @@
     return false;
   }
 
+  function handleShopPointerTap(worldX, worldY) {
+    if (state.mode !== "shop" || !state.shopUi || !state.shopStock.length) {
+      return false;
+    }
+
+    if (state.shopUi.leftArrow && pointInCircle(worldX, worldY, state.shopUi.leftArrow)) {
+      moveSelection(-1, state.shopStock.length);
+      state.shopDragOffset = rewardCarouselLayout().spacing * 0.24;
+      return true;
+    }
+
+    if (state.shopUi.rightArrow && pointInCircle(worldX, worldY, state.shopUi.rightArrow)) {
+      moveSelection(1, state.shopStock.length);
+      state.shopDragOffset = -rewardCarouselLayout().spacing * 0.24;
+      return true;
+    }
+
+    const cards = [...state.shopUi.cards].sort((a, b) => Number(b.selected) - Number(a.selected));
+    for (const card of cards) {
+      if (!pointInRect(worldX, worldY, card)) {
+        continue;
+      }
+      if (!card.selected) {
+        const shift = carouselDelta(card.index, state.selectionIndex, state.shopStock.length);
+        moveSelection(shift, state.shopStock.length);
+        state.shopDragOffset = -Math.sign(shift || 0) * rewardCarouselLayout().spacing * 0.18;
+      }
+      return true;
+    }
+
+    return false;
+  }
+
   function onCanvasPointerDown(event) {
-    if (state.mode !== "reward") {
+    unlockAudio();
+    const carouselMode = state.mode === "reward" || state.mode === "shop" ? state.mode : null;
+    if (!carouselMode) {
       state.rewardTouch = null;
+      state.shopTouch = null;
       return;
     }
     const point = canvasPointToWorld(event.clientX, event.clientY);
     if (!point) {
-      state.rewardTouch = null;
+      if (carouselMode === "reward") {
+        state.rewardTouch = null;
+      } else {
+        state.shopTouch = null;
+      }
       return;
     }
 
+    const startOffset = carouselMode === "reward" ? state.rewardDragOffset || 0 : state.shopDragOffset || 0;
     const swipeEnabled = state.compactControls && event.pointerType !== "mouse";
-    state.rewardTouch = {
+    const touchState = {
       pointerId: event.pointerId,
       startX: point.x,
       startY: point.y,
-      startOffset: state.rewardDragOffset || 0,
-      dragX: state.rewardDragOffset || 0,
+      startOffset,
+      dragX: startOffset,
       moved: false,
       swipeEnabled,
     };
+    if (carouselMode === "reward") {
+      state.rewardTouch = touchState;
+      state.shopTouch = null;
+    } else {
+      state.shopTouch = touchState;
+      state.rewardTouch = null;
+    }
 
     if (canvas.setPointerCapture) {
       canvas.setPointerCapture(event.pointerId);
@@ -2093,7 +2469,9 @@
   }
 
   function onCanvasPointerMove(event) {
-    if (!state.rewardTouch || state.rewardTouch.pointerId !== event.pointerId) {
+    const carouselMode = state.mode === "reward" || state.mode === "shop" ? state.mode : null;
+    const touch = carouselMode === "reward" ? state.rewardTouch : carouselMode === "shop" ? state.shopTouch : null;
+    if (!touch || touch.pointerId !== event.pointerId) {
       return;
     }
     const point = canvasPointToWorld(event.clientX, event.clientY);
@@ -2101,31 +2479,31 @@
       return;
     }
 
-    const dx = point.x - state.rewardTouch.startX;
-    const dy = point.y - state.rewardTouch.startY;
-    if (state.rewardTouch.swipeEnabled) {
+    const dx = point.x - touch.startX;
+    const dy = point.y - touch.startY;
+    if (touch.swipeEnabled) {
       const layout = rewardCarouselLayout();
       const maxDrag = layout.spacing * 1.35;
-      const dragged = state.rewardTouch.startOffset + dx;
-      state.rewardTouch.dragX = Math.max(-maxDrag, Math.min(maxDrag, dragged));
+      const dragged = touch.startOffset + dx;
+      touch.dragX = Math.max(-maxDrag, Math.min(maxDrag, dragged));
       event.preventDefault();
     }
     if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
-      state.rewardTouch.moved = true;
-    }
-
-    if (!state.rewardTouch.swipeEnabled || state.rewardOptions.length < 2) {
-      return;
+      touch.moved = true;
     }
   }
 
   function onCanvasPointerUp(event) {
-    if (!state.rewardTouch || state.rewardTouch.pointerId !== event.pointerId) {
+    const carouselMode = state.mode === "reward" || state.mode === "shop" ? state.mode : null;
+    const touch = carouselMode === "reward" ? state.rewardTouch : carouselMode === "shop" ? state.shopTouch : null;
+    if (!touch || touch.pointerId !== event.pointerId) {
       return;
     }
-
-    const touch = state.rewardTouch;
-    state.rewardTouch = null;
+    if (carouselMode === "reward") {
+      state.rewardTouch = null;
+    } else {
+      state.shopTouch = null;
+    }
 
     const point = canvasPointToWorld(event.clientX, event.clientY);
     if (!point) {
@@ -2134,22 +2512,35 @@
 
     const dx = Number.isFinite(touch.dragX) ? touch.dragX : touch.startOffset + (point.x - touch.startX);
     const dy = point.y - touch.startY;
-    const horizontalSwipe = touch.swipeEnabled && state.rewardOptions.length > 1 && Math.abs(dx) > Math.abs(dy) * 1.05;
+    const itemCount = carouselMode === "reward" ? state.rewardOptions.length : state.shopStock.length;
+    const horizontalSwipe = touch.swipeEnabled && itemCount > 1 && Math.abs(dx) > Math.abs(dy) * 1.05;
 
     if (horizontalSwipe) {
       const spacing = rewardCarouselLayout().spacing;
       const shift = Math.round(-dx / Math.max(1, spacing));
       if (shift !== 0) {
-        moveSelection(shift, state.rewardOptions.length);
+        moveSelection(shift, itemCount);
       }
-      state.rewardDragOffset = dx + shift * spacing;
+      if (carouselMode === "reward") {
+        state.rewardDragOffset = dx + shift * spacing;
+      } else {
+        state.shopDragOffset = dx + shift * spacing;
+      }
     } else {
-      state.rewardDragOffset = 0;
+      if (carouselMode === "reward") {
+        state.rewardDragOffset = 0;
+      } else {
+        state.shopDragOffset = 0;
+      }
     }
 
     const moved = touch.moved || Math.abs(dx) > 14;
     if (!moved) {
-      handleRewardPointerTap(point.x, point.y);
+      if (carouselMode === "reward") {
+        handleRewardPointerTap(point.x, point.y);
+      } else {
+        handleShopPointerTap(point.x, point.y);
+      }
     }
 
     if (canvas.releasePointerCapture) {
@@ -2165,6 +2556,10 @@
     if (state.rewardTouch && state.rewardTouch.pointerId === event.pointerId) {
       state.rewardTouch = null;
       state.rewardDragOffset = 0;
+    }
+    if (state.shopTouch && state.shopTouch.pointerId === event.pointerId) {
+      state.shopTouch = null;
+      state.shopDragOffset = 0;
     }
   }
 
@@ -2199,7 +2594,7 @@
     }
     if (raw.length === 1) {
       const low = raw.toLowerCase();
-      if (low === "a" || low === "b" || low === "r") {
+      if (low === "a" || low === "b" || low === "r" || low === "m") {
         return low;
       }
     }
@@ -2224,6 +2619,12 @@
     }
 
     event.preventDefault();
+    unlockAudio();
+
+    if (key === "m") {
+      toggleAudio();
+      return;
+    }
 
     if (state.mode === "menu") {
       if (key === "enter" || key === "space") {
@@ -2278,6 +2679,7 @@
 
   function update(dt) {
     state.worldTime += dt;
+    updateMusic(dt);
 
     for (const orb of AMBIENT_ORBS) {
       orb.y += orb.speed * dt;
@@ -2338,6 +2740,17 @@
       state.rewardDragOffset *= Math.max(0, 1 - dt * 10);
       if (Math.abs(state.rewardDragOffset) < 0.45) {
         state.rewardDragOffset = 0;
+      }
+    }
+
+    if (state.mode !== "shop") {
+      state.shopUi = null;
+      state.shopTouch = null;
+      state.shopDragOffset = 0;
+    } else if (!state.shopTouch) {
+      state.shopDragOffset *= Math.max(0, 1 - dt * 10);
+      if (Math.abs(state.shopDragOffset) < 0.45) {
+        state.shopDragOffset = 0;
       }
     }
 
@@ -2779,6 +3192,37 @@
     };
   }
 
+  function buildCarouselCards(items, selected, dragSteps, layout) {
+    return items
+      .map((payload, idx) => {
+        const delta = carouselDelta(idx, selected, items.length) + dragSteps;
+        const abs = Math.abs(delta);
+        if (abs > 2) {
+          return null;
+        }
+        const sideT = Math.max(0, Math.min(1, abs));
+        const farT = Math.max(0, Math.min(1, abs - 1));
+        const scale = abs <= 1 ? lerp(1, layout.sideScale, sideT) : lerp(layout.sideScale, layout.farScale, farT);
+        const w = Math.floor(layout.mainW * scale);
+        const h = Math.floor(layout.mainH * scale);
+        const x = Math.floor(layout.centerX + delta * layout.spacing - w * 0.5);
+        const yShift = abs <= 1 ? lerp(0, 26, sideT) : lerp(26, 38, farT);
+        const y = Math.floor(layout.centerY - h * 0.5 + yShift);
+        return {
+          idx,
+          payload,
+          delta,
+          selected: idx === selected,
+          x,
+          y,
+          w,
+          h,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  }
+
   function drawRewardCarouselArrow(x, y, radius, symbol, enabled) {
     ctx.save();
     ctx.beginPath();
@@ -2841,15 +3285,9 @@
     setFont(40, 700, true);
     ctx.fillText("Relic Draft", WIDTH * 0.5, layout.panelY + 48);
 
-    ctx.fillStyle = "#bdd6ec";
-    setFont(18, 600, false);
-    const hint = state.compactControls
-      ? "Swipe the carousel or tap cards/arrows. Claim below."
-      : "Arrow keys or click arrows to browse. Enter or Space to claim.";
-    wrapText(hint, layout.panelX + 52, layout.panelY + 82, layout.panelW - 104, 24, "center");
     ctx.fillStyle = "#97bddb";
     setFont(15, 600, false);
-    ctx.fillText("All relics are passive and auto-apply.", WIDTH * 0.5, layout.panelY + 124);
+    ctx.fillText("Relics are passive and activate immediately.", WIDTH * 0.5, layout.panelY + 90);
 
     roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
     ctx.fillStyle = "rgba(8, 18, 29, 0.76)";
@@ -2862,49 +3300,27 @@
     roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
     ctx.clip();
 
-    const renderCards = state.rewardOptions
-      .map((relic, idx) => {
-        const delta = carouselDelta(idx, selected, total) + dragSteps;
-        const abs = Math.abs(delta);
-        if (abs > 2) {
-          return null;
-        }
-        const selectedCard = idx === selected;
-        const sideT = Math.max(0, Math.min(1, abs));
-        const farT = Math.max(0, Math.min(1, abs - 1));
-        const scale = abs <= 1 ? lerp(1, layout.sideScale, sideT) : lerp(layout.sideScale, layout.farScale, farT);
-        const w = Math.floor(layout.mainW * scale);
-        const h = Math.floor(layout.mainH * scale);
-        const x = Math.floor(layout.centerX + delta * layout.spacing - w * 0.5);
-        const yShift = abs <= 1 ? lerp(0, 26, sideT) : lerp(26, 38, farT);
-        const y = Math.floor(layout.centerY - h * 0.5 + yShift);
-        const alpha = abs <= 1 ? lerp(1, 0.46, sideT) : lerp(0.46, 0.2, farT);
-        return {
-          idx,
-          relic,
-          delta,
-          selected: selectedCard,
-          x,
-          y,
-          w,
-          h,
-          alpha,
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+    const renderCards = buildCarouselCards(state.rewardOptions, selected, dragSteps, layout);
 
     renderCards.forEach((card) => {
+      const relic = card.payload;
       const radius = Math.max(12, Math.floor(18 * (card.w / layout.mainW)));
       ctx.save();
-      ctx.globalAlpha = card.alpha;
+      if (card.selected) {
+        ctx.shadowColor = "rgba(6, 12, 19, 0.84)";
+        ctx.shadowBlur = state.compactControls ? 38 : 34;
+        ctx.shadowOffsetY = 10;
+      }
       roundRect(card.x, card.y, card.w, card.h, radius);
       ctx.fillStyle = card.selected ? "rgba(24, 43, 62, 0.95)" : "rgba(17, 30, 44, 0.92)";
       ctx.fill();
 
-      ctx.strokeStyle = card.selected ? card.relic.color : "rgba(145, 186, 220, 0.35)";
+      ctx.strokeStyle = card.selected ? relic.color : "rgba(145, 186, 220, 0.35)";
       ctx.lineWidth = card.selected ? 3 : 1.2;
       ctx.stroke();
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
 
       if (card.selected) {
         const shimmerX = card.x - 70 + ((state.worldTime * 280) % (card.w + 140));
@@ -2915,31 +3331,16 @@
         ctx.fillStyle = shimmer;
         roundRect(card.x + 3, card.y + 3, card.w - 6, card.h - 6, Math.max(10, radius - 2));
         ctx.fill();
-      } else {
-        const fade = ctx.createLinearGradient(
-          card.delta < 0 ? card.x + card.w : card.x,
-          card.y,
-          card.delta < 0 ? card.x : card.x + card.w,
-          card.y
-        );
-        fade.addColorStop(0, "rgba(5, 11, 18, 0.06)");
-        fade.addColorStop(1, "rgba(5, 11, 18, 0.75)");
-        ctx.save();
-        roundRect(card.x + 2, card.y + 2, card.w - 4, card.h - 4, Math.max(10, radius - 3));
-        ctx.clip();
-        ctx.fillStyle = fade;
-        ctx.fillRect(card.x, card.y, card.w, card.h);
-        ctx.restore();
       }
 
-      ctx.fillStyle = card.relic.color;
+      ctx.fillStyle = relic.color;
       setFont(card.selected ? 33 : 24, 700, true);
-      ctx.fillText(card.relic.name, card.x + card.w * 0.5, card.y + (card.selected ? 60 : 48));
+      ctx.fillText(relic.name, card.x + card.w * 0.5, card.y + (card.selected ? 60 : 48));
 
       ctx.fillStyle = "#d0e4f5";
       if (card.selected) {
         setFont(18, 600, false);
-        wrapText(passiveDescription(card.relic.description), card.x + 34, card.y + 120, card.w - 68, 24, "center");
+        wrapText(passiveDescription(relic.description), card.x + 34, card.y + 120, card.w - 68, 24, "center");
       } else {
         setFont(15, 600, false);
         ctx.fillText("Tap to select", card.x + card.w * 0.5, card.y + card.h - 34);
@@ -2949,15 +3350,16 @@
     });
 
     const edgeFadeW = Math.min(120, layout.viewportW * 0.16);
+    const edgeFadeAlpha = state.compactControls ? 0.44 : 0.56;
     const leftFade = ctx.createLinearGradient(layout.viewportX, 0, layout.viewportX + edgeFadeW, 0);
-    leftFade.addColorStop(0, "rgba(8, 18, 29, 0.92)");
+    leftFade.addColorStop(0, `rgba(8, 18, 29, ${edgeFadeAlpha})`);
     leftFade.addColorStop(1, "rgba(8, 18, 29, 0)");
     ctx.fillStyle = leftFade;
     ctx.fillRect(layout.viewportX, layout.viewportY, edgeFadeW, layout.viewportH);
 
     const rightFade = ctx.createLinearGradient(layout.viewportX + layout.viewportW - edgeFadeW, 0, layout.viewportX + layout.viewportW, 0);
     rightFade.addColorStop(0, "rgba(8, 18, 29, 0)");
-    rightFade.addColorStop(1, "rgba(8, 18, 29, 0.92)");
+    rightFade.addColorStop(1, `rgba(8, 18, 29, ${edgeFadeAlpha})`);
     ctx.fillStyle = rightFade;
     ctx.fillRect(layout.viewportX + layout.viewportW - edgeFadeW, layout.viewportY, edgeFadeW, layout.viewportH);
     ctx.restore();
@@ -3012,70 +3414,151 @@
 
   function drawShopScreen() {
     if (state.mode !== "shop" || !state.shopStock.length) {
+      state.shopUi = null;
       return;
     }
 
-    ctx.fillStyle = "rgba(6, 11, 17, 0.75)";
+    const layout = rewardCarouselLayout();
+    const total = state.shopStock.length;
+    const selected = state.selectionIndex;
+    const dragPx =
+      state.mode === "shop" &&
+      state.shopTouch &&
+      state.shopTouch.swipeEnabled &&
+      Number.isFinite(state.shopTouch.dragX)
+        ? state.shopTouch.dragX
+        : state.shopDragOffset || 0;
+    const dragSteps = dragPx / layout.spacing;
+
+    ctx.fillStyle = "rgba(5, 10, 16, 0.72)";
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    roundRect(layout.panelX, layout.panelY, layout.panelW, layout.panelH, 26);
+    const panelFill = ctx.createLinearGradient(layout.panelX, layout.panelY, layout.panelX, layout.panelY + layout.panelH);
+    panelFill.addColorStop(0, "rgba(18, 33, 48, 0.97)");
+    panelFill.addColorStop(1, "rgba(11, 24, 36, 0.95)");
+    ctx.fillStyle = panelFill;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(168, 206, 234, 0.34)";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
 
     ctx.textAlign = "center";
     ctx.fillStyle = "#f2c587";
     setFont(40, 700, true);
-    ctx.fillText("Black Market", WIDTH * 0.5, 122);
+    ctx.fillText("Black Market", WIDTH * 0.5, layout.panelY + 48);
 
-    ctx.fillStyle = "#c4d9ec";
-    setFont(18, 600, false);
-    ctx.fillText(
-      state.compactControls
-        ? "Use Left / Right, Buy, and Continue on control bar"
-        : "Use Left / Right, Buy, and Continue below, or Arrow keys plus Space/Enter",
-      WIDTH * 0.5,
-      154
-    );
     ctx.fillStyle = "#97bddb";
     setFont(15, 600, false);
-    ctx.fillText("Relics are passive. Buy once to activate immediately.", WIDTH * 0.5, 176);
+    ctx.fillText("Buy once to activate immediately.", WIDTH * 0.5, layout.panelY + 90);
 
-    const cardWidth = 322;
-    const cardHeight = 248;
-    const gap = 28;
-    const totalW = state.shopStock.length * cardWidth + (state.shopStock.length - 1) * gap;
-    let x = WIDTH * 0.5 - totalW * 0.5;
+    roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
+    ctx.fillStyle = "rgba(8, 18, 29, 0.76)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(138, 182, 213, 0.25)";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
 
-    state.shopStock.forEach((item, idx) => {
-      const y = 206;
-      const selected = idx === state.selectionIndex;
+    ctx.save();
+    roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
+    ctx.clip();
 
-      roundRect(x, y, cardWidth, cardHeight, 18);
-      ctx.fillStyle = item.sold ? "rgba(34, 36, 40, 0.82)" : selected ? "rgba(35, 51, 60, 0.95)" : "rgba(20, 31, 38, 0.9)";
+    const renderCards = buildCarouselCards(state.shopStock, selected, dragSteps, layout);
+    renderCards.forEach((card) => {
+      const item = card.payload;
+      const radius = Math.max(12, Math.floor(18 * (card.w / layout.mainW)));
+      ctx.save();
+      if (card.selected) {
+        ctx.shadowColor = "rgba(6, 12, 19, 0.84)";
+        ctx.shadowBlur = state.compactControls ? 38 : 34;
+        ctx.shadowOffsetY = 10;
+      }
+      roundRect(card.x, card.y, card.w, card.h, radius);
+      ctx.fillStyle = item.sold ? "rgba(34, 36, 40, 0.92)" : card.selected ? "rgba(35, 51, 60, 0.95)" : "rgba(20, 31, 38, 0.9)";
       ctx.fill();
 
-      ctx.strokeStyle = item.sold ? "rgba(112, 120, 132, 0.35)" : selected ? "#ffd08f" : "rgba(152, 186, 208, 0.35)";
-      ctx.lineWidth = selected ? 3 : 1.2;
+      ctx.strokeStyle = item.sold ? "rgba(112, 120, 132, 0.35)" : card.selected ? "#ffd08f" : "rgba(152, 186, 208, 0.35)";
+      ctx.lineWidth = card.selected ? 3 : 1.2;
       ctx.stroke();
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
 
-      if (selected && !item.sold) {
+      if (card.selected && !item.sold) {
         const pulse = 0.4 + Math.sin(state.worldTime * 5.5) * 0.14;
         ctx.strokeStyle = `rgba(248, 211, 131, ${pulse})`;
         ctx.lineWidth = 1.2;
-        roundRect(x + 6, y + 6, cardWidth - 12, cardHeight - 12, 14);
+        roundRect(card.x + 6, card.y + 6, card.w - 12, card.h - 12, Math.max(10, radius - 4));
         ctx.stroke();
       }
 
       ctx.fillStyle = item.sold ? "#8f9aa7" : "#f4e1aa";
-      setFont(30, 700, true);
-      ctx.fillText(shopItemName(item), x + cardWidth * 0.5, y + 54);
+      setFont(card.selected ? 33 : 24, 700, true);
+      ctx.fillText(shopItemName(item), card.x + card.w * 0.5, card.y + (card.selected ? 60 : 48));
 
       ctx.fillStyle = item.sold ? "#78818d" : "#d4e6f4";
-      setFont(18, 600, false);
-      wrapText(shopItemDescription(item), x + 30, y + 104, cardWidth - 60, 24, "center");
+      if (card.selected) {
+        setFont(18, 600, false);
+        wrapText(shopItemDescription(item), card.x + 34, card.y + 118, card.w - 68, 24, "center");
+      } else {
+        setFont(15, 600, false);
+        ctx.fillText(item.sold ? "Sold out" : "Tap to select", card.x + card.w * 0.5, card.y + card.h - 62);
+      }
 
       ctx.fillStyle = item.sold ? "#9ca5af" : "#ffd58f";
-      setFont(23, 700, false);
-      ctx.fillText(item.sold ? "SOLD" : `${item.cost} chips`, x + cardWidth * 0.5, y + cardHeight - 42);
+      setFont(card.selected ? 24 : 20, 700, false);
+      ctx.fillText(item.sold ? "SOLD" : `${item.cost} chips`, card.x + card.w * 0.5, card.y + card.h - 28);
 
-      x += cardWidth + gap;
+      ctx.restore();
     });
+
+    const edgeFadeW = Math.min(120, layout.viewportW * 0.16);
+    const edgeFadeAlpha = state.compactControls ? 0.44 : 0.56;
+    const leftFade = ctx.createLinearGradient(layout.viewportX, 0, layout.viewportX + edgeFadeW, 0);
+    leftFade.addColorStop(0, `rgba(8, 18, 29, ${edgeFadeAlpha})`);
+    leftFade.addColorStop(1, "rgba(8, 18, 29, 0)");
+    ctx.fillStyle = leftFade;
+    ctx.fillRect(layout.viewportX, layout.viewportY, edgeFadeW, layout.viewportH);
+
+    const rightFade = ctx.createLinearGradient(layout.viewportX + layout.viewportW - edgeFadeW, 0, layout.viewportX + layout.viewportW, 0);
+    rightFade.addColorStop(0, "rgba(8, 18, 29, 0)");
+    rightFade.addColorStop(1, `rgba(8, 18, 29, ${edgeFadeAlpha})`);
+    ctx.fillStyle = rightFade;
+    ctx.fillRect(layout.viewportX + layout.viewportW - edgeFadeW, layout.viewportY, edgeFadeW, layout.viewportH);
+    ctx.restore();
+
+    const canScroll = state.shopStock.length > 1;
+    drawRewardCarouselArrow(layout.leftArrowX, layout.arrowY, layout.arrowRadius, "◀", canScroll);
+    drawRewardCarouselArrow(layout.rightArrowX, layout.arrowY, layout.arrowRadius, "▶", canScroll);
+
+    const indicatorY = layout.indicatorY;
+    const dotGap = 22;
+    const startDotX = layout.centerX - (Math.max(0, total - 1) * dotGap) * 0.5;
+    for (let i = 0; i < total; i += 1) {
+      const selectedDot = i === selected;
+      const radius = selectedDot ? 6 : 4;
+      ctx.beginPath();
+      ctx.arc(startDotX + i * dotGap, indicatorY, radius, 0, Math.PI * 2);
+      ctx.fillStyle = selectedDot ? "#f2cf91" : "rgba(156, 188, 215, 0.46)";
+      ctx.fill();
+    }
+
+    state.shopUi = {
+      cards: renderCards.map((card) => ({
+        index: card.idx,
+        selected: card.selected,
+        x: card.x,
+        y: card.y,
+        w: card.w,
+        h: card.h,
+      })),
+      leftArrow: canScroll
+        ? { x: layout.leftArrowX, y: layout.arrowY, r: layout.arrowRadius }
+        : null,
+      rightArrow: canScroll
+        ? { x: layout.rightArrowX, y: layout.arrowY, r: layout.arrowRadius }
+        : null,
+    };
   }
 
   function drawEndOverlay(title, subtitle, prompt) {
@@ -3122,68 +3605,134 @@
     ctx.fillText(prompt, WIDTH * 0.5, 530);
   }
 
-  function drawMenu() {
-    ctx.textAlign = "center";
-    const resumeReady = hasSavedRun();
-
-    const glow = ctx.createRadialGradient(WIDTH * 0.5, HEIGHT * 0.4, 30, WIDTH * 0.5, HEIGHT * 0.4, 320);
-    glow.addColorStop(0, "rgba(247, 184, 109, 0.28)");
-    glow.addColorStop(1, "rgba(247, 184, 109, 0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-    ctx.fillStyle = "#f3d193";
-    setFont(72, 700, true);
-    ctx.fillText("BLACKJACK ABYSS", WIDTH * 0.5, 212);
-
-    ctx.fillStyle = "#cae0f2";
-    setFont(24, 600, false);
-    ctx.fillText("Roguelike deck duels where each hand hits like combat.", WIDTH * 0.5, 262);
-
-    if (state.profile) {
-      const t = state.profile.totals;
-      ctx.fillStyle = "#9fc3dc";
-      setFont(17, 600, false);
-      ctx.fillText(`Lifetime: ${t.runsStarted} runs | ${t.runsWon} wins | ${t.enemiesDefeated} enemies`, WIDTH * 0.5, 292);
+  function drawImageCover(image, x, y, w, h, focusX = 0.5, focusY = 0.34) {
+    const imageW = Number(image?.naturalWidth);
+    const imageH = Number(image?.naturalHeight);
+    if (!Number.isFinite(imageW) || !Number.isFinite(imageH) || imageW <= 0 || imageH <= 0) {
+      return false;
     }
 
-    roundRect(WIDTH * 0.5 - 400, 316, 800, 268, 20);
-    ctx.fillStyle = "rgba(18, 33, 48, 0.9)";
-    ctx.fill();
+    const destAspect = w / h;
+    const sourceAspect = imageW / imageH;
+    let srcW = imageW;
+    let srcH = imageH;
+    if (sourceAspect > destAspect) {
+      srcW = imageH * destAspect;
+    } else {
+      srcH = imageW / destAspect;
+    }
 
-    ctx.strokeStyle = "rgba(172, 206, 229, 0.35)";
-    ctx.lineWidth = 1.5;
+    const maxX = Math.max(0, imageW - srcW);
+    const maxY = Math.max(0, imageH - srcH);
+    const srcX = clampNumber(maxX * focusX, 0, maxX, maxX * 0.5);
+    const srcY = clampNumber(maxY * focusY, 0, maxY, maxY * 0.5);
+    ctx.drawImage(image, srcX, srcY, srcW, srcH, x, y, w, h);
+    return true;
+  }
+
+  function drawMenu() {
+    const resumeReady = hasSavedRun();
+    const compact = state.compactControls;
+    const sideMargin = Math.max(88, Math.min(220, WIDTH * 0.17));
+    const art = compact
+      ? { x: 0, y: 0, w: WIDTH, h: HEIGHT, radius: 0 }
+      : { x: sideMargin, y: 0, w: WIDTH - sideMargin * 2, h: HEIGHT, radius: 24 };
+
+    const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+    bg.addColorStop(0, "#081420");
+    bg.addColorStop(1, "#040b12");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    let artDrawn = false;
+    ctx.save();
+    if (art.radius > 0) {
+      roundRect(art.x, art.y, art.w, art.h, art.radius);
+      ctx.clip();
+    }
+    artDrawn = drawImageCover(menuArtImage, art.x, art.y, art.w, art.h, 0.5, compact ? 0.3 : 0.34);
+    ctx.restore();
+
+    if (!artDrawn) {
+      const glow = ctx.createRadialGradient(WIDTH * 0.5, HEIGHT * 0.36, 24, WIDTH * 0.5, HEIGHT * 0.36, HEIGHT * 0.62);
+      glow.addColorStop(0, "rgba(247, 184, 109, 0.28)");
+      glow.addColorStop(1, "rgba(247, 184, 109, 0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    } else if (art.radius > 0) {
+      ctx.strokeStyle = "rgba(190, 223, 246, 0.4)";
+      ctx.lineWidth = 1.6;
+      roundRect(art.x, art.y, art.w, art.h, art.radius);
+      ctx.stroke();
+    }
+
+    ctx.save();
+    if (art.radius > 0) {
+      roundRect(art.x, art.y, art.w, art.h, art.radius);
+      ctx.clip();
+    }
+    const fadeTop = art.y + art.h * (compact ? 0.44 : 0.4);
+    const shadowFade = ctx.createLinearGradient(0, fadeTop, 0, art.y + art.h);
+    shadowFade.addColorStop(0, "rgba(4, 9, 15, 0)");
+    shadowFade.addColorStop(1, "rgba(4, 9, 15, 0.88)");
+    ctx.fillStyle = shadowFade;
+    ctx.fillRect(art.x, fadeTop, art.w, art.h - (fadeTop - art.y));
+    ctx.restore();
+
+    const panelW = Math.max(340, Math.min(compact ? WIDTH - 34 : 860, art.w - (compact ? 24 : 86)));
+    const panelPad = compact ? 22 : 30;
+    const subtitle = "Roguelike deck duels where each hand hits like combat.";
+    const prompt = resumeReady ? "Tap New Run below, or Resume to continue your save." : "Tap New Run below to begin your descent.";
+    const subtitleLineH = compact ? 24 : 28;
+    const promptLineH = compact ? 22 : 26;
+
+    setFont(compact ? 18 : 22, 600, false);
+    const subtitleLines = wrappedLines(subtitle, panelW - panelPad * 2);
+    setFont(compact ? 18 : 22, 700, false);
+    const promptLines = wrappedLines(prompt, panelW - panelPad * 2);
+
+    const profileLine = state.profile
+      ? `Lifetime: ${state.profile.totals.runsStarted} runs | ${state.profile.totals.runsWon} wins | ${state.profile.totals.enemiesDefeated} enemies`
+      : "";
+    const panelH = Math.max(
+      compact ? 196 : 208,
+      108 + subtitleLines.length * subtitleLineH + promptLines.length * promptLineH + (profileLine ? (compact ? 28 : 32) : 0)
+    );
+    const panelX = WIDTH * 0.5 - panelW * 0.5;
+    const safeBottom = compact ? 152 : 86;
+    const panelY = Math.max(HEIGHT * 0.5, HEIGHT - safeBottom - panelH);
+
+    roundRect(panelX, panelY, panelW, panelH, compact ? 20 : 22);
+    const panelFill = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    panelFill.addColorStop(0, "rgba(13, 27, 41, 0.78)");
+    panelFill.addColorStop(1, "rgba(8, 18, 29, 0.9)");
+    ctx.fillStyle = panelFill;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(178, 216, 245, 0.33)";
+    ctx.lineWidth = 1.4;
     ctx.stroke();
 
-    const controls = state.compactControls
-      ? [
-          "Tap New Run (or Resume) on the control bar below",
-          "Hit / Stand / Double buttons appear in combat",
-          "Swipe/tap relic carousel; Left / Right buttons pick shop cards",
-          "Relics are passive and activate instantly",
-        ]
-      : [
-          "Enter: Start new run / confirm",
-          resumeReady ? "R: Resume saved run" : "R: Resume saved run (none found)",
-          "A: Hit card",
-          "B: Stand hand",
-          "Space: Double down (one-card commit)",
-          "Left / Right: Pick relics and shop items",
-          "Buttons below show each shortcut for quick reference",
-          "Relics are passive: effects are always active once collected",
-          "F: Toggle fullscreen, Esc: leave fullscreen",
-        ];
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f3d193";
+    setFont(compact ? 45 : 72, 700, true);
+    ctx.fillText("BLACKJACK ABYSS", WIDTH * 0.5, panelY + (compact ? 58 : 72));
 
-    ctx.fillStyle = "#e2f0ff";
-    setFont(20, 600, false);
-    controls.forEach((line, idx) => {
-      ctx.fillText(line, WIDTH * 0.5, 362 + idx * (state.compactControls ? 36 : 30));
-    });
+    let cursorY = panelY + (compact ? 94 : 122);
+    ctx.fillStyle = "#d7e6f4";
+    setFont(compact ? 18 : 22, 600, false);
+    wrapText(subtitle, panelX + panelPad, cursorY, panelW - panelPad * 2, subtitleLineH, "center");
+    cursorY += subtitleLines.length * subtitleLineH + 10;
 
-    const pulse = 0.5 + Math.sin(state.worldTime * 4.6) * 0.5;
-    ctx.fillStyle = `rgba(248, 212, 125, ${0.5 + pulse * 0.5})`;
-    setFont(28, 700, true);
-    ctx.fillText(resumeReady ? "Press Enter for a new run, or R to resume" : "Press Enter to begin", WIDTH * 0.5, 642);
+    if (profileLine) {
+      ctx.fillStyle = "#a6c8e2";
+      setFont(compact ? 14 : 17, 600, false);
+      wrapText(profileLine, panelX + panelPad, cursorY, panelW - panelPad * 2, compact ? 20 : 22, "center");
+      cursorY += compact ? 24 : 28;
+    }
+
+    ctx.fillStyle = "#f2cf91";
+    setFont(compact ? 18 : 22, 700, false);
+    wrapText(prompt, panelX + panelPad, cursorY, panelW - panelPad * 2, promptLineH, "center");
   }
 
   function wrapText(text, x, y, maxWidth, lineHeight, align) {
@@ -3243,6 +3792,30 @@
     return `${out}…`;
   }
 
+  function announcementAnchor() {
+    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+    const leftBound = 24 + cropX;
+    const rightBound = WIDTH - 24 - cropX;
+    const centerX = (leftBound + rightBound) * 0.5;
+
+    if (state.encounter) {
+      const dealerBottom = handCardPosition("dealer", 0, 1).y + CARD_H;
+      const playerTop = handCardPosition("player", 0, 1).y;
+      const gapCenter = dealerBottom + (playerTop - dealerBottom) * 0.5;
+      const topPad = state.viewport?.portraitZoomed ? 170 : 140;
+      const bottomPad = state.viewport?.portraitZoomed ? HEIGHT - 170 : HEIGHT - 120;
+      return {
+        centerX,
+        centerY: clampNumber(gapCenter, topPad, bottomPad, gapCenter),
+      };
+    }
+
+    return {
+      centerX,
+      centerY: state.viewport?.portraitZoomed ? 220 : 150,
+    };
+  }
+
   function drawEffects() {
     for (const burst of state.cardBursts) {
       const t = burst.life / burst.maxLife;
@@ -3280,8 +3853,9 @@
       const fade = progress > 0.74 ? 1 - (progress - 0.74) / 0.26 : 1;
       const scale = progress < 0.24 ? 0.68 + easeOutBack(intro) * 0.54 : 1.12 - settle * 0.14;
       const alpha = Math.max(0, Math.min(1, (0.2 + intro * 0.8) * fade));
-      const centerX = WIDTH * 0.5;
-      const centerY = state.viewport?.portraitZoomed ? 182 : 124;
+      const anchor = announcementAnchor();
+      const centerX = anchor.centerX;
+      const centerY = anchor.centerY;
       const ringExpand = easeOutCubic(Math.min(1, progress / 0.45));
       const ringRadius = 72 + ringExpand * 210;
 
@@ -3521,8 +4095,10 @@
     const viewportHeight = Math.floor(
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
-    const reservedHeight = state.mobileActive && mobileControls ? mobileControls.offsetHeight + (state.compactControls ? 8 : 12) : 0;
-    const availableHeight = Math.max(140, viewportHeight - reservedHeight - (state.compactControls ? 6 : 0));
+    const menuScreen = state.mode === "menu";
+    const reservedHeight =
+      !menuScreen && state.mobileActive && mobileControls ? mobileControls.offsetHeight + (state.compactControls ? 8 : 12) : 0;
+    const availableHeight = Math.max(menuScreen ? viewportHeight : 140, viewportHeight - reservedHeight - (state.compactControls ? 6 : 0));
     const availableWidth = Math.max(280, viewportWidth);
     const portraitZoomed = state.mobilePortrait;
 
@@ -3610,6 +4186,13 @@
     if (document.hidden) {
       saveRunSnapshot();
       saveProfile();
+      if (state.audio.context && state.audio.context.state === "running") {
+        state.audio.context.suspend().catch(() => {});
+      }
+      return;
+    }
+    if (state.audio.enabled && state.audio.started && state.audio.context && state.audio.context.state === "suspended") {
+      state.audio.context.resume().catch(() => {});
     }
   });
   window.addEventListener("beforeunload", () => {
