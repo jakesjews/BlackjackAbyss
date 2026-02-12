@@ -6,6 +6,8 @@
   "scripts": {
     "start": "http-server . -p 4173 -c-1",
     "serve": "npm run start",
+    "vercel-build": "node scripts/vercel-build.js",
+    "build": "npm run vercel-build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
