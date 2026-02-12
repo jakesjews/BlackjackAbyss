@@ -41,6 +41,11 @@ body.compact-controls.mobile-ui-active {
   padding-bottom: calc(170px + env(safe-area-inset-bottom));
 }
 
+body.menu-screen.mobile-ui-active,
+body.menu-screen.compact-controls.mobile-ui-active {
+  padding: 0;
+}
+
 #game-shell {
   position: relative;
   overflow: hidden;
@@ -58,6 +63,10 @@ body.compact-controls.mobile-ui-active {
 
 body.mobile-ui-active #game-shell {
   margin-bottom: 10px;
+}
+
+body.menu-screen.mobile-ui-active #game-shell {
+  margin-bottom: 0;
 }
 
 #game-canvas {
@@ -221,6 +230,10 @@ body.compact-controls #mobile-controls.reward-claim-only button[data-mobile-acti
   body {
     align-items: start;
     padding-top: 8px;
+  }
+
+  body.menu-screen {
+    padding-top: 0;
   }
 
   #game-canvas {
