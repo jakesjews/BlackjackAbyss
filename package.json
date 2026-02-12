@@ -1,0 +1,21 @@
+{
+  "name": "codex",
+  "version": "1.0.0",
+  "description": "",
+  "main": "game.js",
+  "scripts": {
+    "start": "http-server . -p 4173 -c-1",
+    "serve": "npm run start",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "playwright": "^1.58.2"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}
