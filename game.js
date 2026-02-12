@@ -5,6 +5,12 @@
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d");
   const mobileControls = document.getElementById("mobile-controls");
+  const logsToggle = document.getElementById("logs-toggle");
+  const logsModal = document.getElementById("logs-modal");
+  const logsClose = document.getElementById("logs-close");
+  const logsFeed = document.getElementById("logs-feed");
+  const passiveRail = document.getElementById("passive-rail");
+  const passiveTooltip = document.getElementById("passive-tooltip");
   const mobileButtons = mobileControls
     ? {
         left: mobileControls.querySelector('[data-mobile-action="left"]'),
@@ -35,18 +41,25 @@
     speed: 3 + Math.random() * 12,
     alpha: 0.05 + Math.random() * 0.11,
   }));
-  const MENU_ART_SOURCES = ["/images/splash_art.png", "public/images/splash_art.png"];
+  const MENU_ART_SOURCES = ["public/images/splash_art.png", "/images/splash_art.png"];
   const menuArtImage = new window.Image();
   menuArtImage.decoding = "async";
-  let menuArtSourceIndex = 0;
-  menuArtImage.addEventListener("error", () => {
-    if (menuArtSourceIndex >= MENU_ART_SOURCES.length - 1) {
-      return;
+  async function resolveMenuArtSource() {
+    for (const src of MENU_ART_SOURCES) {
+      try {
+        const response = await window.fetch(src, { method: "HEAD", cache: "no-store" });
+        if (response.ok) {
+          menuArtImage.src = src;
+          return;
+        }
+      } catch {
+        // Ignore probe failures and continue trying fallbacks.
+      }
     }
-    menuArtSourceIndex += 1;
-    menuArtImage.src = MENU_ART_SOURCES[menuArtSourceIndex];
-  });
-  menuArtImage.src = MENU_ART_SOURCES[menuArtSourceIndex];
+    menuArtImage.src = MENU_ART_SOURCES[0];
+  }
+  resolveMenuArtSource();
+  const passiveThumbCache = new Map();
   const STORAGE_KEYS = {
     profile: "blackjack-abyss.profile.v1",
     run: "blackjack-abyss.run.v1",
@@ -433,6 +446,10 @@
     shopUi: null,
     shopTouch: null,
     shopDragOffset: 0,
+    pendingTransition: null,
+    logsFeedSignature: "",
+    passiveRailSignature: "",
+    passiveTooltipTimer: 0,
     worldTime: 0,
     viewport: {
       width: WIDTH,
@@ -568,6 +585,7 @@
     run.chipsEarnedRun = nonNegInt(runLike.chipsEarnedRun, 0);
     run.chipsSpentRun = nonNegInt(runLike.chipsSpentRun, 0);
     run.maxStreak = nonNegInt(runLike.maxStreak, 0);
+    run.shopPurchaseMade = Boolean(runLike.shopPurchaseMade);
 
     const player = runLike.player && typeof runLike.player === "object" ? runLike.player : {};
     run.player.maxHp = Math.max(10, nonNegInt(player.maxHp, run.player.maxHp));
@@ -596,6 +614,12 @@
           ttl: clampNumber(entry?.ttl, 0, 30, 8),
         }))
         .filter((entry) => entry.message.length > 0);
+    }
+    if (Array.isArray(runLike.eventLog)) {
+      run.eventLog = runLike.eventLog
+        .slice(0, 240)
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0);
     }
 
     run.maxStreak = Math.max(run.maxStreak, run.player.streak);
@@ -781,10 +805,14 @@
     state.screenShakeTime = 0;
     state.screenShakeDuration = 0;
     state.screenShakePower = 0;
+    state.pendingTransition = null;
     state.autosaveTimer = 0;
     if (state.run && Array.isArray(state.run.log)) {
       state.run.log = [];
     }
+    state.logsFeedSignature = "";
+    state.passiveRailSignature = "";
+    hidePassiveTooltip();
     state.savedRunSnapshot = snapshot;
     updateProfileBest(run);
     unlockAudio();
@@ -946,6 +974,7 @@
       chipsEarnedRun: 0,
       chipsSpentRun: 0,
       maxStreak: 0,
+      shopPurchaseMade: false,
       player: {
         hp: 42,
         maxHp: 42,
@@ -958,6 +987,7 @@
         stats: defaultPlayerStats(),
       },
       log: [],
+      eventLog: [],
     };
   }
 
@@ -1019,9 +1049,23 @@
     if (!state.run) {
       return;
     }
-    state.run.log.unshift({ message, ttl: 12 });
+    const line = typeof message === "string" ? message.trim() : "";
+    if (!line) {
+      return;
+    }
+    state.run.log.unshift({ message: line, ttl: 12 });
     if (state.run.log.length > 6) {
       state.run.log.length = 6;
+    }
+    if (!Array.isArray(state.run.eventLog)) {
+      state.run.eventLog = [];
+    }
+    state.run.eventLog.push(line);
+    if (state.run.eventLog.length > 240) {
+      state.run.eventLog.shift();
+    }
+    if (isLogsModalOpen()) {
+      renderLogsFeed();
     }
   }
 
@@ -1030,6 +1074,295 @@
     const safeDuration = Math.max(0.25, Number(duration) || 1.8);
     state.announcementTimer = safeDuration;
     state.announcementDuration = safeDuration;
+  }
+
+  function getRunEventLog(run = state.run) {
+    if (!run || !Array.isArray(run.eventLog)) {
+      return [];
+    }
+    return run.eventLog;
+  }
+
+  function logsFeedSignature(run = state.run) {
+    const entries = getRunEventLog(run);
+    const first = entries[0] || "";
+    const last = entries[entries.length - 1] || "";
+    return `${entries.length}|${first}|${last}`;
+  }
+
+  function renderLogsFeed(force = false) {
+    if (!logsFeed) {
+      return;
+    }
+    const signature = logsFeedSignature();
+    if (!force && signature === state.logsFeedSignature) {
+      return;
+    }
+    state.logsFeedSignature = signature;
+    logsFeed.textContent = "";
+    const entries = getRunEventLog();
+    if (!entries.length) {
+      const empty = document.createElement("div");
+      empty.className = "log-empty";
+      empty.textContent = "No events yet.";
+      logsFeed.appendChild(empty);
+      return;
+    }
+    for (let i = 0; i < entries.length; i += 1) {
+      const row = document.createElement("div");
+      row.className = "log-row";
+      row.textContent = entries[i];
+      logsFeed.appendChild(row);
+    }
+    logsFeed.scrollTop = logsFeed.scrollHeight;
+  }
+
+  function isLogsModalOpen() {
+    return Boolean(logsModal && !logsModal.hidden);
+  }
+
+  function openLogsModal() {
+    if (!logsModal || !state.run) {
+      return;
+    }
+    logsModal.hidden = false;
+    renderLogsFeed(true);
+  }
+
+  function closeLogsModal() {
+    if (!logsModal) {
+      return;
+    }
+    logsModal.hidden = true;
+  }
+
+  function toggleLogsModal() {
+    if (isLogsModalOpen()) {
+      closeLogsModal();
+      return;
+    }
+    openLogsModal();
+  }
+
+  function hashSeed(text) {
+    const source = typeof text === "string" ? text : "";
+    let hash = 2166136261;
+    for (let i = 0; i < source.length; i += 1) {
+      hash ^= source.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function seededRandFactory(seed) {
+    let value = seed >>> 0;
+    return () => {
+      value = (value + 0x6d2b79f5) >>> 0;
+      let t = Math.imul(value ^ (value >>> 15), 1 | value);
+      t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  function passiveThumbUrl(relic) {
+    if (!relic || !relic.id) {
+      return "";
+    }
+    if (passiveThumbCache.has(relic.id)) {
+      return passiveThumbCache.get(relic.id);
+    }
+    const offscreen = document.createElement("canvas");
+    offscreen.width = 112;
+    offscreen.height = 144;
+    const pctx = offscreen.getContext("2d");
+    if (!pctx) {
+      return "";
+    }
+    const rand = seededRandFactory(hashSeed(relic.id));
+    const grad = pctx.createLinearGradient(0, 0, offscreen.width, offscreen.height);
+    grad.addColorStop(0, "#0e2234");
+    grad.addColorStop(1, "#081420");
+    pctx.fillStyle = grad;
+    pctx.fillRect(0, 0, offscreen.width, offscreen.height);
+
+    const glow = pctx.createRadialGradient(
+      offscreen.width * 0.5,
+      offscreen.height * (0.2 + rand() * 0.25),
+      2,
+      offscreen.width * 0.5,
+      offscreen.height * 0.5,
+      offscreen.height * 0.8
+    );
+    glow.addColorStop(0, applyAlpha(relic.color || "#9ed6ff", 0.92));
+    glow.addColorStop(1, applyAlpha("#07121d", 0));
+    pctx.fillStyle = glow;
+    pctx.fillRect(0, 0, offscreen.width, offscreen.height);
+
+    for (let i = 0; i < 22; i += 1) {
+      const x = rand() * offscreen.width;
+      const y = rand() * offscreen.height;
+      const w = 18 + rand() * 46;
+      const h = 8 + rand() * 24;
+      const rot = (rand() - 0.5) * 1.9;
+      pctx.save();
+      pctx.translate(x, y);
+      pctx.rotate(rot);
+      pctx.fillStyle = applyAlpha(relic.color || "#9ed6ff", 0.12 + rand() * 0.22);
+      pctx.fillRect(-w * 0.5, -h * 0.5, w, h);
+      pctx.restore();
+    }
+
+    pctx.fillStyle = applyAlpha("#f6e8b8", 0.86);
+    pctx.font = '700 32px "Chakra Petch", sans-serif';
+    pctx.textAlign = "center";
+    pctx.fillText((relic.name || "?").slice(0, 1).toUpperCase(), offscreen.width * 0.5, offscreen.height * 0.6);
+
+    const url = offscreen.toDataURL("image/png");
+    passiveThumbCache.set(relic.id, url);
+    return url;
+  }
+
+  function showPassiveTooltip(relic, count, clientX, clientY) {
+    if (!passiveTooltip || !relic) {
+      return;
+    }
+    passiveTooltip.textContent = "";
+    const title = document.createElement("strong");
+    title.textContent = `${relic.name}${count > 1 ? ` x${count}` : ""}`;
+    const body = document.createElement("div");
+    body.textContent = passiveDescription(relic.description);
+    passiveTooltip.appendChild(title);
+    passiveTooltip.appendChild(body);
+    passiveTooltip.hidden = false;
+    positionPassiveTooltip(clientX, clientY);
+  }
+
+  function positionPassiveTooltip(clientX, clientY) {
+    if (!passiveTooltip || passiveTooltip.hidden) {
+      return;
+    }
+    const viewportW = window.innerWidth || document.documentElement.clientWidth || 1280;
+    const viewportH = window.innerHeight || document.documentElement.clientHeight || 720;
+    const pad = 10;
+    const anchorX = Number.isFinite(clientX) ? clientX : pad;
+    const anchorY = Number.isFinite(clientY) ? clientY : pad;
+    let left = anchorX + 14;
+    let top = anchorY + 14;
+
+    const rect = passiveTooltip.getBoundingClientRect();
+    if (left + rect.width + pad > viewportW) {
+      left = viewportW - rect.width - pad;
+    }
+    if (top + rect.height + pad > viewportH) {
+      top = viewportH - rect.height - pad;
+    }
+
+    passiveTooltip.style.left = `${Math.max(pad, left)}px`;
+    passiveTooltip.style.top = `${Math.max(pad, top)}px`;
+  }
+
+  function hidePassiveTooltip() {
+    if (!passiveTooltip) {
+      return;
+    }
+    passiveTooltip.hidden = true;
+    state.passiveTooltipTimer = 0;
+  }
+
+  function syncPassiveRail() {
+    if (!passiveRail) {
+      return;
+    }
+    if (!state.run || state.mode === "menu") {
+      passiveRail.textContent = "";
+      state.passiveRailSignature = "";
+      hidePassiveTooltip();
+      return;
+    }
+
+    const relicStacks = Object.entries(state.run.player.relics || {})
+      .map(([id, count]) => ({
+        relic: RELIC_BY_ID.get(id),
+        count: nonNegInt(count, 0),
+      }))
+      .filter((entry) => entry.relic && entry.count > 0)
+      .sort((a, b) => a.relic.name.localeCompare(b.relic.name));
+
+    const signature = relicStacks.map((entry) => `${entry.relic.id}:${entry.count}`).join("|");
+    if (signature === state.passiveRailSignature) {
+      return;
+    }
+    state.passiveRailSignature = signature;
+    passiveRail.textContent = "";
+    hidePassiveTooltip();
+
+    if (!relicStacks.length) {
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    relicStacks.forEach((entry) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "passive-card";
+      button.setAttribute("aria-label", `${entry.relic.name} x${entry.count}`);
+
+      const thumb = document.createElement("span");
+      thumb.className = "thumb";
+      const thumbUrl = passiveThumbUrl(entry.relic);
+      if (thumbUrl) {
+        thumb.style.backgroundImage = `url("${thumbUrl}")`;
+      }
+      button.appendChild(thumb);
+
+      const stack = document.createElement("span");
+      stack.className = "stack";
+      stack.textContent = entry.count > 99 ? "99+" : String(entry.count);
+      button.appendChild(stack);
+
+      button.addEventListener("pointerenter", (event) => {
+        if (event.pointerType === "touch") {
+          return;
+        }
+        showPassiveTooltip(entry.relic, entry.count, event.clientX, event.clientY);
+      });
+      button.addEventListener("pointermove", (event) => {
+        if (event.pointerType === "touch") {
+          return;
+        }
+        positionPassiveTooltip(event.clientX, event.clientY);
+      });
+      button.addEventListener("pointerleave", (event) => {
+        if (event.pointerType === "touch") {
+          return;
+        }
+        hidePassiveTooltip();
+      });
+      button.addEventListener("click", (event) => {
+        const rect = button.getBoundingClientRect();
+        showPassiveTooltip(entry.relic, entry.count, rect.right, rect.top + rect.height * 0.5);
+        state.passiveTooltipTimer = state.compactControls ? 2.6 : 4;
+        event.preventDefault();
+      });
+
+      fragment.appendChild(button);
+    });
+
+    passiveRail.appendChild(fragment);
+  }
+
+  function syncOverlayUi() {
+    const runActive = Boolean(state.run);
+    if (logsToggle) {
+      logsToggle.hidden = !runActive || state.mode === "menu";
+    }
+    if ((!runActive || state.mode === "menu") && isLogsModalOpen()) {
+      closeLogsModal();
+    }
+    if (isLogsModalOpen()) {
+      renderLogsFeed();
+    }
+    syncPassiveRail();
   }
 
   function semitoneToFreq(base, semitoneOffset) {
@@ -1314,8 +1647,22 @@
     }
   }
 
-  function spawnFloatText(text, x, y, color) {
-    state.floatingTexts.push({ text, x, y, color, life: 1.2, maxLife: 1.2, vy: 24 });
+  function spawnFloatText(text, x, y, color, opts = {}) {
+    const life = Math.max(0.1, Number(opts.life) || 1.2);
+    state.floatingTexts.push({
+      text,
+      x,
+      y,
+      color,
+      life,
+      maxLife: life,
+      vy: Number.isFinite(opts.vy) ? opts.vy : 24,
+      size: Math.max(12, Number(opts.size) || 26),
+      weight: Math.max(500, Number(opts.weight) || 700),
+      jitter: Boolean(opts.jitter),
+      glow: typeof opts.glow === "string" ? opts.glow : "",
+      jitterSeed: Math.random() * Math.PI * 2,
+    });
   }
 
   function lerp(a, b, t) {
@@ -1399,6 +1746,27 @@
     triggerFlash(color, Math.min(0.16, 0.03 + clampedAmount * 0.004), 0.12);
   }
 
+  function startDefeatTransition(target) {
+    if (!state.encounter || state.pendingTransition) {
+      return;
+    }
+    const handType = target === "enemy" ? "dealer" : "player";
+    const hand = target === "enemy" ? state.encounter.dealerHand : state.encounter.playerHand;
+    const bounds = handBounds(handType, Math.max(1, hand.length));
+    const color = target === "enemy" ? "#ffb07a" : "#ff8eaf";
+    for (let i = 0; i < 3; i += 1) {
+      const xJitter = (Math.random() * 2 - 1) * 24;
+      const yJitter = (Math.random() * 2 - 1) * 18;
+      spawnSparkBurst(bounds.centerX + xJitter, bounds.centerY + yJitter, color, 24 + i * 12, 210 + i * 70);
+    }
+    triggerScreenShake(12, 0.46);
+    triggerFlash(color, 0.14, 0.28);
+    playImpactSfx(16, target === "enemy" ? "enemy" : "player");
+    state.pendingTransition = { target, timer: 0.76 };
+    state.encounter.phase = "done";
+    state.encounter.resolveTimer = 0;
+  }
+
   function currentShakeOffset() {
     if (state.screenShakeTime <= 0 || state.screenShakePower <= 0) {
       return { x: 0, y: 0 };
@@ -1447,12 +1815,43 @@
     return upgraded;
   }
 
+  function handLayout(count) {
+    const safeCount = Math.max(1, count);
+    const cardsPerRow = 6;
+    const rows = Math.max(1, Math.ceil(safeCount / cardsPerRow));
+    const baseScale = 1 - Math.max(0, safeCount - 4) * 0.06 - (rows - 1) * 0.12;
+    const scale = clampNumber(baseScale, 0.54, 1, 1);
+    const w = Math.max(52, Math.round(CARD_W * scale));
+    const h = Math.max(74, Math.round(CARD_H * scale));
+    return {
+      cardsPerRow,
+      rows,
+      w,
+      h,
+      spacing: Math.max(Math.round(w * 0.68), 42),
+      rowStep: Math.max(Math.round(h * 0.38), 30),
+    };
+  }
+
   function handCardPosition(handType, index, count) {
-    const spacing = 96;
-    const portraitOffset = state.viewport?.portraitZoomed ? 24 : 0;
-    const y = handType === "dealer" ? 190 + portraitOffset : 430 + portraitOffset;
-    const startX = WIDTH * 0.5 - ((count - 1) * spacing) * 0.5 - CARD_W * 0.5;
-    return { x: startX + index * spacing, y };
+    const metrics = handLayout(count);
+    const portraitOffset = state.viewport?.portraitZoomed ? 72 : 0;
+    const baseY = handType === "dealer" ? 190 + portraitOffset : 430 + portraitOffset;
+    const row = Math.floor(index / metrics.cardsPerRow);
+    const rowCount = Math.max(1, Math.ceil(count / metrics.cardsPerRow));
+    const rowStartIndex = row * metrics.cardsPerRow;
+    const rowItems = Math.min(metrics.cardsPerRow, Math.max(0, count - rowStartIndex));
+    const col = index - rowStartIndex;
+    const startX = WIDTH * 0.5 - ((rowItems - 1) * metrics.spacing) * 0.5 - metrics.w * 0.5;
+    const y = handType === "dealer" ? baseY + row * metrics.rowStep : baseY - row * metrics.rowStep;
+    return {
+      x: startX + col * metrics.spacing,
+      y,
+      w: metrics.w,
+      h: metrics.h,
+      row,
+      rows: rowCount,
+    };
   }
 
   function dealCard(encounter, target) {
@@ -1471,13 +1870,13 @@
 
     const pos = handCardPosition(target, hand.length - 1, hand.length);
     state.cardBursts.push({
-      x: pos.x + CARD_W * 0.5,
-      y: pos.y + CARD_H * 0.5,
+      x: pos.x + pos.w * 0.5,
+      y: pos.y + pos.h * 0.5,
       color: target === "player" ? "#67ddff" : "#ffa562",
       life: 0.28,
       maxLife: 0.28,
     });
-    spawnSparkBurst(pos.x + CARD_W * 0.5, pos.y + CARD_H * 0.5, target === "player" ? "#76e5ff" : "#ffbb84", 5, 88);
+    spawnSparkBurst(pos.x + pos.w * 0.5, pos.y + pos.h * 0.5, target === "player" ? "#76e5ff" : "#ffbb84", 5, 88);
     playDealSfx(target);
 
     return hand[hand.length - 1];
@@ -1548,6 +1947,7 @@
     state.mode = "playing";
     state.encounter = createEncounter(state.run);
     state.run.player.hp = clampNumber(state.run.player.hp, 0, state.run.player.maxHp, state.run.player.maxHp);
+    state.pendingTransition = null;
     state.run.player.bustGuardsLeft = state.run.player.stats.bustGuardPerEncounter;
     if (state.run.player.stats.healOnEncounterStart > 0) {
       const heal = Math.min(state.run.player.stats.healOnEncounterStart, state.run.player.maxHp - state.run.player.hp);
@@ -1561,6 +1961,7 @@
 
     const enemy = state.encounter.enemy;
     setAnnouncement(`${enemy.name} enters the table.`, 1.9);
+    addLog(`${enemy.name} enters the table.`);
 
     startHand();
     saveRunSnapshot();
@@ -1586,6 +1987,11 @@
     state.screenShakeTime = 0;
     state.screenShakeDuration = 0;
     state.screenShakePower = 0;
+    state.pendingTransition = null;
+    state.logsFeedSignature = "";
+    state.passiveRailSignature = "";
+    hidePassiveTooltip();
+    closeLogsModal();
     setAnnouncement("Deal the first hand.", 2.2);
     clearSavedRun();
     beginEncounter();
@@ -1631,6 +2037,7 @@
     }
 
     playActionSfx("hit");
+    addLog("Hit.");
     const encounter = state.encounter;
     encounter.lastPlayerAction = "hit";
     dealCard(encounter, "player");
@@ -1651,6 +2058,7 @@
       return;
     }
     playActionSfx("stand");
+    addLog("Stand.");
     state.encounter.lastPlayerAction = "stand";
     resolveDealerThenShowdown(false);
   }
@@ -1667,6 +2075,7 @@
     }
 
     playActionSfx("double");
+    addLog("Double down.");
     encounter.doubleDown = true;
     encounter.lastPlayerAction = "double";
     dealCard(encounter, "player");
@@ -1795,7 +2204,7 @@
 
     let outgoing = 0;
     let incoming = 0;
-    let text = "Push. No damage.";
+    let text = "Push.";
 
     if (outcome === "blackjack") {
       outgoing =
@@ -1806,7 +2215,7 @@
         run.player.stats.blackjackBonusDamage +
         firstHandBonus +
         (encounter.doubleDown ? 2 : 0);
-      text = "Blackjack! You slam the table.";
+      text = "Blackjack!";
     } else if (outcome === "dealer_bust") {
       outgoing =
         7 +
@@ -1817,7 +2226,7 @@
         firstHandBonus +
         (encounter.doubleDown ? 2 : 0) +
         (encounter.lastPlayerAction === "double" ? run.player.stats.doubleWinDamage : 0);
-      text = "Dealer busts. You cash in.";
+      text = "Dealer bust.";
     } else if (outcome === "player_win") {
       outgoing =
         4 +
@@ -1829,22 +2238,22 @@
         (encounter.doubleDown ? 2 : 0) +
         (encounter.lastPlayerAction === "stand" ? run.player.stats.standWinDamage : 0) +
         (encounter.lastPlayerAction === "double" ? run.player.stats.doubleWinDamage : 0);
-      text = "Hand won.";
+      text = "Win hand.";
     } else if (outcome === "dealer_blackjack") {
       incoming = enemy.attack + 5;
-      text = "Dealer blackjack. Brutal.";
+      text = "Dealer blackjack.";
     } else if (outcome === "dealer_win") {
       incoming = enemy.attack + Math.max(1, Math.floor((dTotal - pTotal) * 0.5) + 1);
-      text = "Hand lost.";
+      text = "Lose hand.";
     } else if (outcome === "player_bust") {
       incoming = Math.max(1, enemy.attack + 3 - run.player.stats.bustBlock);
-      text = "Bust. The house punishes greed.";
+      text = "Bust.";
     }
 
     if (outgoing > 0 && Math.random() < run.player.stats.critChance) {
       outgoing *= 2;
       encounter.critTriggered = true;
-      text += " Critical burst!";
+      text = "CRIT!";
     }
 
     const playerLosingOutcome = outcome === "dealer_blackjack" || outcome === "dealer_win" || outcome === "player_bust";
@@ -1866,7 +2275,18 @@
     if (outgoing > 0) {
       enemy.hp = Math.max(0, enemy.hp - outgoing);
       run.player.totalDamageDealt += outgoing;
-      spawnFloatText(`-${outgoing}`, WIDTH * 0.72, 108, "#ff916e");
+      if (encounter.critTriggered) {
+        spawnFloatText(`CRIT -${outgoing}`, WIDTH * 0.72, 124, "#ffe4a8", {
+          size: 58,
+          life: 1.45,
+          vy: 9,
+          weight: 800,
+          jitter: true,
+          glow: "#ffb86a",
+        });
+      } else {
+        spawnFloatText(`-${outgoing}`, WIDTH * 0.72, 108, "#ff916e");
+      }
       triggerImpactBurst("enemy", outgoing, outcome === "blackjack" ? "#f8d37b" : "#ff916e");
     }
 
@@ -1888,28 +2308,35 @@
       }
       if (run.player.stats.chipsOnWinHand > 0) {
         gainChips(run.player.stats.chipsOnWinHand);
-        spawnFloatText(`+${run.player.stats.chipsOnWinHand} chips`, WIDTH * 0.5, 72, "#ffd687");
+        spawnFloatText(`+${run.player.stats.chipsOnWinHand}`, WIDTH * 0.5, 72, "#ffd687");
       }
     } else if (outcome === "push" && run.player.stats.chipsOnPush > 0) {
       gainChips(run.player.stats.chipsOnPush);
-      spawnFloatText(`+${run.player.stats.chipsOnPush} chips`, WIDTH * 0.5, 72, "#ffd687");
-      text += ` Pocketed ${run.player.stats.chipsOnPush} chips.`;
+      spawnFloatText(`+${run.player.stats.chipsOnPush}`, WIDTH * 0.5, 72, "#ffd687");
+      text = `Push +${run.player.stats.chipsOnPush} chips`;
     }
 
-    if (outgoing > 0) {
-      text += ` Enemy takes ${outgoing}.`;
-    }
-    if (incoming > 0) {
-      text += ` You take ${incoming}.`;
+    if (encounter.critTriggered && outgoing > 0) {
+      text = `CRIT -${outgoing} HP`;
+    } else if (outgoing > 0) {
+      text = `${text} -${outgoing} HP`;
+    } else if (incoming > 0) {
+      text = `${text} -${incoming} HP`;
     }
 
     if (encounter.bustGuardTriggered) {
-      text += " Bust Guard converted the bust.";
+      text = `${text} Guard!`;
     }
 
     if (encounter.critTriggered) {
-      spawnSparkBurst(WIDTH * 0.6, 148, "#ffd88d", 20, 240);
-      triggerFlash("#ffd88d", 0.1, 0.16);
+      for (let i = 0; i < 6; i += 1) {
+        const color = i % 2 === 0 ? "#ffd88d" : "#ff9a7d";
+        const x = WIDTH * 0.64 + (Math.random() * 2 - 1) * 76;
+        const y = 150 + (Math.random() * 2 - 1) * 48;
+        spawnSparkBurst(x, y, color, 14 + i * 4, 230 + i * 18);
+      }
+      triggerFlash("#ffd88d", 0.14, 0.22);
+      triggerScreenShake(9.6, 0.3);
     }
     if (outcome === "blackjack") {
       spawnSparkBurst(WIDTH * 0.5, 646, "#f8d37b", 28, 260);
@@ -1917,19 +2344,24 @@
     }
 
     encounter.resultText = "";
-    setAnnouncement(text, 1.45);
+    setAnnouncement(text, 1.68);
+    addLog(text);
     run.totalHands += 1;
     updateProfileBest(run);
 
     if (run.player.hp <= 0) {
-      finalizeRun("defeat");
-      state.mode = "gameover";
-      encounter.phase = "done";
+      startDefeatTransition("player");
+      setAnnouncement("You were defeated.", 1.2);
+      addLog("You were defeated.");
+      saveRunSnapshot();
       return;
     }
 
     if (enemy.hp <= 0) {
-      onEncounterWin();
+      startDefeatTransition("enemy");
+      setAnnouncement(`${enemy.name} down!`, 1.2);
+      addLog(`${enemy.name} is down.`);
+      saveRunSnapshot();
       return;
     }
 
@@ -1988,6 +2420,7 @@
       setAnnouncement("Relic draft unlocked.", 2);
     } else {
       state.mode = "shop";
+      run.shopPurchaseMade = false;
       state.selectionIndex = 0;
       state.shopStock = generateShopStock(3);
       setAnnouncement("Black market table unlocked.", 2);
@@ -2067,13 +2500,21 @@
     beginEncounter();
   }
 
-  function buyShopItem() {
+  function buyShopItem(index = state.selectionIndex) {
     if (state.mode !== "shop" || !state.run || state.shopStock.length === 0) {
       return;
     }
 
     const run = state.run;
-    const item = state.shopStock[state.selectionIndex];
+    const targetIndex = clampNumber(index, 0, state.shopStock.length - 1, state.selectionIndex);
+    state.selectionIndex = targetIndex;
+    const item = state.shopStock[targetIndex];
+    if (run.shopPurchaseMade) {
+      playUiSfx("error");
+      setAnnouncement("Only one purchase per market.", 1.35);
+      addLog("Black market allows one purchase only.");
+      return;
+    }
     if (!item || item.sold) {
       playUiSfx("error");
       return;
@@ -2112,6 +2553,7 @@
     }
 
     item.sold = true;
+    run.shopPurchaseMade = true;
     saveRunSnapshot();
   }
 
@@ -2120,6 +2562,7 @@
       return;
     }
     playUiSfx("confirm");
+    addLog("Left black market.");
     beginEncounter();
   }
 
@@ -2225,7 +2668,7 @@
       return "■";
     }
     if (action === "double") {
-      return state.mode === "shop" || label === "Buy" ? "🛒" : "×2";
+      return state.mode === "shop" || label === "Buy" ? "⛒" : "×2";
     }
     if (action === "confirm") {
       if (state.mode === "playing") {
@@ -2238,7 +2681,7 @@
         return "▶";
       }
       if (state.mode === "shop") {
-        return "↵";
+        return "⎋";
       }
       return "✓";
     }
@@ -2390,9 +2833,7 @@
 
     if (state.mode === "shop") {
       const selectedItem = state.shopStock[state.selectionIndex];
-      const relicAlreadyBought = state.shopStock.some((entry) => entry.type === "relic" && entry.sold);
-      const relicLocked = Boolean(selectedItem && selectedItem.type === "relic" && relicAlreadyBought && !selectedItem.sold);
-      const canBuy = Boolean(selectedItem && !selectedItem.sold && !relicLocked);
+      const canBuy = Boolean(selectedItem && !selectedItem.sold && state.run && !state.run.shopPurchaseMade);
       setMobileButton(mobileButtons.left, "Prev", false, false);
       setMobileButton(mobileButtons.right, "Next", false, false);
       setMobileButton(mobileButtons.double, "Buy", canBuy, true);
@@ -2413,6 +2854,9 @@
   }
 
   function handleMobileAction(action) {
+    if (isLogsModalOpen()) {
+      return;
+    }
     unlockAudio();
     if (action === "left") {
       if (state.mode === "menu") {
@@ -2523,11 +2967,6 @@
       if (!pointInRect(worldX, worldY, card)) {
         continue;
       }
-      if (!card.selected) {
-        const shift = carouselDelta(card.index, state.selectionIndex, state.rewardOptions.length);
-        moveSelection(shift, state.rewardOptions.length);
-        state.rewardDragOffset = -Math.sign(shift || 0) * rewardCarouselLayout().spacing * 0.18;
-      }
       return true;
     }
 
@@ -2537,6 +2976,18 @@
   function handleShopPointerTap(worldX, worldY) {
     if (state.mode !== "shop" || !state.shopUi || !state.shopStock.length) {
       return false;
+    }
+
+    const cardsByButton = [...state.shopUi.cards].sort((a, b) => Number(b.selected) - Number(a.selected));
+    for (const card of cardsByButton) {
+      if (card.buyButton && pointInRect(worldX, worldY, card.buyButton)) {
+        if (card.buyEnabled) {
+          buyShopItem(card.index);
+        } else {
+          playUiSfx("error");
+        }
+        return true;
+      }
     }
 
     if (state.shopUi.leftArrow && pointInCircle(worldX, worldY, state.shopUi.leftArrow)) {
@@ -2556,11 +3007,6 @@
       if (!pointInRect(worldX, worldY, card)) {
         continue;
       }
-      if (!card.selected) {
-        const shift = carouselDelta(card.index, state.selectionIndex, state.shopStock.length);
-        moveSelection(shift, state.shopStock.length);
-        state.shopDragOffset = -Math.sign(shift || 0) * rewardCarouselLayout().spacing * 0.18;
-      }
       return true;
     }
 
@@ -2568,6 +3014,9 @@
   }
 
   function onCanvasPointerDown(event) {
+    if (isLogsModalOpen()) {
+      return;
+    }
     unlockAudio();
     const carouselMode = state.mode === "reward" || state.mode === "shop" ? state.mode : null;
     if (!carouselMode) {
@@ -2756,6 +3205,12 @@
       return;
     }
 
+    if (event.key === "Escape" && isLogsModalOpen()) {
+      event.preventDefault();
+      closeLogsModal();
+      return;
+    }
+
     const key = normalizeKey(event.key);
     if (!key) {
       return;
@@ -2763,6 +3218,10 @@
 
     event.preventDefault();
     unlockAudio();
+
+    if (isLogsModalOpen()) {
+      return;
+    }
 
     if (key === "m") {
       toggleAudio();
@@ -2914,7 +3373,29 @@
       }
     }
 
-    if (state.mode === "playing" && state.encounter && state.encounter.phase === "resolve") {
+    if (state.pendingTransition) {
+      state.pendingTransition.timer -= dt;
+      if (state.pendingTransition.timer <= 0) {
+        const transition = state.pendingTransition;
+        state.pendingTransition = null;
+        if (transition.target === "enemy") {
+          onEncounterWin();
+        } else if (transition.target === "player" && state.encounter && state.run) {
+          finalizeRun("defeat");
+          state.mode = "gameover";
+          state.encounter.phase = "done";
+        }
+      }
+    }
+
+    if (state.passiveTooltipTimer > 0) {
+      state.passiveTooltipTimer = Math.max(0, state.passiveTooltipTimer - dt);
+      if (state.passiveTooltipTimer <= 0) {
+        hidePassiveTooltip();
+      }
+    }
+
+    if (state.mode === "playing" && state.encounter && state.encounter.phase === "resolve" && !state.pendingTransition) {
       state.encounter.resolveTimer -= dt;
       if (state.encounter.resolveTimer <= 0) {
         state.encounter.handIndex += 1;
@@ -2973,7 +3454,7 @@
     ctx.fillStyle = sheen;
     ctx.fill();
 
-    ctx.fillStyle = "#dce7f5";
+    ctx.fillStyle = "rgba(14, 23, 34, 0.9)";
     setFont(15, 600, false);
     ctx.textAlign = "left";
     ctx.fillText(label, x + 8, y + h - 8);
@@ -3037,15 +3518,19 @@
     ctx.stroke();
   }
 
-  function drawCard(x, y, card, hidden) {
+  function drawCard(x, y, card, hidden, width = CARD_W, height = CARD_H) {
+    const cardW = Math.max(40, width);
+    const cardH = Math.max(56, height);
+    const scale = cardH / CARD_H;
+    const radius = Math.max(8, Math.round(12 * scale));
     ctx.save();
     ctx.shadowColor = hidden ? "rgba(22, 55, 88, 0.38)" : "rgba(0, 0, 0, 0.38)";
     ctx.shadowBlur = 12;
     ctx.shadowOffsetY = 5;
-    roundRect(x, y, CARD_W, CARD_H, 12);
+    roundRect(x, y, cardW, cardH, radius);
 
     if (hidden) {
-      const hiddenGrad = ctx.createLinearGradient(x, y, x + CARD_W, y + CARD_H);
+      const hiddenGrad = ctx.createLinearGradient(x, y, x + cardW, y + cardH);
       hiddenGrad.addColorStop(0, "#173456");
       hiddenGrad.addColorStop(1, "#0c1f36");
       ctx.fillStyle = hiddenGrad;
@@ -3056,15 +3541,15 @@
       ctx.stroke();
 
       for (let i = 0; i < 4; i += 1) {
-        const px = x + 14 + i * 17;
+        const px = x + 8 * scale + i * (14 * scale);
         ctx.fillStyle = "rgba(205, 231, 255, 0.29)";
-        ctx.fillRect(px, y + 14, 8, CARD_H - 28);
+        ctx.fillRect(px, y + 10 * scale, 6 * scale, cardH - 20 * scale);
       }
       ctx.restore();
       return;
     }
 
-    const cardGrad = ctx.createLinearGradient(x, y, x + CARD_W, y + CARD_H);
+    const cardGrad = ctx.createLinearGradient(x, y, x + cardW, y + cardH);
     cardGrad.addColorStop(0, "#f8fdff");
     cardGrad.addColorStop(1, "#d6ebff");
     ctx.fillStyle = cardGrad;
@@ -3075,8 +3560,8 @@
     ctx.stroke();
     ctx.restore();
 
-    roundRect(x + 4, y + 4, CARD_W - 8, 20, 8);
-    const shine = ctx.createLinearGradient(x, y + 4, x, y + 24);
+    roundRect(x + 4 * scale, y + 4 * scale, cardW - 8 * scale, 20 * scale, 8 * scale);
+    const shine = ctx.createLinearGradient(x, y + 4 * scale, x, y + 24 * scale);
     shine.addColorStop(0, "rgba(255, 255, 255, 0.5)");
     shine.addColorStop(1, "rgba(255, 255, 255, 0)");
     ctx.fillStyle = shine;
@@ -3084,12 +3569,12 @@
 
     const redSuit = card.suit === "H" || card.suit === "D";
     ctx.fillStyle = redSuit ? "#cf455a" : "#1f3550";
-    setFont(25, 700, true);
+    setFont(25 * scale, 700, true);
     ctx.textAlign = "center";
-    ctx.fillText(card.rank, x + CARD_W * 0.5, y + 48);
+    ctx.fillText(card.rank, x + cardW * 0.5, y + 48 * scale);
 
-    setFont(22, 700, false);
-    ctx.fillText(SUIT_SYMBOL[card.suit] || card.suit, x + CARD_W * 0.5, y + 82);
+    setFont(22 * scale, 700, false);
+    ctx.fillText(SUIT_SYMBOL[card.suit] || card.suit, x + cardW * 0.5, y + 82 * scale);
   }
 
   function visibleDealerTotal(encounter) {
@@ -3109,9 +3594,32 @@
       const animated = animatedCardPosition(hand[i], pos.x, pos.y);
       ctx.save();
       ctx.globalAlpha = animated.alpha;
-      drawCard(animated.x, animated.y, hand[i], hideSecond && i === 1);
+      drawCard(animated.x, animated.y, hand[i], hideSecond && i === 1, pos.w, pos.h);
       ctx.restore();
     }
+  }
+
+  function handBounds(handType, count) {
+    const safeCount = Math.max(1, count);
+    let minX = Number.POSITIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (let i = 0; i < safeCount; i += 1) {
+      const pos = handCardPosition(handType, i, safeCount);
+      minX = Math.min(minX, pos.x);
+      minY = Math.min(minY, pos.y);
+      maxX = Math.max(maxX, pos.x + pos.w);
+      maxY = Math.max(maxY, pos.y + pos.h);
+    }
+    return {
+      x: minX,
+      y: minY,
+      w: Math.max(1, maxX - minX),
+      h: Math.max(1, maxY - minY),
+      centerX: (minX + maxX) * 0.5,
+      centerY: (minY + maxY) * 0.5,
+    };
   }
 
   function drawEncounter() {
@@ -3121,43 +3629,83 @@
 
     const encounter = state.encounter;
     const enemy = encounter.enemy;
-    const portraitShift = state.viewport?.portraitZoomed ? 44 : 0;
+    const portrait = Boolean(state.viewport?.portraitZoomed);
 
     ctx.textAlign = "center";
     ctx.fillStyle = enemy.color;
+    const enemyTitleY = portrait ? 136 : 88;
     setFont(53, 700, true);
     ctx.globalAlpha = 0.16;
-    ctx.fillText(enemy.name, WIDTH * 0.5, 136 + portraitShift);
+    ctx.fillText(enemy.name, WIDTH * 0.5, enemyTitleY + 4);
     ctx.globalAlpha = 1;
     setFont(36, 700, true);
-    ctx.fillText(enemy.name, WIDTH * 0.5, 132 + portraitShift);
+    ctx.fillText(enemy.name, WIDTH * 0.5, enemyTitleY);
 
     ctx.fillStyle = "#cbe6ff";
     setFont(17, 600, false);
-    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, WIDTH * 0.5, 156 + portraitShift);
+    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, WIDTH * 0.5, enemyTitleY + 26);
 
     drawHand(encounter.dealerHand, "dealer", encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player");
     drawHand(encounter.playerHand, "player", false);
 
     const playerTotal = encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total;
     const dealerTotal = visibleDealerTotal(encounter);
+    const dealerCount = Math.max(1, encounter.dealerHand.length);
+    const playerCount = Math.max(1, encounter.playerHand.length);
+    const dealerBox = handBounds("dealer", dealerCount);
+    const playerBox = handBounds("player", playerCount);
+    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+    const visibleW = WIDTH - cropX * 2;
+    const fixedBarW = Math.max(240, Math.min(portrait ? 340 : 360, visibleW - 126));
+    const barH = 24;
+    const handLabelGap = 24;
+    const handLabelClearance = 14;
 
-    ctx.fillStyle = "#d7e7f8";
-    setFont(22, 700, false);
-    ctx.fillText(
-      `Dealer: ${dealerTotal}${encounter.hideDealerHole && encounter.phase === "player" ? "+?" : ""}`,
-      WIDTH * 0.5,
-      342 + portraitShift
+    const dealerBarTopMin = enemyTitleY + 36;
+    const dealerBarY = Math.max(
+      dealerBarTopMin,
+      dealerBox.y - (barH + handLabelGap + handLabelClearance)
     );
-    ctx.fillText(`You: ${playerTotal}`, WIDTH * 0.5, (state.viewport?.portraitZoomed ? 598 : 610) + portraitShift);
+    drawHealthBar(
+      dealerBox.centerX - fixedBarW * 0.5,
+      dealerBarY,
+      fixedBarW,
+      barH,
+      enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 0,
+      "#ef8a73",
+      `Enemy HP ${enemy.hp}/${enemy.maxHp}`
+    );
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#d7e8f8";
+    setFont(17, 700, false);
+    const dealerHandLabelY = dealerBarY + barH + handLabelGap;
+    ctx.fillText(
+      `Hand ${dealerTotal}${encounter.hideDealerHole && encounter.phase === "player" ? "+?" : ""}`,
+      dealerBox.centerX,
+      dealerHandLabelY
+    );
 
+    const playerBarY = Math.min(HEIGHT - 70, playerBox.y + playerBox.h + (portrait ? 8 : 10));
+    drawHealthBar(
+      playerBox.centerX - fixedBarW * 0.5,
+      playerBarY,
+      fixedBarW,
+      barH,
+      state.run.player.maxHp > 0 ? state.run.player.hp / state.run.player.maxHp : 0,
+      "#6fd5a8",
+      `HP ${state.run.player.hp}/${state.run.player.maxHp}`
+    );
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#d7e8f8";
+    setFont(17, 700, false);
+    const playerLabelY = Math.min(HEIGHT - 8, playerBarY + barH + handLabelGap);
+    ctx.fillText(`Hand ${playerTotal}`, playerBox.centerX, playerLabelY);
     if (encounter.splitUsed) {
       const splitIndex = encounter.splitQueue.length > 0 ? 1 : 2;
       ctx.fillStyle = "#a8c6df";
-      setFont(15, 600, false);
-      ctx.fillText(`Split hand ${splitIndex}/2`, WIDTH * 0.5, (state.viewport?.portraitZoomed ? 620 : 634) + portraitShift);
+      setFont(14, 600, false);
+      ctx.fillText(`Split hand ${splitIndex}/2`, playerBox.centerX, playerLabelY + 20);
     }
-
   }
 
   function hudMetrics() {
@@ -3185,117 +3733,51 @@
     }
 
     const run = state.run;
-    const enemy = state.encounter ? state.encounter.enemy : null;
     const hud = hudMetrics();
+    const topY = hud.portrait ? 34 : 38;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#dbeaf7";
+    setFont(hud.portrait ? 20 : 22, 700, true);
+    ctx.fillText(`Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`, hud.left + 2, topY);
 
-    if (hud.portrait) {
-      drawHealthBar(
-        hud.left,
-        22,
-        hud.span,
-        26,
-        run.player.maxHp > 0 ? run.player.hp / run.player.maxHp : 0,
-        "#6fd5a8",
-        `HP ${run.player.hp}/${run.player.maxHp}`
-      );
+    const statsW = hud.portrait ? Math.min(332, Math.max(232, Math.floor(hud.span * 0.78))) : 314;
+    const statsH = hud.portrait ? 74 : 66;
+    const statsX = hud.right - statsW;
+    const statsY = HEIGHT - statsH - (hud.portrait ? 86 : 42);
+    roundRect(statsX, statsY, statsW, statsH, 14);
+    const panel = ctx.createLinearGradient(statsX, statsY, statsX, statsY + statsH);
+    panel.addColorStop(0, "rgba(15, 30, 45, 0.9)");
+    panel.addColorStop(1, "rgba(10, 20, 31, 0.92)");
+    ctx.fillStyle = panel;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(168, 206, 234, 0.28)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
 
-      if (enemy) {
-        drawHealthBar(
-          hud.left,
-          54,
-          hud.span,
-          22,
-          enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 0,
-          "#ef8a73",
-          `Enemy ${enemy.hp}/${enemy.maxHp}`
-        );
-      }
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#f4d88d";
+    setFont(hud.portrait ? 20 : 22, 700, false);
+    const leftPad = 12;
+    const rightPad = 12;
+    const splitX = statsX + Math.max(116, Math.floor(statsW * 0.53));
+    const dividerY = statsY + 10;
+    const dividerH = statsH - 20;
+    ctx.fillText(`◍ ${run.player.gold}`, statsX + leftPad, statsY + Math.floor(statsH * 0.56));
 
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#dfedf9";
-      setFont(20, 700, true);
-      ctx.fillText(`Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`, hud.left + 2, 100);
+    ctx.strokeStyle = "rgba(168, 206, 234, 0.24)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(splitX, dividerY);
+    ctx.lineTo(splitX, dividerY + dividerH);
+    ctx.stroke();
 
-      ctx.fillStyle = "#f4d88d";
-      setFont(18, 700, false);
-      ctx.fillText(`Chips: ${run.player.gold}`, hud.left + 2, 124);
-
-      ctx.fillStyle = "#b7ddff";
-      setFont(16, 700, false);
-      ctx.fillText(`Streak: ${run.player.streak}  |  Guards: ${run.player.bustGuardsLeft}`, hud.left + 132, 124);
-    } else {
-      drawHealthBar(
-        hud.leftBarX,
-        24,
-        hud.barW,
-        30,
-        run.player.maxHp > 0 ? run.player.hp / run.player.maxHp : 0,
-        "#6fd5a8",
-        `HP ${run.player.hp}/${run.player.maxHp}`
-      );
-
-      if (enemy) {
-        drawHealthBar(
-          hud.rightBarX,
-          24,
-          hud.barW,
-          30,
-          enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 0,
-          "#ef8a73",
-          `Enemy HP ${enemy.hp}/${enemy.maxHp}`
-        );
-      }
-
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#dfedf9";
-      setFont(26, 700, true);
-      ctx.fillText(`Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`, WIDTH * 0.5, 44);
-
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#f4d88d";
-      setFont(19, 700, false);
-      ctx.save();
-      ctx.shadowColor = "rgba(245, 207, 126, 0.28)";
-      ctx.shadowBlur = 12;
-      ctx.fillText(`Chips: ${run.player.gold}`, hud.left + 2, 72);
-      ctx.restore();
-
-      ctx.fillStyle = "#b7ddff";
-      setFont(17, 700, false);
-      ctx.fillText(`Streak: ${run.player.streak}`, hud.left + 166, 72);
-      ctx.fillText(`Bust Guards: ${run.player.bustGuardsLeft}`, hud.left + 280, 72);
-    }
-
-    const passiveLine = passiveSummary(run);
-    if (passiveLine) {
-      ctx.fillStyle = "#9ec4e2";
-      setFont(14, 600, false);
-      const passiveText = fitText(`Passives: ${passiveLine}`, hud.passiveMaxWidth);
-      ctx.fillText(passiveText, hud.left + 2, hud.portrait ? 142 : 94);
-    }
-
-    const relicEntries = Object.entries(run.player.relics).slice(0, 5);
-    if (relicEntries.length > 0) {
-      if (hud.portrait) {
-        const relicTotal = Object.values(run.player.relics).reduce((sum, value) => sum + nonNegInt(value, 0), 0);
-        ctx.textAlign = "left";
-        ctx.fillStyle = "#9fc2de";
-        setFont(14, 600, false);
-        ctx.fillText(`Relics: ${relicTotal}`, hud.left + 2, 164);
-      } else {
-        ctx.textAlign = "right";
-        ctx.fillStyle = "#9fc2de";
-        setFont(14, 600, false);
-        const lines = relicEntries.map(([id, count]) => {
-          const relic = RELIC_BY_ID.get(id);
-          return `${relic ? relic.name : id} x${count}`;
-        });
-        lines.forEach((line, idx) => {
-          ctx.fillText(line, hud.right - 2, 92 + idx * 16);
-        });
-      }
-    }
-
+    ctx.fillStyle = "#b7ddff";
+    setFont(hud.portrait ? 14 : 15, 700, false);
+    const stackX = splitX + rightPad;
+    const streakY = statsY + (hud.portrait ? 29 : 27);
+    const guardsY = statsY + (hud.portrait ? 53 : 49);
+    ctx.fillText(`Streak ${run.player.streak}`, stackX, streakY);
+    ctx.fillText(`Guards ${run.player.bustGuardsLeft}`, stackX, guardsY);
   }
 
   function carouselDelta(index, selected, length) {
@@ -3458,7 +3940,6 @@
     ctx.fillStyle = "#97bddb";
     setFont(portrait ? 14 : 15, 600, false);
     ctx.fillText("Relics are passive and activate immediately.", WIDTH * 0.5, layout.panelY + 90);
-
     roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
     ctx.fillStyle = "rgba(8, 18, 29, 0.76)";
     ctx.fill();
@@ -3520,7 +4001,7 @@
     });
 
     const edgeFadeW = Math.min(120, layout.viewportW * 0.16);
-    const edgeFadeAlpha = state.compactControls ? 0.44 : 0.56;
+    const edgeFadeAlpha = state.compactControls ? 0.28 : 0.34;
     const leftFade = ctx.createLinearGradient(layout.viewportX, 0, layout.viewportX + edgeFadeW, 0);
     leftFade.addColorStop(0, `rgba(8, 18, 29, ${edgeFadeAlpha})`);
     leftFade.addColorStop(1, "rgba(8, 18, 29, 0)");
@@ -3587,7 +4068,12 @@
       state.shopUi = null;
       return;
     }
+    if (!state.run) {
+      state.shopUi = null;
+      return;
+    }
 
+    const run = state.run;
     const layout = rewardCarouselLayout();
     const total = state.shopStock.length;
     const selected = state.selectionIndex;
@@ -3619,9 +4105,28 @@
     setFont(portrait ? 34 : 40, 700, true);
     ctx.fillText("Black Market", WIDTH * 0.5, layout.panelY + 48);
 
-    ctx.fillStyle = "#97bddb";
-    setFont(portrait ? 14 : 15, 600, false);
-    ctx.fillText("Buy once to activate immediately.", WIDTH * 0.5, layout.panelY + 90);
+    const pillY = layout.panelY + 104;
+    const chipPillW = 210;
+    const hpPillW = 190;
+    roundRect(layout.centerX - chipPillW - 12, pillY, chipPillW, 34, 12);
+    ctx.fillStyle = "rgba(14, 30, 46, 0.9)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(168, 206, 234, 0.34)";
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+    ctx.fillStyle = "#f6e6a6";
+    setFont(17, 700, false);
+    ctx.fillText(`◍ ${run.player.gold}`, layout.centerX - chipPillW * 0.5 - 12, pillY + 23);
+
+    roundRect(layout.centerX + 12, pillY, hpPillW, 34, 12);
+    ctx.fillStyle = "rgba(14, 30, 46, 0.9)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(168, 206, 234, 0.34)";
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+    ctx.fillStyle = "#bff2ce";
+    setFont(17, 700, false);
+    ctx.fillText(`HP ${run.player.hp}/${run.player.maxHp}`, layout.centerX + hpPillW * 0.5 + 12, pillY + 23);
 
     roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
     ctx.fillStyle = "rgba(8, 18, 29, 0.76)";
@@ -3638,6 +4143,9 @@
     renderCards.forEach((card) => {
       const item = card.payload;
       const radius = Math.max(12, Math.floor(18 * (card.w / layout.mainW)));
+      const purchaseLocked = Boolean(run.shopPurchaseMade);
+      const affordable = run.player.gold >= item.cost;
+      const buyEnabled = !purchaseLocked && !item.sold && affordable;
       ctx.save();
       if (card.selected) {
         ctx.shadowColor = "rgba(6, 12, 19, 0.84)";
@@ -3670,21 +4178,52 @@
       ctx.fillStyle = item.sold ? "#78818d" : "#d4e6f4";
       if (card.selected) {
         setFont(portrait ? 16 : 18, 600, false);
-        wrapText(shopItemDescription(item), card.x + 24, card.y + (portrait ? 106 : 118), card.w - 48, portrait ? 20 : 24, "center");
+        wrapText(
+          shopItemDescription(item),
+          card.x + (portrait ? 24 : 32),
+          card.y + (portrait ? 106 : 112),
+          card.w - (portrait ? 48 : 64),
+          portrait ? 20 : 22,
+          "center"
+        );
       } else {
         setFont(portrait ? 13 : 15, 600, false);
-        ctx.fillText(item.sold ? "Sold out" : "Tap to select", card.x + card.w * 0.5, card.y + card.h - 62);
+        ctx.fillText(item.sold ? "Sold out" : "Tap to select", card.x + card.w * 0.5, card.y + (portrait ? card.h - 68 : card.h - 86));
       }
 
       ctx.fillStyle = item.sold ? "#9ca5af" : "#ffd58f";
       setFont(card.selected ? (portrait ? 22 : 24) : portrait ? 18 : 20, 700, false);
-      ctx.fillText(item.sold ? "SOLD" : `${item.cost} chips`, card.x + card.w * 0.5, card.y + card.h - 28);
+      ctx.fillText(`${item.cost} chips`, card.x + card.w * 0.5, card.y + card.h - 66);
+
+      const btnW = Math.min(card.w - (portrait ? 24 : 28), card.selected ? (portrait ? 174 : 188) : portrait ? 154 : 164);
+      const btnH = card.selected ? (portrait ? 34 : 36) : portrait ? 30 : 32;
+      const btnX = card.x + (card.w - btnW) * 0.5;
+      const btnY = card.y + card.h - btnH - (portrait ? 14 : 20);
+      roundRect(btnX, btnY, btnW, btnH, 11);
+      if (item.sold) {
+        ctx.fillStyle = "rgba(86, 98, 111, 0.92)";
+      } else if (purchaseLocked) {
+        ctx.fillStyle = "rgba(64, 74, 88, 0.9)";
+      } else if (buyEnabled) {
+        ctx.fillStyle = "rgba(28, 78, 112, 0.96)";
+      } else {
+        ctx.fillStyle = "rgba(73, 55, 42, 0.92)";
+      }
+      ctx.fill();
+      ctx.strokeStyle = buyEnabled ? "rgba(200, 232, 255, 0.44)" : "rgba(170, 190, 208, 0.28)";
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+
+      ctx.fillStyle = "#ffffff";
+      setFont(card.selected ? (portrait ? 16 : 18) : portrait ? 14 : 16, 700, false);
+      const buyLabel = item.sold ? "Sold" : purchaseLocked ? "Locked" : buyEnabled ? "⛒ Buy" : "Need Chips";
+      ctx.fillText(buyLabel, card.x + card.w * 0.5, btnY + btnH - 11);
 
       ctx.restore();
     });
 
     const edgeFadeW = Math.min(120, layout.viewportW * 0.16);
-    const edgeFadeAlpha = state.compactControls ? 0.44 : 0.56;
+    const edgeFadeAlpha = state.compactControls ? 0.28 : 0.34;
     const leftFade = ctx.createLinearGradient(layout.viewportX, 0, layout.viewportX + edgeFadeW, 0);
     leftFade.addColorStop(0, `rgba(8, 18, 29, ${edgeFadeAlpha})`);
     leftFade.addColorStop(1, "rgba(8, 18, 29, 0)");
@@ -3722,6 +4261,13 @@
         y: card.y,
         w: card.w,
         h: card.h,
+        buyEnabled: Boolean(state.run && !state.run.shopPurchaseMade && !card.payload.sold && state.run.player.gold >= card.payload.cost),
+        buyButton: {
+          x: card.x + (card.w - Math.min(card.w - 28, card.selected ? 188 : 164)) * 0.5,
+          y: card.y + card.h - (card.selected ? 36 : 32) - 20,
+          w: Math.min(card.w - 28, card.selected ? 188 : 164),
+          h: card.selected ? 36 : 32,
+        },
       })),
       leftArrow: canScroll
         ? { x: layout.leftArrowX, y: layout.arrowY, r: layout.arrowRadius }
@@ -4040,8 +4586,12 @@
     const centerX = (leftBound + rightBound) * 0.5;
 
     if (state.encounter) {
-      const dealerBottom = handCardPosition("dealer", 0, 1).y + CARD_H;
-      const playerTop = handCardPosition("player", 0, 1).y;
+      const dealerCount = Math.max(1, state.encounter.dealerHand.length);
+      const playerCount = Math.max(1, state.encounter.playerHand.length);
+      const dealerBox = handBounds("dealer", dealerCount);
+      const playerBox = handBounds("player", playerCount);
+      const dealerBottom = dealerBox.y + dealerBox.h;
+      const playerTop = playerBox.y;
       const gapCenter = dealerBottom + (playerTop - dealerBottom) * 0.5;
       const topPad = state.viewport?.portraitZoomed ? 170 : 140;
       const bottomPad = state.viewport?.portraitZoomed ? HEIGHT - 170 : HEIGHT - 120;
@@ -4079,11 +4629,20 @@
     }
 
     ctx.textAlign = "center";
-    setFont(26, 700, true);
     for (const f of state.floatingTexts) {
       const alpha = Math.max(0, Math.min(1, f.life / f.maxLife));
+      const elapsed = 1 - alpha;
+      const jitterX = f.jitter ? Math.sin(elapsed * 19 + f.jitterSeed) * (5 + elapsed * 10) : 0;
+      const jitterY = f.jitter ? Math.cos(elapsed * 15 + f.jitterSeed * 0.7) * 2 : 0;
+      ctx.save();
+      if (f.glow) {
+        ctx.shadowColor = applyAlpha(f.glow, Math.min(1, alpha * 0.88));
+        ctx.shadowBlur = 18;
+      }
       ctx.fillStyle = applyAlpha(f.color, alpha);
-      ctx.fillText(f.text, f.x, f.y);
+      setFont(f.size || 26, f.weight || 700, true);
+      ctx.fillText(f.text, f.x + jitterX, f.y + jitterY);
+      ctx.restore();
     }
 
     if (state.announcementTimer > 0 && state.announcement) {
@@ -4215,6 +4774,7 @@
 
   function render() {
     updateMobileControls();
+    syncOverlayUi();
     const shake = currentShakeOffset();
     ctx.save();
     ctx.translate(shake.x, shake.y);
@@ -4391,8 +4951,11 @@
     const menuScreen = state.mode === "menu";
     const reservedHeight =
       !menuScreen && state.mobileActive && mobileControls ? mobileControls.offsetHeight + (state.compactControls ? 8 : 12) : 0;
-    const availableHeight = Math.max(menuScreen ? viewportHeight : 140, viewportHeight - reservedHeight - (state.compactControls ? 6 : 0));
-    const availableWidth = Math.max(280, viewportWidth);
+    const availableHeight = Math.max(
+      120,
+      viewportHeight - reservedHeight - (state.compactControls ? 6 : 0) - 2
+    );
+    const availableWidth = Math.max(1, viewportWidth - 2);
     const portraitZoomed = state.mobilePortrait;
 
     if (portraitZoomed) {
@@ -4400,7 +4963,7 @@
       const shellH = availableHeight;
       const scale = shellH / HEIGHT;
       const canvasW = Math.max(shellW, Math.floor(WIDTH * scale));
-      const canvasH = Math.max(140, Math.floor(HEIGHT * scale));
+      const canvasH = Math.max(120, Math.floor(HEIGHT * scale));
       const left = Math.floor((shellW - canvasW) * 0.5);
       const cropDisplayX = Math.max(0, canvasW - shellW) * 0.5;
       const cropWorldX = scale > 0 ? cropDisplayX / scale : 0;
@@ -4423,8 +4986,8 @@
     }
 
     const scale = Math.min(availableWidth / WIDTH, availableHeight / HEIGHT);
-    const displayW = Math.max(280, Math.floor(WIDTH * scale));
-    const displayH = Math.max(140, Math.floor(HEIGHT * scale));
+    const displayW = Math.max(1, Math.floor(WIDTH * scale));
+    const displayH = Math.max(120, Math.floor(HEIGHT * scale));
 
     gameShell.style.width = `${displayW}px`;
     gameShell.style.height = `${displayH}px`;
@@ -4462,6 +5025,35 @@
       });
     });
   }
+
+  if (logsToggle) {
+    logsToggle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      unlockAudio();
+      toggleLogsModal();
+    });
+  }
+
+  if (logsClose) {
+    logsClose.addEventListener("click", (event) => {
+      event.preventDefault();
+      closeLogsModal();
+    });
+  }
+
+  if (logsModal) {
+    logsModal.addEventListener("pointerdown", (event) => {
+      if (event.target === logsModal) {
+        closeLogsModal();
+      }
+    });
+  }
+
+  document.addEventListener("pointerdown", (event) => {
+    if (passiveTooltip && !passiveTooltip.hidden && passiveRail && !passiveRail.contains(event.target)) {
+      hidePassiveTooltip();
+    }
+  });
 
   canvas.addEventListener("pointerdown", onCanvasPointerDown);
   canvas.addEventListener("pointermove", onCanvasPointerMove);
