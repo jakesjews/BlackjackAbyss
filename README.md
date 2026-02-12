@@ -66,3 +66,4 @@ Storage keys:
 - `game.js` - game logic, rendering, input, persistence
 - `test-actions.json` - short Playwright action burst
 - `test-actions-long.json` - longer Playwright scenario
+
