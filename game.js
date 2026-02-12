@@ -35,10 +35,18 @@
     speed: 3 + Math.random() * 12,
     alpha: 0.05 + Math.random() * 0.11,
   }));
-  const MENU_ART_SRC = "public/images/splash_art.png";
+  const MENU_ART_SOURCES = ["/images/splash_art.png", "public/images/splash_art.png"];
   const menuArtImage = new window.Image();
   menuArtImage.decoding = "async";
-  menuArtImage.src = MENU_ART_SRC;
+  let menuArtSourceIndex = 0;
+  menuArtImage.addEventListener("error", () => {
+    if (menuArtSourceIndex >= MENU_ART_SOURCES.length - 1) {
+      return;
+    }
+    menuArtSourceIndex += 1;
+    menuArtImage.src = MENU_ART_SOURCES[menuArtSourceIndex];
+  });
+  menuArtImage.src = MENU_ART_SOURCES[menuArtSourceIndex];
   const STORAGE_KEYS = {
     profile: "blackjack-abyss.profile.v1",
     run: "blackjack-abyss.run.v1",
