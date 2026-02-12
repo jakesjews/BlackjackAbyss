@@ -3828,7 +3828,6 @@
       const centerX = (leftBound + rightBound) * 0.5;
       const panelW = Math.min(430, visibleW);
       const panelX = centerX - panelW * 0.5;
-      const panelY = 18;
 
       const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
       bg.addColorStop(0, "#081420");
@@ -3853,6 +3852,8 @@
       setFont(18, 600, false);
       const subtitleLines = wrappedLines(subtitle, panelW - panelPad * 2);
       const panelH = Math.max(170, 90 + subtitleLines.length * 18 + (profileLine ? 24 : 0));
+      const safeBottom = 170;
+      const panelY = Math.max(24, HEIGHT - safeBottom - panelH);
       roundRect(panelX, panelY, panelW, panelH, 20);
       const panelFill = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
       panelFill.addColorStop(0, "rgba(11, 28, 43, 0.82)");
