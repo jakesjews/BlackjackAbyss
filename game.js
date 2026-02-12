@@ -381,6 +381,7 @@
     announcementTimer: 0,
     announcementDuration: 0,
     rewardUi: null,
+    shopUi: null,
     rewardTouch: null,
     rewardDragOffset: 0,
     worldTime: 0,
@@ -2063,7 +2064,34 @@
     return false;
   }
 
+  function handleShopPointerTap(worldX, worldY) {
+    if (state.mode !== "shop" || !state.shopUi || !state.shopStock.length) {
+      return false;
+    }
+
+    const cards = [...state.shopUi.cards].sort((a, b) => Number(state.selectionIndex === b.index) - Number(state.selectionIndex === a.index));
+    for (const card of cards) {
+      if (!pointInRect(worldX, worldY, card)) {
+        continue;
+      }
+      if (state.selectionIndex !== card.index) {
+        state.selectionIndex = card.index;
+        playUiSfx("select");
+      } else if (!state.shopStock[card.index]?.sold) {
+        buyShopItem();
+      } else {
+        playUiSfx("error");
+      }
+      return true;
+    }
+    return false;
+  }
+
   function onCanvasPointerDown(event) {
+    if (state.mode === "shop") {
+      state.rewardTouch = null;
+      return;
+    }
     if (state.mode !== "reward") {
       state.rewardTouch = null;
       return;
@@ -2120,6 +2148,13 @@
   }
 
   function onCanvasPointerUp(event) {
+    if (state.mode === "shop") {
+      const point = canvasPointToWorld(event.clientX, event.clientY);
+      if (point) {
+        handleShopPointerTap(point.x, point.y);
+      }
+      return;
+    }
     if (!state.rewardTouch || state.rewardTouch.pointerId !== event.pointerId) {
       return;
     }
@@ -2735,24 +2770,82 @@
     return delta;
   }
 
+  function overlayLayoutBounds(horizontalPadding = 0) {
+    const cropWorldX = Math.max(0, state.viewport?.cropWorldX || 0);
+    const left = horizontalPadding + cropWorldX;
+    const right = WIDTH - horizontalPadding - cropWorldX;
+    return {
+      left,
+      right,
+      width: Math.max(220, right - left),
+      compactPortrait: Boolean(state.compactControls && state.mobilePortrait),
+    };
+  }
+
+  function shopCardLayout() {
+    if (!state.shopStock.length) {
+      return [];
+    }
+    const count = state.shopStock.length;
+    const bounds = overlayLayoutBounds(24);
+
+    if (bounds.compactPortrait) {
+      const gap = 12;
+      const topY = 188;
+      const bottomPad = 18;
+      const cardWidth = Math.max(214, Math.min(300, Math.floor(bounds.width - 12)));
+      const targetHeight = Math.floor(cardWidth * 0.66);
+      const maxCardHeight = Math.floor((HEIGHT - topY - bottomPad - gap * (count - 1)) / count);
+      const cardHeight = Math.max(120, Math.min(targetHeight, maxCardHeight));
+      const totalH = count * cardHeight + (count - 1) * gap;
+      const startY = topY + Math.max(0, Math.floor((HEIGHT - topY - bottomPad - totalH) * 0.5));
+      const x = bounds.left + Math.max(0, Math.floor((bounds.width - cardWidth) * 0.5));
+      return state.shopStock.map((_, idx) => ({
+        idx,
+        x,
+        y: startY + idx * (cardHeight + gap),
+        w: cardWidth,
+        h: cardHeight,
+      }));
+    }
+
+    const cardWidth = 322;
+    const cardHeight = 248;
+    const gap = 28;
+    const totalW = count * cardWidth + (count - 1) * gap;
+    let x = WIDTH * 0.5 - totalW * 0.5;
+    const y = 206;
+    return state.shopStock.map((_, idx) => {
+      const rect = { idx, x, y, w: cardWidth, h: cardHeight };
+      x += cardWidth + gap;
+      return rect;
+    });
+  }
+
   function rewardCarouselLayout() {
     const compact = state.compactControls;
-    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
-    const visibleW = Math.max(760, WIDTH - cropX * 2);
-    const panelW = Math.max(700, Math.min(compact ? 1080 : 980, visibleW - (compact ? 22 : 46)));
-    const panelH = compact ? 524 : 500;
+    const compactPortrait = Boolean(compact && state.mobilePortrait);
+    const bounds = overlayLayoutBounds(compactPortrait ? 10 : compact ? 12 : 24);
+    const maxPanelW = compactPortrait ? 900 : compact ? 1080 : 980;
+    const minPanelW = compactPortrait ? 280 : compact ? 700 : 700;
+    const panelW = Math.max(minPanelW, Math.min(maxPanelW, bounds.width));
+    const panelH = compactPortrait ? 510 : compact ? 524 : 500;
     const panelX = WIDTH * 0.5 - panelW * 0.5;
-    const panelY = compact ? 106 : 116;
-    const viewportPad = compact ? 30 : 44;
+    const panelY = compactPortrait ? 102 : compact ? 106 : 116;
+    const viewportPad = compactPortrait ? 18 : compact ? 30 : 44;
     const viewportX = panelX + viewportPad;
-    const viewportY = panelY + 160;
+    const viewportY = panelY + (compactPortrait ? 152 : 160);
     const viewportW = panelW - viewportPad * 2;
-    const viewportH = compact ? 258 : 248;
-    const mainW = Math.round(Math.min(compact ? 358 : 372, viewportW * 0.64));
-    const mainH = compact ? 240 : 248;
-    const spacing = Math.round(Math.min(compact ? 244 : 270, viewportW * (compact ? 0.35 : 0.37)));
-    const arrowRadius = compact ? 34 : 30;
-    const arrowOffset = viewportW * 0.5 + (compact ? 38 : 44);
+    const viewportH = compactPortrait ? 250 : compact ? 258 : 248;
+    const mainW = Math.round(
+      Math.min(compactPortrait ? 262 : compact ? 358 : 372, viewportW * (compactPortrait ? 0.76 : 0.64))
+    );
+    const mainH = compactPortrait ? 190 : compact ? 240 : 248;
+    const spacing = Math.round(
+      Math.min(compactPortrait ? 186 : compact ? 244 : 270, viewportW * (compactPortrait ? 0.54 : compact ? 0.35 : 0.37))
+    );
+    const arrowRadius = compactPortrait ? 26 : compact ? 34 : 30;
+    const arrowOffset = viewportW * 0.5 + (compactPortrait ? 18 : compact ? 38 : 44);
     const centerX = WIDTH * 0.5;
     const centerY = viewportY + viewportH * 0.5;
     return {
@@ -2775,7 +2868,7 @@
       leftArrowX: centerX - arrowOffset,
       rightArrowX: centerX + arrowOffset,
       arrowY: centerY,
-      indicatorY: panelY + panelH - 34,
+      indicatorY: panelY + panelH - (compactPortrait ? 24 : 34),
     };
   }
 
@@ -2812,6 +2905,7 @@
     }
 
     const layout = rewardCarouselLayout();
+    const compactPortrait = Boolean(state.compactControls && state.mobilePortrait);
     const total = state.rewardOptions.length;
     const selected = state.selectionIndex;
     const dragPx =
@@ -2838,18 +2932,25 @@
 
     ctx.textAlign = "center";
     ctx.fillStyle = "#f6e6a6";
-    setFont(40, 700, true);
-    ctx.fillText("Relic Draft", WIDTH * 0.5, layout.panelY + 48);
+    setFont(compactPortrait ? 34 : 40, 700, true);
+    ctx.fillText("Relic Draft", WIDTH * 0.5, layout.panelY + (compactPortrait ? 42 : 48));
 
     ctx.fillStyle = "#bdd6ec";
-    setFont(18, 600, false);
+    setFont(compactPortrait ? 15 : 18, 600, false);
     const hint = state.compactControls
       ? "Swipe the carousel or tap cards/arrows. Claim below."
       : "Arrow keys or click arrows to browse. Enter or Space to claim.";
-    wrapText(hint, layout.panelX + 52, layout.panelY + 82, layout.panelW - 104, 24, "center");
+    wrapText(
+      hint,
+      layout.panelX + (compactPortrait ? 28 : 52),
+      layout.panelY + (compactPortrait ? 72 : 82),
+      layout.panelW - (compactPortrait ? 56 : 104),
+      compactPortrait ? 20 : 24,
+      "center"
+    );
     ctx.fillStyle = "#97bddb";
-    setFont(15, 600, false);
-    ctx.fillText("All relics are passive and auto-apply.", WIDTH * 0.5, layout.panelY + 124);
+    setFont(compactPortrait ? 13 : 15, 600, false);
+    ctx.fillText("All relics are passive and auto-apply.", WIDTH * 0.5, layout.panelY + (compactPortrait ? 112 : 124));
 
     roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
     ctx.fillStyle = "rgba(8, 18, 29, 0.76)";
@@ -2933,16 +3034,25 @@
       }
 
       ctx.fillStyle = card.relic.color;
-      setFont(card.selected ? 33 : 24, 700, true);
-      ctx.fillText(card.relic.name, card.x + card.w * 0.5, card.y + (card.selected ? 60 : 48));
+      const titleFont = Math.max(20, card.selected ? Math.floor(card.w * 0.105) : Math.floor(card.w * 0.085));
+      setFont(titleFont, 700, true);
+      ctx.fillText(card.relic.name, card.x + card.w * 0.5, card.y + (card.selected ? Math.max(50, Math.floor(card.h * 0.25)) : 48));
 
       ctx.fillStyle = "#d0e4f5";
       if (card.selected) {
-        setFont(18, 600, false);
-        wrapText(passiveDescription(card.relic.description), card.x + 34, card.y + 120, card.w - 68, 24, "center");
+        const bodyFont = Math.max(14, Math.floor(card.w * 0.058));
+        setFont(bodyFont, 600, false);
+        wrapText(
+          passiveDescription(card.relic.description),
+          card.x + 22,
+          card.y + Math.max(92, Math.floor(card.h * 0.48)),
+          card.w - 44,
+          Math.max(18, Math.floor(bodyFont * 1.33)),
+          "center"
+        );
       } else {
-        setFont(15, 600, false);
-        ctx.fillText("Tap to select", card.x + card.w * 0.5, card.y + card.h - 34);
+        setFont(Math.max(13, Math.floor(card.w * 0.052)), 600, false);
+        ctx.fillText("Tap to select", card.x + card.w * 0.5, card.y + card.h - 28);
       }
 
       ctx.restore();
@@ -3012,39 +3122,58 @@
 
   function drawShopScreen() {
     if (state.mode !== "shop" || !state.shopStock.length) {
+      state.shopUi = null;
       return;
     }
+    const compactPortrait = Boolean(state.compactControls && state.mobilePortrait);
 
     ctx.fillStyle = "rgba(6, 11, 17, 0.75)";
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
     ctx.textAlign = "center";
     ctx.fillStyle = "#f2c587";
-    setFont(40, 700, true);
-    ctx.fillText("Black Market", WIDTH * 0.5, 122);
+    setFont(compactPortrait ? 34 : 40, 700, true);
+    ctx.fillText("Black Market", WIDTH * 0.5, compactPortrait ? 112 : 122);
 
     ctx.fillStyle = "#c4d9ec";
-    setFont(18, 600, false);
+    setFont(compactPortrait ? 15 : 18, 600, false);
     ctx.fillText(
       state.compactControls
         ? "Use Left / Right, Buy, and Continue on control bar"
         : "Use Left / Right, Buy, and Continue below, or Arrow keys plus Space/Enter",
       WIDTH * 0.5,
-      154
+      compactPortrait ? 140 : 154
     );
     ctx.fillStyle = "#97bddb";
-    setFont(15, 600, false);
-    ctx.fillText("Relics are passive. Buy once to activate immediately.", WIDTH * 0.5, 176);
+    setFont(compactPortrait ? 13 : 15, 600, false);
+    ctx.fillText("Relics are passive. Buy once to activate immediately.", WIDTH * 0.5, compactPortrait ? 160 : 176);
 
-    const cardWidth = 322;
-    const cardHeight = 248;
-    const gap = 28;
-    const totalW = state.shopStock.length * cardWidth + (state.shopStock.length - 1) * gap;
-    let x = WIDTH * 0.5 - totalW * 0.5;
+    const cards = shopCardLayout();
+    state.shopUi = {
+      cards: cards.map((card) => ({
+        index: card.idx,
+        x: card.x,
+        y: card.y,
+        w: card.w,
+        h: card.h,
+      })),
+    };
 
-    state.shopStock.forEach((item, idx) => {
-      const y = 206;
+    cards.forEach((card) => {
+      const idx = card.idx;
+      const item = state.shopStock[idx];
+      const x = card.x;
+      const y = card.y;
+      const cardWidth = card.w;
+      const cardHeight = card.h;
       const selected = idx === state.selectionIndex;
+      const nameFont = Math.max(22, Math.min(30, Math.floor(cardWidth * 0.1)));
+      const bodyFont = Math.max(14, Math.min(18, Math.floor(cardWidth * 0.06)));
+      const bodyLineHeight = Math.max(18, Math.floor(bodyFont * 1.33));
+      const priceFont = Math.max(18, Math.min(24, Math.floor(cardWidth * 0.075)));
+      const nameY = y + Math.max(48, Math.floor(cardHeight * 0.24));
+      const bodyY = y + Math.max(92, Math.floor(cardHeight * 0.48));
+      const priceY = y + cardHeight - Math.max(24, Math.floor(cardHeight * 0.15));
 
       roundRect(x, y, cardWidth, cardHeight, 18);
       ctx.fillStyle = item.sold ? "rgba(34, 36, 40, 0.82)" : selected ? "rgba(35, 51, 60, 0.95)" : "rgba(20, 31, 38, 0.9)";
@@ -3063,18 +3192,16 @@
       }
 
       ctx.fillStyle = item.sold ? "#8f9aa7" : "#f4e1aa";
-      setFont(30, 700, true);
-      ctx.fillText(shopItemName(item), x + cardWidth * 0.5, y + 54);
+      setFont(nameFont, 700, true);
+      ctx.fillText(shopItemName(item), x + cardWidth * 0.5, nameY);
 
       ctx.fillStyle = item.sold ? "#78818d" : "#d4e6f4";
-      setFont(18, 600, false);
-      wrapText(shopItemDescription(item), x + 30, y + 104, cardWidth - 60, 24, "center");
+      setFont(bodyFont, 600, false);
+      wrapText(shopItemDescription(item), x + 20, bodyY, cardWidth - 40, bodyLineHeight, "center");
 
       ctx.fillStyle = item.sold ? "#9ca5af" : "#ffd58f";
-      setFont(23, 700, false);
-      ctx.fillText(item.sold ? "SOLD" : `${item.cost} chips`, x + cardWidth * 0.5, y + cardHeight - 42);
-
-      x += cardWidth + gap;
+      setFont(priceFont, 700, false);
+      ctx.fillText(item.sold ? "SOLD" : `${item.cost} chips`, x + cardWidth * 0.5, priceY);
     });
   }
 
@@ -3272,7 +3399,7 @@
       ctx.fillText(f.text, f.x, f.y);
     }
 
-    if (state.announcementTimer > 0 && state.announcement) {
+    if (state.announcementTimer > 0 && state.announcement && !state.compactControls) {
       const duration = Math.max(0.25, state.announcementDuration || state.announcementTimer || 1.4);
       const progress = Math.max(0, Math.min(1, 1 - state.announcementTimer / duration));
       const intro = Math.max(0, Math.min(1, progress / 0.24));
@@ -3281,7 +3408,10 @@
       const scale = progress < 0.24 ? 0.68 + easeOutBack(intro) * 0.54 : 1.12 - settle * 0.14;
       const alpha = Math.max(0, Math.min(1, (0.2 + intro * 0.8) * fade));
       const centerX = WIDTH * 0.5;
-      const centerY = state.viewport?.portraitZoomed ? 182 : 124;
+      let centerY = state.viewport?.portraitZoomed ? 182 : 124;
+      if (state.compactControls && state.mobilePortrait && (state.mode === "reward" || state.mode === "shop")) {
+        centerY = 84;
+      }
       const ringExpand = easeOutCubic(Math.min(1, progress / 0.45));
       const ringRadius = 72 + ringExpand * 210;
 
