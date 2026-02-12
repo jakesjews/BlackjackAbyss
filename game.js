@@ -1,6 +1,7 @@
 (() => {
   "use strict";
 
+  const gameShell = document.getElementById("game-shell");
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d");
   const mobileControls = document.getElementById("mobile-controls");
@@ -14,7 +15,7 @@
         confirm: mobileControls.querySelector('[data-mobile-action="confirm"]'),
       }
     : null;
-  if (!canvas || !ctx) {
+  if (!gameShell || !canvas || !ctx) {
     throw new Error("Unable to initialize canvas rendering context.");
   }
 
@@ -362,6 +363,7 @@
     profile: null,
     savedRunSnapshot: null,
     mobileActive: false,
+    mobilePortrait: false,
     autosaveTimer: 0,
     encounter: null,
     rewardOptions: [],
@@ -369,9 +371,21 @@
     selectionIndex: 0,
     floatingTexts: [],
     cardBursts: [],
+    sparkParticles: [],
+    flashOverlays: [],
+    screenShakeTime: 0,
+    screenShakeDuration: 0,
+    screenShakePower: 0,
     announcement: "",
     announcementTimer: 0,
     worldTime: 0,
+    viewport: {
+      width: WIDTH,
+      height: HEIGHT,
+      scale: 1,
+      cropWorldX: 0,
+      portraitZoomed: false,
+    },
   };
 
   function clampNumber(value, min, max, fallback) {
@@ -701,9 +715,15 @@
     state.announcementTimer = 1.8;
     state.floatingTexts = [];
     state.cardBursts = [];
+    state.sparkParticles = [];
+    state.flashOverlays = [];
+    state.screenShakeTime = 0;
+    state.screenShakeDuration = 0;
+    state.screenShakePower = 0;
     state.autosaveTimer = 0;
     state.savedRunSnapshot = snapshot;
     updateProfileBest(run);
+    resizeCanvas();
     return true;
   }
 
@@ -943,6 +963,100 @@
     state.floatingTexts.push({ text, x, y, color, life: 1.2, maxLife: 1.2, vy: 24 });
   }
 
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function easeOutCubic(t) {
+    const clamped = Math.max(0, Math.min(1, t));
+    return 1 - (1 - clamped) ** 3;
+  }
+
+  function easeOutBack(t) {
+    const clamped = Math.max(0, Math.min(1, t));
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * (clamped - 1) ** 3 + c1 * (clamped - 1) ** 2;
+  }
+
+  function animatedCardPosition(card, targetX, targetY) {
+    const dealtAt = Number(card?.dealtAt);
+    if (!Number.isFinite(dealtAt)) {
+      return { x: targetX, y: targetY, alpha: 1 };
+    }
+
+    const progress = (state.worldTime - dealtAt) / 0.28;
+    if (progress >= 1) {
+      return { x: targetX, y: targetY, alpha: 1 };
+    }
+
+    const t = Math.max(0, progress);
+    const eased = easeOutBack(t);
+    const fromX = Number.isFinite(card?.fromX) ? card.fromX : targetX;
+    const fromY = Number.isFinite(card?.fromY) ? card.fromY : targetY;
+    const arc = Math.sin(t * Math.PI) * 16 * (1 - t);
+    return {
+      x: lerp(fromX, targetX, eased),
+      y: lerp(fromY, targetY, eased) - arc,
+      alpha: 0.42 + 0.58 * easeOutCubic(t),
+    };
+  }
+
+  function spawnSparkBurst(x, y, color, count = 12, speed = 160) {
+    const total = Math.max(2, Math.floor(count));
+    for (let i = 0; i < total; i += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const velocity = speed * (0.45 + Math.random() * 0.85);
+      state.sparkParticles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * velocity,
+        vy: Math.sin(angle) * velocity - Math.random() * 55,
+        size: 1.4 + Math.random() * 3.2,
+        color,
+        life: 0.34 + Math.random() * 0.35,
+        maxLife: 0.34 + Math.random() * 0.35,
+      });
+    }
+  }
+
+  function triggerScreenShake(power = 6, duration = 0.2) {
+    state.screenShakePower = Math.max(state.screenShakePower, power);
+    state.screenShakeDuration = Math.max(state.screenShakeDuration, duration);
+    state.screenShakeTime = Math.max(state.screenShakeTime, duration);
+  }
+
+  function triggerFlash(color, intensity = 0.08, duration = 0.16) {
+    state.flashOverlays.push({
+      color,
+      intensity: Math.max(0, intensity),
+      life: Math.max(0.01, duration),
+      maxLife: Math.max(0.01, duration),
+    });
+  }
+
+  function triggerImpactBurst(side, amount, color) {
+    const clampedAmount = Math.max(1, Number(amount) || 1);
+    const x = side === "enemy" ? WIDTH * 0.73 : WIDTH * 0.27;
+    const y = side === "enemy" ? 108 : 576;
+    spawnSparkBurst(x, y, color, 8 + Math.min(26, Math.floor(clampedAmount * 1.2)), 120 + clampedAmount * 8);
+    triggerScreenShake(Math.min(16, 3 + clampedAmount * 0.66), 0.14 + Math.min(0.16, clampedAmount * 0.01));
+    triggerFlash(color, Math.min(0.16, 0.03 + clampedAmount * 0.004), 0.12);
+  }
+
+  function currentShakeOffset() {
+    if (state.screenShakeTime <= 0 || state.screenShakePower <= 0) {
+      return { x: 0, y: 0 };
+    }
+    const duration = Math.max(0.01, state.screenShakeDuration);
+    const t = Math.max(0, Math.min(1, state.screenShakeTime / duration));
+    const strength = state.screenShakePower * t;
+    return {
+      x: (Math.random() * 2 - 1) * strength,
+      y: (Math.random() * 2 - 1) * strength,
+    };
+  }
+
   function cardToText(card) {
     return `${card.rank}${card.suit}`;
   }
@@ -980,7 +1094,8 @@
 
   function handCardPosition(handType, index, count) {
     const spacing = 96;
-    const y = handType === "dealer" ? 190 : 430;
+    const portraitOffset = state.viewport?.portraitZoomed ? 72 : 0;
+    const y = handType === "dealer" ? 190 + portraitOffset : 430 + portraitOffset;
     const startX = WIDTH * 0.5 - ((count - 1) * spacing) * 0.5 - CARD_W * 0.5;
     return { x: startX + index * spacing, y };
   }
@@ -990,7 +1105,14 @@
     card = luckyCardUpgrade(encounter, target, card);
 
     const hand = target === "player" ? encounter.playerHand : encounter.dealerHand;
-    hand.push(card);
+    const spawnX = WIDTH * 0.5 - CARD_W * 0.5 + (target === "player" ? 64 : -64);
+    const spawnY = target === "player" ? HEIGHT - CARD_H - 30 : 30;
+    hand.push({
+      ...card,
+      dealtAt: state.worldTime,
+      fromX: spawnX,
+      fromY: spawnY,
+    });
 
     const pos = handCardPosition(target, hand.length - 1, hand.length);
     state.cardBursts.push({
@@ -1000,8 +1122,9 @@
       life: 0.28,
       maxLife: 0.28,
     });
+    spawnSparkBurst(pos.x + CARD_W * 0.5, pos.y + CARD_H * 0.5, target === "player" ? "#76e5ff" : "#ffbb84", 5, 88);
 
-    return card;
+    return hand[hand.length - 1];
   }
 
   function createEncounter(run) {
@@ -1093,10 +1216,16 @@
     state.selectionIndex = 0;
     state.floatingTexts = [];
     state.cardBursts = [];
+    state.sparkParticles = [];
+    state.flashOverlays = [];
+    state.screenShakeTime = 0;
+    state.screenShakeDuration = 0;
+    state.screenShakePower = 0;
     state.announcement = "Deal the first hand.";
     state.announcementTimer = 2.2;
     clearSavedRun();
     beginEncounter();
+    resizeCanvas();
   }
 
   function canPlayerAct() {
@@ -1293,6 +1422,7 @@
       enemy.hp = Math.max(0, enemy.hp - outgoing);
       run.player.totalDamageDealt += outgoing;
       spawnFloatText(`-${outgoing}`, WIDTH * 0.72, 108, "#ff916e");
+      triggerImpactBurst("enemy", outgoing, outcome === "blackjack" ? "#f8d37b" : "#ff916e");
     }
 
     if (incoming > 0) {
@@ -1300,6 +1430,7 @@
       run.player.totalDamageTaken += incoming;
       run.player.streak = 0;
       spawnFloatText(`-${incoming}`, WIDTH * 0.26, 576, "#ff86aa");
+      triggerImpactBurst("player", incoming, "#ff86aa");
     } else if (outgoing > 0) {
       run.player.streak += 1;
       run.maxStreak = Math.max(run.maxStreak || 0, run.player.streak);
@@ -1329,6 +1460,15 @@
 
     if (encounter.bustGuardTriggered) {
       text += " Bust Guard converted the bust.";
+    }
+
+    if (encounter.critTriggered) {
+      spawnSparkBurst(WIDTH * 0.6, 148, "#ffd88d", 20, 240);
+      triggerFlash("#ffd88d", 0.1, 0.16);
+    }
+    if (outcome === "blackjack") {
+      spawnSparkBurst(WIDTH * 0.5, 646, "#f8d37b", 28, 260);
+      triggerScreenShake(8.5, 0.24);
     }
 
     encounter.resultText = text;
@@ -1366,6 +1506,9 @@
     const payout = Math.round(enemy.goldDrop * run.player.stats.goldMultiplier) + Math.min(10, run.player.streak);
     gainChips(payout);
     spawnFloatText(`+${payout} chips`, WIDTH * 0.5, 72, "#ffd687");
+    spawnSparkBurst(WIDTH * 0.5, 96, "#ffd687", 34, 280);
+    triggerScreenShake(7, 0.2);
+    triggerFlash("#ffd687", 0.09, 0.2);
     addLog(`${enemy.name} defeated. +${payout} chips.`);
 
     encounter.phase = "done";
@@ -1563,11 +1706,23 @@
   function updateMobileControls() {
     if (!mobileControls || !mobileButtons) {
       state.mobileActive = false;
+      state.mobilePortrait = false;
+      document.body.classList.remove("mobile-ui-active");
+      document.body.classList.remove("mobile-portrait-ui");
       return;
     }
 
     state.mobileActive = shouldUseMobileControls();
+    const viewportWidth = Math.floor(
+      window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || WIDTH
+    );
+    const viewportHeight = Math.floor(
+      window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
+    );
+    state.mobilePortrait = state.mobileActive && viewportHeight > viewportWidth;
     mobileControls.classList.toggle("active", state.mobileActive);
+    document.body.classList.toggle("mobile-ui-active", state.mobileActive);
+    document.body.classList.toggle("mobile-portrait-ui", state.mobilePortrait);
 
     if (!state.mobileActive) {
       return;
@@ -1817,6 +1972,30 @@
       return burst.life > 0;
     });
 
+    state.sparkParticles = state.sparkParticles.filter((spark) => {
+      spark.life -= dt;
+      spark.x += spark.vx * dt;
+      spark.y += spark.vy * dt;
+      spark.vx *= Math.max(0, 1 - dt * 3.5);
+      spark.vy += 180 * dt;
+      return spark.life > 0;
+    });
+
+    state.flashOverlays = state.flashOverlays.filter((flash) => {
+      flash.life -= dt;
+      return flash.life > 0;
+    });
+
+    if (state.screenShakeTime > 0) {
+      state.screenShakeTime = Math.max(0, state.screenShakeTime - dt);
+    }
+    if (state.screenShakePower > 0) {
+      state.screenShakePower = Math.max(0, state.screenShakePower - dt * 30);
+    }
+    if (state.screenShakeTime <= 0) {
+      state.screenShakeDuration = 0;
+    }
+
     if (state.announcementTimer > 0) {
       state.announcementTimer -= dt;
     }
@@ -1860,7 +2039,10 @@
     const viewportWidth = Math.floor(
       window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || WIDTH
     );
-    const mobileBoost = state.mobileActive && viewportWidth <= 700 ? 1.22 : 1;
+    let mobileBoost = 1;
+    if (state.mobileActive && viewportWidth <= 700) {
+      mobileBoost = state.viewport?.portraitZoomed ? 1.08 : 1.18;
+    }
     const tunedSize = Math.round(size * mobileBoost);
     ctx.font = `${weight} ${tunedSize}px ${useDisplay ? FONT_DISPLAY : FONT_UI}`;
   }
@@ -2019,7 +2201,11 @@
     const total = hand.length;
     for (let i = 0; i < total; i += 1) {
       const pos = handCardPosition(type, i, total);
-      drawCard(pos.x, pos.y, hand[i], hideSecond && i === 1);
+      const animated = animatedCardPosition(hand[i], pos.x, pos.y);
+      ctx.save();
+      ctx.globalAlpha = animated.alpha;
+      drawCard(animated.x, animated.y, hand[i], hideSecond && i === 1);
+      ctx.restore();
     }
   }
 
@@ -2030,19 +2216,20 @@
 
     const encounter = state.encounter;
     const enemy = encounter.enemy;
+    const portraitShift = state.viewport?.portraitZoomed ? 72 : 0;
 
     ctx.textAlign = "center";
     ctx.fillStyle = enemy.color;
     setFont(53, 700, true);
     ctx.globalAlpha = 0.16;
-    ctx.fillText(enemy.name, WIDTH * 0.5, 136);
+    ctx.fillText(enemy.name, WIDTH * 0.5, 136 + portraitShift);
     ctx.globalAlpha = 1;
     setFont(36, 700, true);
-    ctx.fillText(enemy.name, WIDTH * 0.5, 132);
+    ctx.fillText(enemy.name, WIDTH * 0.5, 132 + portraitShift);
 
     ctx.fillStyle = "#cbe6ff";
     setFont(17, 600, false);
-    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, WIDTH * 0.5, 156);
+    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, WIDTH * 0.5, 156 + portraitShift);
 
     drawHand(encounter.dealerHand, "dealer", encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player");
     drawHand(encounter.playerHand, "player", false);
@@ -2052,8 +2239,12 @@
 
     ctx.fillStyle = "#d7e7f8";
     setFont(22, 700, false);
-    ctx.fillText(`Dealer: ${dealerTotal}${encounter.hideDealerHole && encounter.phase === "player" ? "+?" : ""}`, WIDTH * 0.5, 342);
-    ctx.fillText(`You: ${playerTotal}`, WIDTH * 0.5, 610);
+    ctx.fillText(
+      `Dealer: ${dealerTotal}${encounter.hideDealerHole && encounter.phase === "player" ? "+?" : ""}`,
+      WIDTH * 0.5,
+      342 + portraitShift
+    );
+    ctx.fillText(`You: ${playerTotal}`, WIDTH * 0.5, 610 + portraitShift);
 
     if (encounter.resultText) {
       roundRect(WIDTH * 0.5 - 390, 622, 780, 35, 11);
@@ -2061,39 +2252,65 @@
       ctx.fill();
       ctx.fillStyle = "#f8d37b";
       setFont(19, 700, false);
-      ctx.fillText(encounter.resultText, WIDTH * 0.5, 646);
+      ctx.fillText(encounter.resultText, WIDTH * 0.5, 646 + (state.viewport?.portraitZoomed ? 30 : 0));
     }
 
     if (state.mode === "playing") {
-      setFont(17, 700, false);
-      const canDoubleNow = canPlayerAct() && encounter.playerHand.length === 2 && !encounter.doubleDown;
-      const actionBits = [
-        { text: "A: Hit", color: "#acc5de" },
-        { text: "  |  ", color: "rgba(157, 186, 213, 0.62)" },
-        { text: "B: Stand", color: "#acc5de" },
-        { text: "  |  ", color: "rgba(157, 186, 213, 0.62)" },
-        {
-          text: "Space: Double Down",
-          color: canDoubleNow ? "#acc5de" : "rgba(142, 163, 183, 0.4)",
-        },
-      ];
-      ctx.textAlign = "left";
-      const widths = actionBits.map((bit) => ctx.measureText(bit.text).width);
-      let drawX = WIDTH * 0.5 - widths.reduce((sum, width) => sum + width, 0) * 0.5;
-      actionBits.forEach((bit, idx) => {
-        ctx.fillStyle = bit.color;
-        ctx.fillText(bit.text, drawX, 672);
-        drawX += widths[idx];
-      });
-      setFont(15, 600, false);
-      ctx.fillStyle = "#9cb9d4";
-      ctx.textAlign = "center";
-      ctx.fillText(
-        state.mobileActive ? "Use mobile buttons below. Left / Right picks items." : "Left / Right: Pick relics and shop items",
-        WIDTH * 0.5,
-        698
-      );
+      if (state.mobileActive) {
+        ctx.textAlign = "center";
+        setFont(14, 600, false);
+        ctx.fillStyle = "#9cb9d4";
+        ctx.fillText(
+          "Tap buttons below. Left / Right picks items.",
+          WIDTH * 0.5,
+          state.viewport?.portraitZoomed ? 674 : 698
+        );
+      } else {
+        setFont(17, 700, false);
+        const canDoubleNow = canPlayerAct() && encounter.playerHand.length === 2 && !encounter.doubleDown;
+        const actionBits = [
+          { text: "A: Hit", color: "#acc5de" },
+          { text: "  |  ", color: "rgba(157, 186, 213, 0.62)" },
+          { text: "B: Stand", color: "#acc5de" },
+          { text: "  |  ", color: "rgba(157, 186, 213, 0.62)" },
+          {
+            text: "Space: Double Down",
+            color: canDoubleNow ? "#acc5de" : "rgba(142, 163, 183, 0.4)",
+          },
+        ];
+        ctx.textAlign = "left";
+        const widths = actionBits.map((bit) => ctx.measureText(bit.text).width);
+        let drawX = WIDTH * 0.5 - widths.reduce((sum, width) => sum + width, 0) * 0.5;
+        actionBits.forEach((bit, idx) => {
+          ctx.fillStyle = bit.color;
+          ctx.fillText(bit.text, drawX, 672);
+          drawX += widths[idx];
+        });
+        setFont(15, 600, false);
+        ctx.fillStyle = "#9cb9d4";
+        ctx.textAlign = "center";
+        ctx.fillText("Left / Right: Pick relics and shop items", WIDTH * 0.5, 698);
+      }
     }
+  }
+
+  function hudMetrics() {
+    const cropWorldX = state.viewport?.cropWorldX || 0;
+    const left = 42 + cropWorldX;
+    const right = WIDTH - 42 - cropWorldX;
+    const span = Math.max(220, right - left);
+    const barW = Math.max(130, Math.min(340, Math.floor((span - 34) * 0.5)));
+    return {
+      left,
+      right,
+      span,
+      barW,
+      leftBarX: left,
+      rightBarX: right - barW,
+      portrait: Boolean(state.viewport?.portraitZoomed),
+      logMaxWidth: Math.max(190, Math.min(560, Math.floor(span * 0.8))),
+      passiveMaxWidth: Math.max(180, Math.min(580, Math.floor(span * 0.84))),
+    };
   }
 
   function drawHud() {
@@ -2103,60 +2320,111 @@
 
     const run = state.run;
     const enemy = state.encounter ? state.encounter.enemy : null;
+    const hud = hudMetrics();
 
-    drawHealthBar(
-      42,
-      24,
-      340,
-      30,
-      run.player.maxHp > 0 ? run.player.hp / run.player.maxHp : 0,
-      "#6fd5a8",
-      `HP ${run.player.hp}/${run.player.maxHp}`
-    );
+    if (hud.portrait) {
+      drawHealthBar(
+        hud.left,
+        22,
+        hud.span,
+        26,
+        run.player.maxHp > 0 ? run.player.hp / run.player.maxHp : 0,
+        "#6fd5a8",
+        `HP ${run.player.hp}/${run.player.maxHp}`
+      );
 
-    if (enemy) {
-      drawHealthBar(898, 24, 340, 30, enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 0, "#ef8a73", `Enemy HP ${enemy.hp}/${enemy.maxHp}`);
+      if (enemy) {
+        drawHealthBar(
+          hud.left,
+          54,
+          hud.span,
+          22,
+          enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 0,
+          "#ef8a73",
+          `Enemy ${enemy.hp}/${enemy.maxHp}`
+        );
+      }
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#dfedf9";
+      setFont(20, 700, true);
+      ctx.fillText(`Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`, hud.left + 2, 100);
+
+      ctx.fillStyle = "#f4d88d";
+      setFont(18, 700, false);
+      ctx.fillText(`Chips: ${run.player.gold}`, hud.left + 2, 124);
+
+      ctx.fillStyle = "#b7ddff";
+      setFont(16, 700, false);
+      ctx.fillText(`Streak: ${run.player.streak}  |  Guards: ${run.player.bustGuardsLeft}`, hud.left + 132, 124);
+    } else {
+      drawHealthBar(
+        hud.leftBarX,
+        24,
+        hud.barW,
+        30,
+        run.player.maxHp > 0 ? run.player.hp / run.player.maxHp : 0,
+        "#6fd5a8",
+        `HP ${run.player.hp}/${run.player.maxHp}`
+      );
+
+      if (enemy) {
+        drawHealthBar(
+          hud.rightBarX,
+          24,
+          hud.barW,
+          30,
+          enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 0,
+          "#ef8a73",
+          `Enemy HP ${enemy.hp}/${enemy.maxHp}`
+        );
+      }
+
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#dfedf9";
+      setFont(26, 700, true);
+      ctx.fillText(`Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`, WIDTH * 0.5, 44);
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#f4d88d";
+      setFont(19, 700, false);
+      ctx.save();
+      ctx.shadowColor = "rgba(245, 207, 126, 0.28)";
+      ctx.shadowBlur = 12;
+      ctx.fillText(`Chips: ${run.player.gold}`, hud.left + 2, 72);
+      ctx.restore();
+
+      ctx.fillStyle = "#b7ddff";
+      setFont(17, 700, false);
+      ctx.fillText(`Streak: ${run.player.streak}`, hud.left + 166, 72);
+      ctx.fillText(`Bust Guards: ${run.player.bustGuardsLeft}`, hud.left + 280, 72);
     }
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#dfedf9";
-    setFont(26, 700, true);
-    ctx.fillText(`Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`, WIDTH * 0.5, 44);
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#f4d88d";
-    setFont(19, 700, false);
-    ctx.save();
-    ctx.shadowColor = "rgba(245, 207, 126, 0.28)";
-    ctx.shadowBlur = 12;
-    ctx.fillText(`Chips: ${run.player.gold}`, 44, 72);
-    ctx.restore();
-
-    ctx.fillStyle = "#b7ddff";
-    setFont(17, 700, false);
-    ctx.fillText(`Streak: ${run.player.streak}`, 208, 72);
-    ctx.fillText(`Bust Guards: ${run.player.bustGuardsLeft}`, 322, 72);
 
     const passiveLine = passiveSummary(run);
     if (passiveLine) {
       ctx.fillStyle = "#9ec4e2";
       setFont(14, 600, false);
-      ctx.fillText(`Passives: ${passiveLine}`, 44, 94);
+      const passiveText = fitText(`Passives: ${passiveLine}`, hud.passiveMaxWidth);
+      ctx.fillText(passiveText, hud.left + 2, hud.portrait ? 144 : 94);
     }
 
     const relicEntries = Object.entries(run.player.relics).slice(0, 5);
     if (relicEntries.length > 0) {
-      const lines = relicEntries.map(([id, count]) => {
-        const relic = RELIC_BY_ID.get(id);
-        return `${relic ? relic.name : id} x${count}`;
-      });
-
       ctx.textAlign = "right";
       ctx.fillStyle = "#9fc2de";
       setFont(14, 600, false);
-      lines.forEach((line, idx) => {
-        ctx.fillText(line, WIDTH - 44, 92 + idx * 16);
-      });
+      if (hud.portrait) {
+        const relicTotal = Object.values(run.player.relics).reduce((sum, value) => sum + nonNegInt(value, 0), 0);
+        ctx.fillText(`Relics: ${relicTotal}`, hud.right - 2, 144);
+      } else {
+        const lines = relicEntries.map(([id, count]) => {
+          const relic = RELIC_BY_ID.get(id);
+          return `${relic ? relic.name : id} x${count}`;
+        });
+        lines.forEach((line, idx) => {
+          ctx.fillText(line, hud.right - 2, 92 + idx * 16);
+        });
+      }
     }
 
     if (run.log.length > 0) {
@@ -2164,8 +2432,8 @@
       setFont(15, 500, false);
       run.log.slice(0, 3).forEach((entry, idx) => {
         ctx.fillStyle = idx === 0 ? "#e3f0ff" : "rgba(227, 240, 255, 0.65)";
-        const clipped = fitText(entry.message, 536);
-        ctx.fillText(clipped, 44, HEIGHT - 92 + idx * 18);
+        const clipped = fitText(entry.message, hud.logMaxWidth);
+        ctx.fillText(clipped, hud.left + 2, HEIGHT - 92 + idx * 18);
       });
     }
   }
@@ -2469,6 +2737,14 @@
       ctx.stroke();
     }
 
+    for (const spark of state.sparkParticles) {
+      const alpha = Math.max(0, Math.min(1, spark.life / spark.maxLife));
+      ctx.beginPath();
+      ctx.arc(spark.x, spark.y, spark.size * (0.45 + alpha), 0, Math.PI * 2);
+      ctx.fillStyle = applyAlpha(spark.color, alpha * 0.9);
+      ctx.fill();
+    }
+
     ctx.textAlign = "center";
     setFont(26, 700, true);
     for (const f of state.floatingTexts) {
@@ -2479,13 +2755,23 @@
 
     if (state.announcementTimer > 0 && state.announcement) {
       const alpha = Math.max(0, Math.min(1, state.announcementTimer / 1.2));
-      roundRect(WIDTH * 0.5 - 250, 90, 500, 36, 12);
+      const bannerY = state.viewport?.portraitZoomed ? 158 : 90;
+      roundRect(WIDTH * 0.5 - 250, bannerY, 500, 36, 12);
       ctx.fillStyle = `rgba(9, 17, 27, ${0.65 * alpha})`;
       ctx.fill();
       ctx.textAlign = "center";
       ctx.fillStyle = `rgba(244, 222, 170, ${0.88 * alpha})`;
       setFont(19, 600, false);
-      ctx.fillText(state.announcement, WIDTH * 0.5, 114);
+      ctx.fillText(state.announcement, WIDTH * 0.5, bannerY + 24);
+    }
+  }
+
+  function drawFlashOverlays() {
+    for (const flash of state.flashOverlays) {
+      const alpha = Math.max(0, Math.min(1, flash.life / flash.maxLife));
+      const eased = alpha * alpha;
+      ctx.fillStyle = applyAlpha(flash.color, flash.intensity * eased);
+      ctx.fillRect(0, 0, WIDTH, HEIGHT);
     }
   }
 
@@ -2501,11 +2787,16 @@
 
   function render() {
     updateMobileControls();
+    const shake = currentShakeOffset();
+    ctx.save();
+    ctx.translate(shake.x, shake.y);
     drawBackground();
 
     if (state.mode === "menu") {
       drawMenu();
       drawEffects();
+      ctx.restore();
+      drawFlashOverlays();
       return;
     }
 
@@ -2526,6 +2817,8 @@
     }
 
     drawEffects();
+    ctx.restore();
+    drawFlashOverlays();
   }
 
   function availableActions() {
@@ -2654,11 +2947,53 @@
     const reservedHeight = state.mobileActive && mobileControls ? mobileControls.offsetHeight + 12 : 0;
     const availableHeight = Math.max(220, viewportHeight - reservedHeight);
     const availableWidth = Math.max(320, viewportWidth);
+    const portraitZoomed = state.mobilePortrait && state.mode !== "menu";
+
+    if (portraitZoomed) {
+      const shellW = availableWidth;
+      const shellH = availableHeight;
+      const scale = shellH / HEIGHT;
+      const canvasW = Math.max(shellW, Math.floor(WIDTH * scale));
+      const canvasH = Math.max(220, Math.floor(HEIGHT * scale));
+      const left = Math.floor((shellW - canvasW) * 0.5);
+      const cropDisplayX = Math.max(0, canvasW - shellW) * 0.5;
+      const cropWorldX = scale > 0 ? cropDisplayX / scale : 0;
+
+      gameShell.style.width = `${shellW}px`;
+      gameShell.style.height = `${shellH}px`;
+      canvas.style.width = `${canvasW}px`;
+      canvas.style.height = `${canvasH}px`;
+      canvas.style.left = `${left}px`;
+      canvas.style.top = "0px";
+
+      state.viewport = {
+        width: shellW,
+        height: shellH,
+        scale,
+        cropWorldX,
+        portraitZoomed: true,
+      };
+      return;
+    }
+
     const scale = Math.min(availableWidth / WIDTH, availableHeight / HEIGHT);
     const displayW = Math.max(320, Math.floor(WIDTH * scale));
     const displayH = Math.max(180, Math.floor(HEIGHT * scale));
+
+    gameShell.style.width = `${displayW}px`;
+    gameShell.style.height = `${displayH}px`;
     canvas.style.width = `${displayW}px`;
     canvas.style.height = `${displayH}px`;
+    canvas.style.left = "0px";
+    canvas.style.top = "0px";
+
+    state.viewport = {
+      width: displayW,
+      height: displayH,
+      scale,
+      cropWorldX: 0,
+      portraitZoomed: false,
+    };
   }
 
   let lastFrame = performance.now();
