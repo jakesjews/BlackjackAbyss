@@ -27,6 +27,7 @@
 
   const WIDTH = 1280;
   const HEIGHT = 720;
+  const MAX_SPLIT_HANDS = 4;
   const CARD_W = 88;
   const CARD_H = 124;
   const FONT_UI = '"Sora", "Segoe UI", sans-serif';
@@ -1248,19 +1249,33 @@
     };
     enemy.hp = Math.min(enemy.hp, enemy.maxHp);
 
+    const splitQueue = Array.isArray(encounterLike.splitQueue)
+      ? encounterLike.splitQueue
+          .map((hand) => sanitizeCardList(hand))
+          .filter((hand) => hand.length > 0)
+          .slice(0, MAX_SPLIT_HANDS - 1)
+      : [];
+    const splitHandsTotalDefault = Math.max(1, Math.min(MAX_SPLIT_HANDS, 1 + splitQueue.length));
+    const splitHandsTotal = Math.max(
+      splitHandsTotalDefault,
+      Math.min(MAX_SPLIT_HANDS, nonNegInt(encounterLike.splitHandsTotal, splitHandsTotalDefault))
+    );
+    const splitHandsResolved = Math.min(
+      Math.max(0, nonNegInt(encounterLike.splitHandsResolved, 0)),
+      Math.max(0, splitHandsTotal - 1)
+    );
+
     const encounter = {
       enemy,
       shoe: sanitizeCardList(encounterLike.shoe),
       discard: sanitizeCardList(encounterLike.discard),
       playerHand: sanitizeCardList(encounterLike.playerHand),
       dealerHand: sanitizeCardList(encounterLike.dealerHand),
-      splitQueue: Array.isArray(encounterLike.splitQueue)
-        ? encounterLike.splitQueue
-            .map((hand) => sanitizeCardList(hand))
-            .filter((hand) => hand.length > 0)
-            .slice(0, 3)
-        : [],
+      splitQueue,
       splitUsed: Boolean(encounterLike.splitUsed),
+      splitHandsTotal,
+      splitHandsResolved,
+      dealerResolved: Boolean(encounterLike.dealerResolved),
       hideDealerHole: Boolean(encounterLike.hideDealerHole),
       phase: ["player", "dealer", "resolve", "done"].includes(encounterLike.phase) ? encounterLike.phase : "player",
       resultText: typeof encounterLike.resultText === "string" ? encounterLike.resultText : "",
@@ -1627,10 +1642,10 @@
 
     const attack =
       type === "boss"
-        ? 5 + floor + (floor >= 2 ? 1 : 0)
+        ? 4 + floor + (floor >= 3 ? 1 : 0)
         : type === "elite"
-          ? 3 + floor
-          : 1 + floor;
+          ? 2 + floor
+          : Math.max(1, floor);
 
     const goldDrop =
       type === "boss"
@@ -2503,6 +2518,9 @@
       dealerHand: [],
       splitQueue: [],
       splitUsed: false,
+      splitHandsTotal: 1,
+      splitHandsResolved: 0,
+      dealerResolved: false,
       hideDealerHole: true,
       phase: "player",
       resultText: "",
@@ -2525,7 +2543,10 @@
     encounter.dealerHand = [];
     encounter.splitQueue = [];
     encounter.splitUsed = false;
-    encounter.hideDealerHole = true;
+    encounter.splitHandsTotal = 1;
+    encounter.splitHandsResolved = 0;
+    encounter.dealerResolved = false;
+    encounter.hideDealerHole = !encounter.dealerResolved;
     encounter.phase = "player";
     encounter.resultText = "";
     encounter.resolveTimer = 0;
@@ -2617,12 +2638,22 @@
     );
   }
 
+  function activeSplitHandCount(encounter) {
+    if (!encounter || !Array.isArray(encounter.splitQueue)) {
+      return 1;
+    }
+    return 1 + encounter.splitQueue.length;
+  }
+
   function canSplitCurrentHand() {
     if (!canPlayerAct() || !state.encounter) {
       return false;
     }
     const encounter = state.encounter;
-    if (encounter.splitUsed || encounter.doubleDown || encounter.playerHand.length !== 2) {
+    if (encounter.doubleDown || encounter.playerHand.length !== 2) {
+      return false;
+    }
+    if (activeSplitHandCount(encounter) >= MAX_SPLIT_HANDS) {
       return false;
     }
     const [a, b] = encounter.playerHand;
@@ -2705,27 +2736,30 @@
     }
 
     encounter.playerHand = seedHand.map((card) => ({ rank: card.rank, suit: card.suit }));
-    encounter.dealerHand = [];
-    encounter.hideDealerHole = true;
+    encounter.hideDealerHole = !encounter.dealerResolved;
     encounter.phase = "player";
     encounter.resultText = "";
     encounter.resolveTimer = 0;
     encounter.doubleDown = false;
     encounter.bustGuardTriggered = false;
     encounter.critTriggered = false;
-    encounter.lastPlayerAction = "none";
-
-    dealCard(encounter, "dealer");
+    encounter.lastPlayerAction = "split";
     dealCard(encounter, "player");
-    dealCard(encounter, "dealer");
 
     if (announcementText) {
       setAnnouncement(announcementText, announcementDuration);
     }
 
-    const playerNatural = isBlackjack(encounter.playerHand);
-    const dealerNatural = isBlackjack(encounter.dealerHand);
-    if (playerNatural || dealerNatural) {
+    const total = handTotal(encounter.playerHand).total;
+    if (total > 21 && !tryActivateBustGuard(encounter)) {
+      resolveHand("player_bust");
+      return true;
+    }
+    if (total >= 21 || encounter.bustGuardTriggered) {
+      resolveDealerThenShowdown(false);
+      return true;
+    }
+    if (isBlackjack(encounter.dealerHand)) {
       resolveDealerThenShowdown(true);
     }
 
@@ -2738,7 +2772,13 @@
     }
 
     const seedHand = encounter.splitQueue.shift();
-    return startSplitHand(encounter, seedHand, "Split hand is live.");
+    encounter.splitHandsResolved = Math.min(
+      Math.max(0, encounter.splitHandsTotal - 1),
+      nonNegInt(encounter.splitHandsResolved, 0) + 1
+    );
+    const splitIndex = encounter.splitHandsResolved + 1;
+    const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, 2));
+    return startSplitHand(encounter, seedHand, `Split hand ${splitIndex}/${splitTotal}.`);
   }
 
   function splitAction() {
@@ -2752,17 +2792,24 @@
     if (state.run) {
       state.run.splitsUsed = nonNegInt(state.run.splitsUsed, 0) + 1;
     }
-    encounter.splitQueue = [[{ rank: second.rank, suit: second.suit }]];
+    if (!Array.isArray(encounter.splitQueue)) {
+      encounter.splitQueue = [];
+    }
+    encounter.splitQueue.unshift([{ rank: second.rank, suit: second.suit }]);
     encounter.splitUsed = true;
+    encounter.splitHandsTotal = Math.min(MAX_SPLIT_HANDS, nonNegInt(encounter.splitHandsTotal, 1) + 1);
     encounter.doubleDown = false;
 
     playActionSfx("double");
     addLog("Hand split.");
+    addLog("Dealer hand stays locked across split hands.");
+    const splitIndex = nonNegInt(encounter.splitHandsResolved, 0) + 1;
+    const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, 2));
     if (
       !startSplitHand(
         encounter,
         [{ rank: first.rank, suit: first.suit }],
-        "Hand split. Play the first split hand.",
+        `Hand split. Play split hand ${splitIndex}/${splitTotal}.`,
         1.2
       )
     ) {
@@ -2778,11 +2825,17 @@
 
     encounter.phase = "dealer";
     encounter.hideDealerHole = false;
+    const dealerAlreadyResolved = Boolean(encounter.dealerResolved);
 
-    if (!naturalCheck) {
+    if (!naturalCheck && !dealerAlreadyResolved) {
       while (handTotal(encounter.dealerHand).total < 17) {
         dealCard(encounter, "dealer");
       }
+      if (encounter.splitUsed) {
+        encounter.dealerResolved = true;
+      }
+    } else if (encounter.splitUsed && isBlackjack(encounter.dealerHand)) {
+      encounter.dealerResolved = true;
     }
 
     const pTotal = encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total;
@@ -2867,13 +2920,13 @@
         (encounter.lastPlayerAction === "double" ? run.player.stats.doubleWinDamage : 0);
       text = "Win hand.";
     } else if (outcome === "dealer_blackjack") {
-      incoming = enemy.attack + 4;
+      incoming = enemy.attack + 3;
       text = "Dealer blackjack.";
     } else if (outcome === "dealer_win") {
-      incoming = enemy.attack + Math.max(1, Math.floor((dTotal - pTotal) * 0.5));
+      incoming = enemy.attack + Math.max(1, Math.floor((dTotal - pTotal) * 0.4));
       text = "Lose hand.";
     } else if (outcome === "player_bust") {
-      incoming = Math.max(1, enemy.attack + 2 - run.player.stats.bustBlock);
+      incoming = Math.max(1, enemy.attack + 1 - run.player.stats.bustBlock);
       text = "Bust.";
     }
 
@@ -4571,10 +4624,11 @@
     const playerLabelY = Math.min(HEIGHT - 8, playerBarY + barH + handLabelGap);
     ctx.fillText(`Hand ${playerTotal}`, playerBox.centerX, playerLabelY);
     if (encounter.splitUsed) {
-      const splitIndex = encounter.splitQueue.length > 0 ? 1 : 2;
+      const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, activeSplitHandCount(encounter)));
+      const splitIndex = Math.min(splitTotal, nonNegInt(encounter.splitHandsResolved, 0) + 1);
       ctx.fillStyle = "#a8c6df";
       setFont(14, 600, false);
-      ctx.fillText(`Split hand ${splitIndex}/2`, playerBox.centerX, playerLabelY + 20);
+      ctx.fillText(`Split hand ${splitIndex}/${splitTotal}`, playerBox.centerX, playerLabelY + 20);
     }
   }
 
@@ -5703,11 +5757,9 @@
         const panelH = Math.max(48, 20 + lines.length * lineHeight);
         const toastY =
           state.mode === "reward" || state.mode === "shop"
-            ? state.viewport?.portraitZoomed
-              ? 64
-              : 64
+            ? 64
             : state.viewport?.portraitZoomed
-              ? 186
+              ? clampNumber(centerY - 36, 236, 338, 264)
               : 136;
         ctx.save();
         ctx.globalAlpha = alpha;
@@ -5937,6 +5989,9 @@
             doubleDown: encounter.doubleDown,
             splitQueueHands: Array.isArray(encounter.splitQueue) ? encounter.splitQueue.length : 0,
             splitUsed: Boolean(encounter.splitUsed),
+            splitHandsTotal: Math.max(1, nonNegInt(encounter.splitHandsTotal, 1)),
+            splitHandsResolved: Math.max(0, nonNegInt(encounter.splitHandsResolved, 0)),
+            dealerResolved: Boolean(encounter.dealerResolved),
           }
         : null,
       rewards:
