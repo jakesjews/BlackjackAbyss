@@ -96,6 +96,10 @@ body.menu-screen.mobile-ui-active #game-shell {
   cursor: pointer;
 }
 
+#logs-toggle[hidden] {
+  display: none !important;
+}
+
 #logs-toggle:active {
   transform: translateY(1px);
 }

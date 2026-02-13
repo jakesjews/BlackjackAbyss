@@ -1273,7 +1273,7 @@
     if (!passiveRail) {
       return;
     }
-    if (!state.run || state.mode === "menu") {
+    if (!state.run || state.mode === "menu" || state.mode === "reward" || state.mode === "shop") {
       passiveRail.textContent = "";
       state.passiveRailSignature = "";
       hidePassiveTooltip();
@@ -1354,9 +1354,9 @@
   function syncOverlayUi() {
     const runActive = Boolean(state.run);
     if (logsToggle) {
-      logsToggle.hidden = !runActive || state.mode === "menu";
+      logsToggle.hidden = true;
     }
-    if ((!runActive || state.mode === "menu") && isLogsModalOpen()) {
+    if ((!runActive || state.mode === "menu" || (logsToggle && logsToggle.hidden)) && isLogsModalOpen()) {
       closeLogsModal();
     }
     if (isLogsModalOpen()) {
@@ -3745,10 +3745,10 @@
     setFont(hud.portrait ? 20 : 22, 700, true);
     ctx.fillText(`Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`, hud.left + 2, topY);
 
-    const statsW = hud.portrait ? Math.min(332, Math.max(232, Math.floor(hud.span * 0.78))) : 314;
-    const statsH = hud.portrait ? 74 : 66;
+    const statsW = hud.portrait ? Math.min(272, Math.max(214, Math.floor(hud.span * 0.66))) : 314;
+    const statsH = hud.portrait ? 58 : 66;
     const statsX = hud.right - statsW;
-    const statsY = HEIGHT - statsH - (hud.portrait ? 86 : 42);
+    const statsY = hud.portrait ? topY + 14 : HEIGHT - statsH - 42;
     roundRect(statsX, statsY, statsW, statsH, 14);
     const panel = ctx.createLinearGradient(statsX, statsY, statsX, statsY + statsH);
     panel.addColorStop(0, "rgba(15, 30, 45, 0.9)");
@@ -3761,10 +3761,10 @@
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#f4d88d";
-    setFont(hud.portrait ? 20 : 22, 700, false);
-    const leftPad = 12;
+    setFont(hud.portrait ? 18 : 22, 700, false);
+    const leftPad = hud.portrait ? 10 : 12;
     const rightPad = 12;
-    const splitX = statsX + Math.max(116, Math.floor(statsW * 0.53));
+    const splitX = statsX + Math.max(hud.portrait ? 96 : 116, Math.floor(statsW * 0.53));
     const dividerY = statsY + 10;
     const dividerH = statsH - 20;
     ctx.fillText(`◍ ${run.player.gold}`, statsX + leftPad, statsY + Math.floor(statsH * 0.56));
@@ -3777,10 +3777,10 @@
     ctx.stroke();
 
     ctx.fillStyle = "#b7ddff";
-    setFont(hud.portrait ? 14 : 15, 700, false);
+    setFont(hud.portrait ? 13 : 15, 700, false);
     const stackX = splitX + rightPad;
-    const streakY = statsY + (hud.portrait ? 29 : 27);
-    const guardsY = statsY + (hud.portrait ? 53 : 49);
+    const streakY = statsY + (hud.portrait ? 24 : 27);
+    const guardsY = statsY + (hud.portrait ? 43 : 49);
     ctx.fillText(`Streak ${run.player.streak}`, stackX, streakY);
     ctx.fillText(`Guards ${run.player.bustGuardsLeft}`, stackX, guardsY);
   }
@@ -4182,15 +4182,20 @@
 
       ctx.fillStyle = item.sold ? "#78818d" : "#d4e6f4";
       if (card.selected) {
-        setFont(portrait ? 16 : 18, 600, false);
-        wrapText(
-          shopItemDescription(item),
-          card.x + (portrait ? 24 : 32),
-          card.y + (portrait ? 106 : 112),
-          card.w - (portrait ? 48 : 64),
-          portrait ? 20 : 22,
-          "center"
-        );
+        setFont(portrait ? 15 : 18, 600, false);
+        const descMaxWidth = card.w - (portrait ? 56 : 64);
+        const descMaxLines = portrait ? 2 : 3;
+        const descLineHeight = portrait ? 18 : 22;
+        const descStartY = card.y + (portrait ? 100 : 112);
+        const descLines = wrappedLines(shopItemDescription(item), descMaxWidth);
+        const clipped = descLines.slice(0, descMaxLines);
+        if (descLines.length > descMaxLines && clipped.length > 0) {
+          const last = clipped.length - 1;
+          clipped[last] = fitText(`${clipped[last]}...`, descMaxWidth);
+        }
+        clipped.forEach((line, idx) => {
+          ctx.fillText(line, card.x + card.w * 0.5, descStartY + idx * descLineHeight);
+        });
       } else {
         setFont(portrait ? 13 : 15, 600, false);
         ctx.fillText(item.sold ? "Sold out" : "Tap to select", card.x + card.w * 0.5, card.y + (portrait ? card.h - 68 : card.h - 86));
@@ -4674,7 +4679,14 @@
         const lineHeight = 24;
         const panelW = Math.max(220, Math.min(maxW, Math.max(...lines.map((line) => ctx.measureText(line).width)) + 44));
         const panelH = Math.max(48, 20 + lines.length * lineHeight);
-        const toastY = state.viewport?.portraitZoomed ? 186 : 136;
+        const toastY =
+          state.mode === "reward" || state.mode === "shop"
+            ? state.viewport?.portraitZoomed
+              ? 64
+              : 64
+            : state.viewport?.portraitZoomed
+              ? 186
+              : 136;
         ctx.save();
         ctx.globalAlpha = alpha;
         roundRect(centerX - panelW * 0.5, toastY - panelH * 0.5, panelW, panelH, 13);
