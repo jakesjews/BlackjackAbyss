@@ -2089,12 +2089,11 @@
     resolveDealerThenShowdown(false);
   }
 
-  function beginQueuedSplitHand(encounter) {
-    if (!encounter || !Array.isArray(encounter.splitQueue) || encounter.splitQueue.length === 0) {
+  function startSplitHand(encounter, seedHand, announcementText, announcementDuration = 1.1) {
+    if (!encounter || !Array.isArray(seedHand) || seedHand.length === 0) {
       return false;
     }
 
-    const seedHand = encounter.splitQueue.shift();
     encounter.playerHand = seedHand.map((card) => ({ rank: card.rank, suit: card.suit }));
     encounter.dealerHand = [];
     encounter.hideDealerHole = true;
@@ -2109,7 +2108,10 @@
     dealCard(encounter, "dealer");
     dealCard(encounter, "player");
     dealCard(encounter, "dealer");
-    setAnnouncement("Split hand is live.", 1.1);
+
+    if (announcementText) {
+      setAnnouncement(announcementText, announcementDuration);
+    }
 
     const playerNatural = isBlackjack(encounter.playerHand);
     const dealerNatural = isBlackjack(encounter.dealerHand);
@@ -2120,6 +2122,15 @@
     return true;
   }
 
+  function beginQueuedSplitHand(encounter) {
+    if (!encounter || !Array.isArray(encounter.splitQueue) || encounter.splitQueue.length === 0) {
+      return false;
+    }
+
+    const seedHand = encounter.splitQueue.shift();
+    return startSplitHand(encounter, seedHand, "Split hand is live.");
+  }
+
   function splitAction() {
     if (!canSplitCurrentHand()) {
       playUiSfx("error");
@@ -2128,27 +2139,21 @@
 
     const encounter = state.encounter;
     const [first, second] = encounter.playerHand;
-    encounter.playerHand = [{ rank: first.rank, suit: first.suit }];
     encounter.splitQueue = [[{ rank: second.rank, suit: second.suit }]];
     encounter.splitUsed = true;
     encounter.doubleDown = false;
-    encounter.lastPlayerAction = "split";
 
     playActionSfx("double");
-    setAnnouncement("Hand split. Play the first split hand.", 1.2);
     addLog("Hand split.");
-
-    dealCard(encounter, "player");
-    const total = handTotal(encounter.playerHand).total;
-    if (total > 21 && !tryActivateBustGuard(encounter)) {
-      resolveHand("player_bust");
-      return;
-    }
-
-    const playerNatural = isBlackjack(encounter.playerHand);
-    const dealerNatural = isBlackjack(encounter.dealerHand);
-    if (playerNatural || dealerNatural) {
-      resolveDealerThenShowdown(true);
+    if (
+      !startSplitHand(
+        encounter,
+        [{ rank: first.rank, suit: first.suit }],
+        "Hand split. Play the first split hand.",
+        1.2
+      )
+    ) {
+      playUiSfx("error");
     }
   }
 
