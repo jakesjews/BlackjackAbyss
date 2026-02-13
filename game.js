@@ -93,6 +93,10 @@
       chipsOnWinHand: 0,
       chipsOnPush: 0,
       healOnEncounterStart: 0,
+      splitWinDamage: 0,
+      doubleLossBlock: 0,
+      blackjackHeal: 0,
+      eliteDamage: 0,
     };
   }
 
@@ -114,6 +118,10 @@
         bestFloor: 1,
         bestRoom: 1,
         longestStreak: 0,
+        blackjacks: 0,
+        doublesWon: 0,
+        splitsUsed: 0,
+        pushes: 0,
       },
       relicCollection: {},
       runs: [],
@@ -159,10 +167,19 @@
     safeSetStorage(STORAGE_KEYS.audioEnabled, enabled ? "1" : "0");
   }
 
+  const RELIC_RARITY_META = {
+    common: { label: "Common", shopMarkup: 0, glow: "#8ab3da" },
+    uncommon: { label: "Uncommon", shopMarkup: 3, glow: "#71d8b4" },
+    rare: { label: "Rare", shopMarkup: 8, glow: "#f2c46f" },
+    legendary: { label: "Legendary", shopMarkup: 14, glow: "#ff967c" },
+  };
+  const RELIC_RARITY_ORDER = ["common", "uncommon", "rare", "legendary"];
+
   const RELICS = [
     {
       id: "razor-chip",
       name: "Razor Chip",
+      rarity: "common",
       description: "+2 outgoing damage each hand.",
       color: "#f07464",
       shopCost: 16,
@@ -173,46 +190,18 @@
     {
       id: "steel-shell",
       name: "Steel Shell",
+      rarity: "common",
       description: "Reduce incoming damage by 2.",
       color: "#7fb6ff",
-      shopCost: 20,
+      shopCost: 18,
       apply: (run) => {
         run.player.stats.block += 2;
       },
     },
     {
-      id: "blood-prism",
-      name: "Blood Prism",
-      description: "+3 damage while under 50% HP.",
-      color: "#f05a76",
-      shopCost: 20,
-      apply: (run) => {
-        run.player.stats.lowHpDamage += 3;
-      },
-    },
-    {
-      id: "loaded-die",
-      name: "Loaded Die",
-      description: "+12% crit chance for outgoing damage.",
-      color: "#f5ca67",
-      shopCost: 22,
-      apply: (run) => {
-        run.player.stats.critChance += 0.12;
-      },
-    },
-    {
-      id: "insurance-sigil",
-      name: "Insurance Sigil",
-      description: "Gain +2 bust guards each encounter.",
-      color: "#71e2ca",
-      shopCost: 24,
-      apply: (run) => {
-        run.player.stats.bustGuardPerEncounter += 2;
-      },
-    },
-    {
       id: "lucky-opener",
       name: "Lucky Opener",
+      rarity: "common",
       description: "Your first two cards trend to 8 or higher.",
       color: "#8ddf7d",
       shopCost: 18,
@@ -223,60 +212,32 @@
     {
       id: "velvet-wallet",
       name: "Velvet Wallet",
-      description: "+35% chips from enemy payouts.",
+      rarity: "common",
+      description: "+25% chips from enemy payouts.",
       color: "#f2a85d",
       shopCost: 18,
       apply: (run) => {
-        run.player.stats.goldMultiplier += 0.35;
-      },
-    },
-    {
-      id: "soul-leech",
-      name: "Soul Leech",
-      description: "Heal 2 HP when winning a hand.",
-      color: "#bf8cff",
-      shopCost: 24,
-      apply: (run) => {
-        run.player.stats.healOnWinHand += 2;
-      },
-    },
-    {
-      id: "vitality-coil",
-      name: "Vitality Coil",
-      description: "+8 max HP and heal 8.",
-      color: "#55ddb6",
-      shopCost: 26,
-      apply: (run) => {
-        run.player.maxHp += 8;
-        run.player.hp = Math.min(run.player.maxHp, run.player.hp + 8);
+        run.player.stats.goldMultiplier += 0.25;
       },
     },
     {
       id: "dealer-tell",
       name: "Dealer Tell",
+      rarity: "common",
       description: "+2 damage when you Stand and win.",
       color: "#84b7ff",
-      shopCost: 18,
+      shopCost: 16,
       apply: (run) => {
         run.player.stats.standWinDamage += 2;
       },
     },
     {
-      id: "all-in-marker",
-      name: "All-In Marker",
-      description: "+2 damage on successful Double Down hands.",
-      color: "#ffb470",
-      shopCost: 20,
-      apply: (run) => {
-        run.player.stats.doubleWinDamage += 2;
-      },
-    },
-    {
       id: "counterweight",
       name: "Counterweight",
+      rarity: "common",
       description: "Busting takes 2 less damage.",
       color: "#8eb2d3",
-      shopCost: 18,
+      shopCost: 16,
       apply: (run) => {
         run.player.stats.bustBlock += 2;
       },
@@ -284,6 +245,7 @@
     {
       id: "first-spark",
       name: "First Spark",
+      rarity: "common",
       description: "+2 damage on the first hand of each encounter.",
       color: "#ffd167",
       shopCost: 16,
@@ -294,9 +256,10 @@
     {
       id: "coin-magnet",
       name: "Coin Magnet",
+      rarity: "common",
       description: "Gain +2 chips whenever you win a hand.",
       color: "#f6c66b",
-      shopCost: 18,
+      shopCost: 16,
       apply: (run) => {
         run.player.stats.chipsOnWinHand += 2;
       },
@@ -304,6 +267,7 @@
     {
       id: "push-protocol",
       name: "Push Protocol",
+      rarity: "common",
       description: "Pushes grant +3 chips.",
       color: "#9ec6dd",
       shopCost: 14,
@@ -312,8 +276,179 @@
       },
     },
     {
+      id: "chipped-edge",
+      name: "Chipped Edge",
+      rarity: "common",
+      description: "+1 outgoing damage and +1 chips on win.",
+      color: "#f79972",
+      shopCost: 14,
+      apply: (run) => {
+        run.player.stats.flatDamage += 1;
+        run.player.stats.chipsOnWinHand += 1;
+      },
+    },
+    {
+      id: "bunker-chip",
+      name: "Bunker Chip",
+      rarity: "common",
+      description: "+1 block and +1 bust block.",
+      color: "#7aa7cf",
+      shopCost: 14,
+      apply: (run) => {
+        run.player.stats.block += 1;
+        run.player.stats.bustBlock += 1;
+      },
+    },
+    {
+      id: "mercy-thread",
+      name: "Mercy Thread",
+      rarity: "common",
+      unlock: { key: "runsStarted", min: 2, label: "Start 2 runs" },
+      description: "Heal 1 HP when winning a hand.",
+      color: "#8ce4bd",
+      shopCost: 14,
+      apply: (run) => {
+        run.player.stats.healOnWinHand += 1;
+      },
+    },
+    {
+      id: "calm-breath",
+      name: "Calm Breath",
+      rarity: "common",
+      unlock: { key: "handsPlayed", min: 20, label: "Play 20 hands" },
+      description: "Heal 1 HP at the start of each encounter.",
+      color: "#7fdcc1",
+      shopCost: 15,
+      apply: (run) => {
+        run.player.stats.healOnEncounterStart += 1;
+      },
+    },
+    {
+      id: "split-primer",
+      name: "Split Primer",
+      rarity: "common",
+      unlock: { key: "splitsUsed", min: 1, label: "Use Split once" },
+      description: "+2 damage when a split hand wins.",
+      color: "#9fd8ef",
+      shopCost: 15,
+      apply: (run) => {
+        run.player.stats.splitWinDamage += 2;
+      },
+    },
+    {
+      id: "double-fuse",
+      name: "Double Fuse",
+      rarity: "common",
+      unlock: { key: "doublesWon", min: 2, label: "Win 2 doubled hands" },
+      description: "+1 damage on successful Double Down hands.",
+      color: "#f6be7c",
+      shopCost: 15,
+      apply: (run) => {
+        run.player.stats.doubleWinDamage += 1;
+      },
+    },
+    {
+      id: "stake-lantern",
+      name: "Stake Lantern",
+      rarity: "common",
+      description: "+18% chips from enemy payouts.",
+      color: "#e0b97f",
+      shopCost: 14,
+      apply: (run) => {
+        run.player.stats.goldMultiplier += 0.18;
+      },
+    },
+    {
+      id: "steady-stance",
+      name: "Steady Stance",
+      rarity: "common",
+      description: "+1 block and +1 Stand win damage.",
+      color: "#8fb6d9",
+      shopCost: 15,
+      apply: (run) => {
+        run.player.stats.block += 1;
+        run.player.stats.standWinDamage += 1;
+      },
+    },
+    {
+      id: "side-bet-ledger",
+      name: "Side Bet Ledger",
+      rarity: "common",
+      unlock: { key: "pushes", min: 4, label: "Reach 4 pushes" },
+      description: "Pushes grant +2 chips and +1 win-hand damage.",
+      color: "#a9cadf",
+      shopCost: 15,
+      apply: (run) => {
+        run.player.stats.chipsOnPush += 2;
+        run.player.stats.flatDamage += 1;
+      },
+    },
+    {
+      id: "clean-cut",
+      name: "Clean Cut",
+      rarity: "common",
+      unlock: { key: "handsPlayed", min: 28, label: "Play 28 hands" },
+      description: "+1 outgoing damage and +1 double-win damage.",
+      color: "#ef8d77",
+      shopCost: 15,
+      apply: (run) => {
+        run.player.stats.flatDamage += 1;
+        run.player.stats.doubleWinDamage += 1;
+      },
+    },
+    {
+      id: "blood-prism",
+      name: "Blood Prism",
+      rarity: "uncommon",
+      unlock: { key: "handsPlayed", min: 35, label: "Play 35 hands" },
+      description: "+3 damage while under 50% HP.",
+      color: "#f05a76",
+      shopCost: 20,
+      apply: (run) => {
+        run.player.stats.lowHpDamage += 3;
+      },
+    },
+    {
+      id: "loaded-die",
+      name: "Loaded Die",
+      rarity: "uncommon",
+      unlock: { key: "enemiesDefeated", min: 8, label: "Defeat 8 enemies" },
+      description: "+12% crit chance for outgoing damage.",
+      color: "#f5ca67",
+      shopCost: 22,
+      apply: (run) => {
+        run.player.stats.critChance += 0.12;
+      },
+    },
+    {
+      id: "soul-leech",
+      name: "Soul Leech",
+      rarity: "uncommon",
+      unlock: { key: "handsPlayed", min: 45, label: "Play 45 hands" },
+      description: "Heal 2 HP when winning a hand.",
+      color: "#bf8cff",
+      shopCost: 24,
+      apply: (run) => {
+        run.player.stats.healOnWinHand += 2;
+      },
+    },
+    {
+      id: "all-in-marker",
+      name: "All-In Marker",
+      rarity: "uncommon",
+      unlock: { key: "doublesWon", min: 5, label: "Win 5 doubled hands" },
+      description: "+2 damage on successful Double Down hands.",
+      color: "#ffb470",
+      shopCost: 20,
+      apply: (run) => {
+        run.player.stats.doubleWinDamage += 2;
+      },
+    },
+    {
       id: "life-thread",
       name: "Life Thread",
+      rarity: "uncommon",
+      unlock: { key: "runsStarted", min: 3, label: "Start 3 runs" },
       description: "Heal 2 HP at the start of each encounter.",
       color: "#79e5b5",
       shopCost: 20,
@@ -324,9 +459,11 @@
     {
       id: "ace-sleeve",
       name: "Ace Sleeve",
+      rarity: "uncommon",
+      unlock: { key: "blackjacks", min: 6, label: "Hit 6 blackjacks" },
       description: "+1 Lucky Opener card and +4% crit chance.",
       color: "#bce58b",
-      shopCost: 20,
+      shopCost: 21,
       apply: (run) => {
         run.player.stats.luckyStart += 1;
         run.player.stats.critChance += 0.04;
@@ -335,19 +472,189 @@
     {
       id: "dealer-tax-stamp",
       name: "Dealer Tax Stamp",
+      rarity: "uncommon",
+      unlock: { key: "enemiesDefeated", min: 12, label: "Defeat 12 enemies" },
       description: "Dealer busts take +4 extra damage.",
       color: "#ff8d72",
-      shopCost: 18,
+      shopCost: 20,
       apply: (run) => {
         run.player.stats.dealerBustBonusDamage += 4;
       },
     },
     {
+      id: "pocket-anvil",
+      name: "Pocket Anvil",
+      rarity: "uncommon",
+      unlock: { key: "chipsEarned", min: 500, label: "Earn 500 chips total" },
+      description: "+5 max HP, heal 5, and +1 damage.",
+      color: "#9ab2c5",
+      shopCost: 25,
+      apply: (run) => {
+        run.player.maxHp += 5;
+        run.player.hp = Math.min(run.player.maxHp, run.player.hp + 5);
+        run.player.stats.flatDamage += 1;
+      },
+    },
+    {
+      id: "iron-oath",
+      name: "Iron Oath",
+      rarity: "uncommon",
+      unlock: { key: "bestFloor", min: 2, label: "Reach floor 2" },
+      description: "+1 bust guard each encounter and +1 block.",
+      color: "#82c4d8",
+      shopCost: 23,
+      apply: (run) => {
+        run.player.stats.bustGuardPerEncounter += 1;
+        run.player.stats.block += 1;
+      },
+    },
+    {
+      id: "stitch-engine",
+      name: "Stitch Engine",
+      rarity: "uncommon",
+      unlock: { key: "damageTaken", min: 220, label: "Take 220 total damage" },
+      description: "Heal 3 HP at the start of each encounter.",
+      color: "#74d0b4",
+      shopCost: 22,
+      apply: (run) => {
+        run.player.stats.healOnEncounterStart += 3;
+      },
+    },
+    {
+      id: "blackjack-ointment",
+      name: "Blackjack Ointment",
+      rarity: "uncommon",
+      unlock: { key: "blackjacks", min: 10, label: "Hit 10 blackjacks" },
+      description: "Blackjacks heal 2 HP and deal +2 damage.",
+      color: "#ffd386",
+      shopCost: 23,
+      apply: (run) => {
+        run.player.stats.blackjackHeal += 2;
+        run.player.stats.blackjackBonusDamage += 2;
+      },
+    },
+    {
+      id: "market-lantern",
+      name: "Market Lantern",
+      rarity: "uncommon",
+      unlock: { key: "chipsEarned", min: 800, label: "Earn 800 chips total" },
+      description: "+22% chips from payouts and +1 chips on win.",
+      color: "#e8bf78",
+      shopCost: 22,
+      apply: (run) => {
+        run.player.stats.goldMultiplier += 0.22;
+        run.player.stats.chipsOnWinHand += 1;
+      },
+    },
+    {
+      id: "risk-hedge",
+      name: "Risk Hedge",
+      rarity: "uncommon",
+      unlock: { key: "doublesWon", min: 8, label: "Win 8 doubled hands" },
+      description: "Failed doubles take 3 less damage.",
+      color: "#98b7db",
+      shopCost: 21,
+      apply: (run) => {
+        run.player.stats.doubleLossBlock += 3;
+      },
+    },
+    {
+      id: "bruise-battery",
+      name: "Bruise Battery",
+      rarity: "uncommon",
+      unlock: { key: "damageTaken", min: 260, label: "Take 260 total damage" },
+      description: "+2 low-HP damage and +1 flat damage.",
+      color: "#d88b86",
+      shopCost: 23,
+      apply: (run) => {
+        run.player.stats.lowHpDamage += 2;
+        run.player.stats.flatDamage += 1;
+      },
+    },
+    {
+      id: "push-siphon",
+      name: "Push Siphon",
+      rarity: "uncommon",
+      unlock: { key: "pushes", min: 8, label: "Reach 8 pushes" },
+      description: "Pushes grant +5 chips.",
+      color: "#9dc7e8",
+      shopCost: 19,
+      apply: (run) => {
+        run.player.stats.chipsOnPush += 5;
+      },
+    },
+    {
+      id: "ghost-shoe",
+      name: "Ghost Shoe",
+      rarity: "uncommon",
+      unlock: { key: "handsPlayed", min: 55, label: "Play 55 hands" },
+      description: "+1 Lucky Opener card and +1 bust block.",
+      color: "#9ed9f3",
+      shopCost: 21,
+      apply: (run) => {
+        run.player.stats.luckyStart += 1;
+        run.player.stats.bustBlock += 1;
+      },
+    },
+    {
+      id: "leech-tax",
+      name: "Leech Tax",
+      rarity: "uncommon",
+      unlock: { key: "damageTaken", min: 180, label: "Take 180 total damage" },
+      description: "Heal +2 on hand wins, but payouts are 15% lower.",
+      color: "#9ad89f",
+      shopCost: 20,
+      apply: (run) => {
+        run.player.stats.healOnWinHand += 2;
+        run.player.stats.goldMultiplier -= 0.15;
+      },
+    },
+    {
+      id: "fuse-link",
+      name: "Fuse Link",
+      rarity: "uncommon",
+      unlock: { key: "splitsUsed", min: 6, label: "Use Split 6 times" },
+      description: "+2 split-win damage and +1 chips on hand wins.",
+      color: "#84c8ea",
+      shopCost: 21,
+      apply: (run) => {
+        run.player.stats.splitWinDamage += 2;
+        run.player.stats.chipsOnWinHand += 1;
+      },
+    },
+    {
+      id: "insurance-sigil",
+      name: "Insurance Sigil",
+      rarity: "rare",
+      unlock: { key: "enemiesDefeated", min: 24, label: "Defeat 24 enemies" },
+      description: "Gain +2 bust guards each encounter.",
+      color: "#71e2ca",
+      shopCost: 24,
+      apply: (run) => {
+        run.player.stats.bustGuardPerEncounter += 2;
+      },
+    },
+    {
+      id: "vitality-coil",
+      name: "Vitality Coil",
+      rarity: "rare",
+      unlock: { key: "bestFloor", min: 2, label: "Reach floor 2" },
+      description: "+8 max HP and heal 8.",
+      color: "#55ddb6",
+      shopCost: 28,
+      apply: (run) => {
+        run.player.maxHp += 8;
+        run.player.hp = Math.min(run.player.maxHp, run.player.hp + 8);
+      },
+    },
+    {
       id: "royal-wedge",
       name: "Royal Wedge",
+      rarity: "rare",
+      unlock: { key: "blackjacks", min: 18, label: "Hit 18 blackjacks" },
       description: "Blackjacks deal +4 extra damage.",
       color: "#ffd995",
-      shopCost: 20,
+      shopCost: 24,
       apply: (run) => {
         run.player.stats.blackjackBonusDamage += 4;
       },
@@ -355,6 +662,8 @@
     {
       id: "safety-net",
       name: "Safety Net",
+      rarity: "rare",
+      unlock: { key: "runsWon", min: 1, label: "Win 1 run" },
       description: "+1 bust guard each encounter and +1 block.",
       color: "#7fd7d7",
       shopCost: 24,
@@ -364,15 +673,220 @@
       },
     },
     {
-      id: "pocket-anvil",
-      name: "Pocket Anvil",
-      description: "+5 max HP, heal 5, and +1 damage.",
-      color: "#9ab2c5",
+      id: "croupier-bane",
+      name: "Croupier Bane",
+      rarity: "rare",
+      unlock: { key: "enemiesDefeated", min: 28, label: "Defeat 28 enemies" },
+      description: "Dealer busts deal +4 damage and all wins gain +1 damage.",
+      color: "#ff9c7e",
+      shopCost: 25,
+      apply: (run) => {
+        run.player.stats.dealerBustBonusDamage += 4;
+        run.player.stats.flatDamage += 1;
+      },
+    },
+    {
+      id: "fortress-heart",
+      name: "Fortress Heart",
+      rarity: "rare",
+      unlock: { key: "damageTaken", min: 420, label: "Take 420 total damage" },
+      description: "+12 max HP, heal 6, and +2 block.",
+      color: "#9bb7cf",
+      shopCost: 30,
+      apply: (run) => {
+        run.player.maxHp += 12;
+        run.player.hp = Math.min(run.player.maxHp, run.player.hp + 6);
+        run.player.stats.block += 2;
+      },
+    },
+    {
+      id: "redline-core",
+      name: "Redline Core",
+      rarity: "rare",
+      unlock: { key: "doublesWon", min: 12, label: "Win 12 doubled hands" },
+      description: "+3 double-win damage, +1 damage, and +2 double-loss block.",
+      color: "#ffae74",
+      shopCost: 27,
+      apply: (run) => {
+        run.player.stats.doubleWinDamage += 3;
+        run.player.stats.flatDamage += 1;
+        run.player.stats.doubleLossBlock += 2;
+      },
+    },
+    {
+      id: "mirror-plate",
+      name: "Mirror Plate",
+      rarity: "rare",
+      unlock: { key: "relicsCollected", min: 22, label: "Collect 22 relic copies" },
+      description: "+3 block and +1 heal on winning a hand.",
+      color: "#9ec8ef",
+      shopCost: 27,
+      apply: (run) => {
+        run.player.stats.block += 3;
+        run.player.stats.healOnWinHand += 1;
+      },
+    },
+    {
+      id: "boss-hunter",
+      name: "Boss Hunter",
+      rarity: "rare",
+      unlock: { key: "bestFloor", min: 3, label: "Reach floor 3" },
+      description: "+3 damage versus elite and boss enemies.",
+      color: "#f0c47b",
+      shopCost: 25,
+      apply: (run) => {
+        run.player.stats.eliteDamage += 3;
+      },
+    },
+    {
+      id: "glass-dice",
+      name: "Glass Dice",
+      rarity: "rare",
+      unlock: { key: "runsStarted", min: 8, label: "Start 8 runs" },
+      description: "+5 outgoing damage, but lose 2 block.",
+      color: "#ff9988",
       shopCost: 26,
       apply: (run) => {
-        run.player.maxHp += 5;
-        run.player.hp = Math.min(run.player.maxHp, run.player.hp + 5);
+        run.player.stats.flatDamage += 5;
+        run.player.stats.block -= 2;
+      },
+    },
+    {
+      id: "martyr-token",
+      name: "Martyr Token",
+      rarity: "rare",
+      unlock: { key: "damageTaken", min: 520, label: "Take 520 total damage" },
+      description: "+2 block, +2 low-HP damage, and +1 bust guard each encounter.",
+      color: "#ffb182",
+      shopCost: 28,
+      apply: (run) => {
+        run.player.stats.block += 2;
+        run.player.stats.lowHpDamage += 2;
+        run.player.stats.bustGuardPerEncounter += 1;
+      },
+    },
+    {
+      id: "dealer-cage",
+      name: "Dealer Cage",
+      rarity: "rare",
+      unlock: { key: "enemiesDefeated", min: 36, label: "Defeat 36 enemies" },
+      description: "+3 dealer-bust damage and +2 stand-win damage.",
+      color: "#f8bc7f",
+      shopCost: 26,
+      apply: (run) => {
+        run.player.stats.dealerBustBonusDamage += 3;
+        run.player.stats.standWinDamage += 2;
+      },
+    },
+    {
+      id: "stacked-vault",
+      name: "Stacked Vault",
+      rarity: "rare",
+      unlock: { key: "chipsEarned", min: 1600, label: "Earn 1600 chips total" },
+      description: "+40% chips from enemy payouts and +2 chips on win.",
+      color: "#f0c27e",
+      shopCost: 29,
+      apply: (run) => {
+        run.player.stats.goldMultiplier += 0.4;
+        run.player.stats.chipsOnWinHand += 2;
+      },
+    },
+    {
+      id: "abyss-contract",
+      name: "Abyss Contract",
+      rarity: "legendary",
+      unlock: { key: "runsWon", min: 3, label: "Win 3 runs" },
+      description: "+2 damage, +1 block, +8% crit, and +2 first-hand damage.",
+      color: "#ff8e79",
+      shopCost: 38,
+      apply: (run) => {
+        run.player.stats.flatDamage += 2;
+        run.player.stats.block += 1;
+        run.player.stats.critChance += 0.08;
+        run.player.stats.firstHandDamage += 2;
+      },
+    },
+    {
+      id: "gambler-royale",
+      name: "Gambler Royale",
+      rarity: "legendary",
+      unlock: { key: "blackjacks", min: 30, label: "Hit 30 blackjacks" },
+      description: "+4 blackjack damage, +3 double-win damage, and +1 split-win damage.",
+      color: "#f9b671",
+      shopCost: 40,
+      apply: (run) => {
+        run.player.stats.blackjackBonusDamage += 4;
+        run.player.stats.doubleWinDamage += 3;
+        run.player.stats.splitWinDamage += 1;
+      },
+    },
+    {
+      id: "time-bank",
+      name: "Time Bank",
+      rarity: "legendary",
+      unlock: { key: "enemiesDefeated", min: 90, label: "Defeat 90 enemies" },
+      description: "+1 bust guard each encounter, +3 heal at encounter start, and +3 chips on push.",
+      color: "#89f1d0",
+      shopCost: 37,
+      apply: (run) => {
+        run.player.stats.bustGuardPerEncounter += 1;
+        run.player.stats.healOnEncounterStart += 3;
+        run.player.stats.chipsOnPush += 3;
+      },
+    },
+    {
+      id: "null-wallet",
+      name: "Null Wallet",
+      rarity: "legendary",
+      unlock: { key: "chipsEarned", min: 5000, label: "Earn 5000 chips total" },
+      description: "+55% payout chips, +3 chips on win, and +2 chips on push.",
+      color: "#ffcc89",
+      shopCost: 42,
+      apply: (run) => {
+        run.player.stats.goldMultiplier += 0.55;
+        run.player.stats.chipsOnWinHand += 3;
+        run.player.stats.chipsOnPush += 2;
+      },
+    },
+    {
+      id: "house-edge-breaker",
+      name: "House Edge Breaker",
+      rarity: "legendary",
+      unlock: { key: "runsWon", min: 4, label: "Win 4 runs" },
+      description: "+3 elite/boss damage, +1 damage, and +2 block.",
+      color: "#ff9d84",
+      shopCost: 39,
+      apply: (run) => {
+        run.player.stats.eliteDamage += 3;
         run.player.stats.flatDamage += 1;
+        run.player.stats.block += 2;
+      },
+    },
+    {
+      id: "kings-insurance",
+      name: "King's Insurance",
+      rarity: "legendary",
+      unlock: { key: "runsWon", min: 5, label: "Win 5 runs" },
+      description: "+2 bust guards each encounter and +3 double-loss block.",
+      color: "#79d9db",
+      shopCost: 40,
+      apply: (run) => {
+        run.player.stats.bustGuardPerEncounter += 2;
+        run.player.stats.doubleLossBlock += 3;
+      },
+    },
+    {
+      id: "void-credit",
+      name: "Void Credit",
+      rarity: "legendary",
+      unlock: { key: "chipsEarned", min: 6500, label: "Earn 6500 chips total" },
+      description: "+2 damage, +35% chips from payouts, and +2 chips on pushes.",
+      color: "#ffb384",
+      shopCost: 41,
+      apply: (run) => {
+        run.player.stats.flatDamage += 2;
+        run.player.stats.goldMultiplier += 0.35;
+        run.player.stats.chipsOnPush += 2;
       },
     },
   ];
@@ -380,6 +894,7 @@
   const BOSS_RELIC = {
     id: "crown-of-odds",
     name: "Crown of Odds",
+    rarity: "legendary",
     description: "+3 damage, +2 block, +15% crit chance.",
     color: "#ffe082",
     shopCost: 99,
@@ -391,6 +906,84 @@
   };
 
   const RELIC_BY_ID = new Map([...RELICS, BOSS_RELIC].map((r) => [r.id, r]));
+
+  function normalizeRelicRarity(rarity) {
+    if (typeof rarity === "string" && RELIC_RARITY_META[rarity]) {
+      return rarity;
+    }
+    return "common";
+  }
+
+  function relicRarityMeta(relic) {
+    const rarity = normalizeRelicRarity(relic?.rarity);
+    return RELIC_RARITY_META[rarity];
+  }
+
+  function profileCollectionCount(profile) {
+    if (!profile || typeof profile.relicCollection !== "object" || !profile.relicCollection) {
+      return 0;
+    }
+    let total = 0;
+    for (const value of Object.values(profile.relicCollection)) {
+      total += nonNegInt(value, 0);
+    }
+    return total;
+  }
+
+  function profileDistinctCollectionCount(profile) {
+    if (!profile || typeof profile.relicCollection !== "object" || !profile.relicCollection) {
+      return 0;
+    }
+    let total = 0;
+    for (const value of Object.values(profile.relicCollection)) {
+      if (nonNegInt(value, 0) > 0) {
+        total += 1;
+      }
+    }
+    return total;
+  }
+
+  function unlockProgressFor(relic, profile = state.profile) {
+    if (!relic || !relic.unlock) {
+      return {
+        unlocked: true,
+        current: 1,
+        target: 1,
+        label: "Unlocked by default",
+      };
+    }
+
+    const req = relic.unlock;
+    const target = Math.max(1, nonNegInt(req.min, 1));
+    const totals = profile?.totals || {};
+    let current = 0;
+    if (req.key === "distinctRelics") {
+      current = profileDistinctCollectionCount(profile);
+    } else if (req.key === "relicCopies") {
+      current = profileCollectionCount(profile);
+    } else if (Object.prototype.hasOwnProperty.call(totals, req.key)) {
+      current = nonNegInt(totals[req.key], 0);
+    }
+    const label = typeof req.label === "string" && req.label.trim().length > 0 ? req.label.trim() : `Reach ${target} ${req.key}`;
+    return {
+      unlocked: current >= target,
+      current,
+      target,
+      label,
+    };
+  }
+
+  function isRelicUnlocked(relic, profile = state.profile) {
+    return unlockProgressFor(relic, profile).unlocked;
+  }
+
+  function relicUnlockLabel(relic, profile = state.profile) {
+    const progress = unlockProgressFor(relic, profile);
+    if (progress.unlocked) {
+      return "Unlocked";
+    }
+    return `${progress.label} (${progress.current}/${progress.target})`;
+  }
 
   const ENEMY_NAMES = {
     normal: [
@@ -446,6 +1039,8 @@
     shopUi: null,
     shopTouch: null,
     shopDragOffset: 0,
+    collectionUi: null,
+    collectionPage: 0,
     pendingTransition: null,
     logsFeedSignature: "",
     passiveRailSignature: "",
@@ -493,6 +1088,9 @@
     merged.critChance = Math.max(0, Math.min(0.6, merged.critChance));
     merged.bustGuardPerEncounter = nonNegInt(merged.bustGuardPerEncounter, 1);
     merged.luckyStart = nonNegInt(merged.luckyStart, 0);
+    merged.flatDamage = Math.min(14, merged.flatDamage);
+    merged.block = Math.min(10, merged.block);
+    merged.goldMultiplier = Math.min(2.35, merged.goldMultiplier);
 
     return merged;
   }
@@ -586,6 +1184,10 @@
     run.chipsSpentRun = nonNegInt(runLike.chipsSpentRun, 0);
     run.maxStreak = nonNegInt(runLike.maxStreak, 0);
     run.shopPurchaseMade = Boolean(runLike.shopPurchaseMade);
+    run.blackjacks = nonNegInt(runLike.blackjacks, 0);
+    run.doublesWon = nonNegInt(runLike.doublesWon, 0);
+    run.splitsUsed = nonNegInt(runLike.splitsUsed, 0);
+    run.pushes = nonNegInt(runLike.pushes, 0);
 
     const player = runLike.player && typeof runLike.player === "object" ? runLike.player : {};
     run.player.maxHp = Math.max(10, nonNegInt(player.maxHp, run.player.maxHp));
@@ -851,6 +1453,10 @@
     totals.damageTaken += run.player.totalDamageTaken;
     totals.chipsEarned += run.chipsEarnedRun || 0;
     totals.chipsSpent += run.chipsSpentRun || 0;
+    totals.blackjacks += run.blackjacks || 0;
+    totals.doublesWon += run.doublesWon || 0;
+    totals.splitsUsed += run.splitsUsed || 0;
+    totals.pushes += run.pushes || 0;
     updateProfileBest(run);
 
     state.profile.runs.unshift({
@@ -975,6 +1581,10 @@
       chipsSpentRun: 0,
       maxStreak: 0,
       shopPurchaseMade: false,
+      blackjacks: 0,
+      doublesWon: 0,
+      splitsUsed: 0,
+      pushes: 0,
       player: {
         hp: 42,
         maxHp: 42,
@@ -1007,27 +1617,27 @@
   }
 
   function createEnemy(floor, room, type) {
-    const baseHp = 14 + floor * 3 + room * 2;
+    const baseHp = 14 + floor * 4 + room * 2;
     const hp =
       type === "boss"
-        ? baseHp + 28
+        ? baseHp + 30
         : type === "elite"
-          ? baseHp + 11
+          ? baseHp + 12
           : baseHp;
 
     const attack =
       type === "boss"
-        ? 5 + floor
+        ? 5 + floor + (floor >= 2 ? 1 : 0)
         : type === "elite"
           ? 3 + floor
           : 1 + floor;
 
     const goldDrop =
       type === "boss"
-        ? 40 + floor * 10
+        ? 34 + floor * 9
         : type === "elite"
-          ? 26 + floor * 7
-          : 12 + floor * 5 + room * 2;
+          ? 22 + floor * 6
+          : 10 + floor * 4 + room * 2;
 
     return {
       name: pickEnemyName(type),
@@ -2139,6 +2749,9 @@
 
     const encounter = state.encounter;
     const [first, second] = encounter.playerHand;
+    if (state.run) {
+      state.run.splitsUsed = nonNegInt(state.run.splitsUsed, 0) + 1;
+    }
     encounter.splitQueue = [[{ rank: second.rank, suit: second.suit }]];
     encounter.splitUsed = true;
     encounter.doubleDown = false;
@@ -2210,6 +2823,8 @@
     let outgoing = 0;
     let incoming = 0;
     let text = "Push.";
+    const splitBonus = encounter.splitUsed ? run.player.stats.splitWinDamage : 0;
+    const eliteBonus = enemy.type === "normal" ? 0 : run.player.stats.eliteDamage;
 
     if (outcome === "blackjack") {
       outgoing =
@@ -2218,9 +2833,12 @@
         lowHpBonus +
         streakBonus +
         run.player.stats.blackjackBonusDamage +
+        splitBonus +
+        eliteBonus +
         firstHandBonus +
         (encounter.doubleDown ? 2 : 0);
       text = "Blackjack!";
+      run.blackjacks = nonNegInt(run.blackjacks, 0) + 1;
     } else if (outcome === "dealer_bust") {
       outgoing =
         7 +
@@ -2228,6 +2846,8 @@
         lowHpBonus +
         streakBonus +
         run.player.stats.dealerBustBonusDamage +
+        splitBonus +
+        eliteBonus +
         firstHandBonus +
         (encounter.doubleDown ? 2 : 0) +
         (encounter.lastPlayerAction === "double" ? run.player.stats.doubleWinDamage : 0);
@@ -2239,19 +2859,21 @@
         run.player.stats.flatDamage +
         lowHpBonus +
         streakBonus +
+        splitBonus +
+        eliteBonus +
         firstHandBonus +
         (encounter.doubleDown ? 2 : 0) +
         (encounter.lastPlayerAction === "stand" ? run.player.stats.standWinDamage : 0) +
         (encounter.lastPlayerAction === "double" ? run.player.stats.doubleWinDamage : 0);
       text = "Win hand.";
     } else if (outcome === "dealer_blackjack") {
-      incoming = enemy.attack + 5;
+      incoming = enemy.attack + 4;
       text = "Dealer blackjack.";
     } else if (outcome === "dealer_win") {
-      incoming = enemy.attack + Math.max(1, Math.floor((dTotal - pTotal) * 0.5) + 1);
+      incoming = enemy.attack + Math.max(1, Math.floor((dTotal - pTotal) * 0.5));
       text = "Lose hand.";
     } else if (outcome === "player_bust") {
-      incoming = Math.max(1, enemy.attack + 3 - run.player.stats.bustBlock);
+      incoming = Math.max(1, enemy.attack + 2 - run.player.stats.bustBlock);
       text = "Bust.";
     }
 
@@ -2273,6 +2895,9 @@
 
     if (incoming > 0) {
       incoming = Math.max(1, incoming - run.player.stats.block);
+      if (encounter.lastPlayerAction === "double" && run.player.stats.doubleLossBlock > 0) {
+        incoming = Math.max(1, incoming - run.player.stats.doubleLossBlock);
+      }
     }
 
     playOutcomeSfx(outcome, outgoing, incoming);
@@ -2304,6 +2929,16 @@
     } else if (outgoing > 0) {
       run.player.streak += 1;
       run.maxStreak = Math.max(run.maxStreak || 0, run.player.streak);
+      if (encounter.lastPlayerAction === "double") {
+        run.doublesWon = nonNegInt(run.doublesWon, 0) + 1;
+      }
+      if (outcome === "blackjack" && run.player.stats.blackjackHeal > 0) {
+        const blackjackHeal = Math.min(run.player.stats.blackjackHeal, run.player.maxHp - run.player.hp);
+        if (blackjackHeal > 0) {
+          run.player.hp += blackjackHeal;
+          spawnFloatText(`+${blackjackHeal}`, WIDTH * 0.26, 514, "#8df0b2");
+        }
+      }
       if (run.player.stats.healOnWinHand > 0) {
         const heal = Math.min(run.player.stats.healOnWinHand, run.player.maxHp - run.player.hp);
         if (heal > 0) {
@@ -2316,9 +2951,12 @@
         spawnFloatText(`+${run.player.stats.chipsOnWinHand}`, WIDTH * 0.5, 72, "#ffd687");
       }
     } else if (outcome === "push" && run.player.stats.chipsOnPush > 0) {
+      run.pushes = nonNegInt(run.pushes, 0) + 1;
       gainChips(run.player.stats.chipsOnPush);
       spawnFloatText(`+${run.player.stats.chipsOnPush}`, WIDTH * 0.5, 72, "#ffd687");
       text = `Push +${run.player.stats.chipsOnPush} chips`;
+    } else if (outcome === "push") {
+      run.pushes = nonNegInt(run.pushes, 0) + 1;
     }
 
     if (encounter.critTriggered && outgoing > 0) {
@@ -2385,7 +3023,7 @@
     const enemy = encounter.enemy;
 
     run.enemiesDefeated += 1;
-    const payout = Math.round(enemy.goldDrop * run.player.stats.goldMultiplier) + Math.min(10, run.player.streak);
+    const payout = Math.round(enemy.goldDrop * run.player.stats.goldMultiplier) + Math.min(6, run.player.streak);
     gainChips(payout);
     spawnFloatText(`+${payout} chips`, WIDTH * 0.5, 72, "#ffd687");
     spawnSparkBurst(WIDTH * 0.5, 96, "#ffd687", 34, 280);
@@ -2433,16 +3071,99 @@
     saveRunSnapshot();
   }
 
-  function generateRewardOptions(count, includeBossRelic) {
-    const pool = shuffle([...RELICS]);
+  function relicRarityWeights(source, floor) {
+    const clampedFloor = Math.max(1, Math.min(3, nonNegInt(floor, 1)));
+    if (source === "shop") {
+      if (clampedFloor === 1) {
+        return { common: 68, uncommon: 24, rare: 7, legendary: 1 };
+      }
+      if (clampedFloor === 2) {
+        return { common: 46, uncommon: 34, rare: 17, legendary: 3 };
+      }
+      return { common: 29, uncommon: 35, rare: 28, legendary: 8 };
+    }
+    if (clampedFloor === 1) {
+      return { common: 64, uncommon: 28, rare: 7, legendary: 1 };
+    }
+    if (clampedFloor === 2) {
+      return { common: 40, uncommon: 37, rare: 19, legendary: 4 };
+    }
+    return { common: 24, uncommon: 35, rare: 29, legendary: 12 };
+  }
+
+  function sampleRarity(weights) {
+    const total = Object.values(weights).reduce((acc, value) => acc + Math.max(0, Number(value) || 0), 0);
+    if (total <= 0) {
+      return "common";
+    }
+    let roll = Math.random() * total;
+    for (const rarity of RELIC_RARITY_ORDER) {
+      const weight = Math.max(0, Number(weights[rarity]) || 0);
+      if (roll < weight) {
+        return rarity;
+      }
+      roll -= weight;
+    }
+    return "common";
+  }
+
+  function unlockedRelicPool(profile = state.profile) {
+    return RELICS.filter((relic) => isRelicUnlocked(relic, profile));
+  }
+
+  function sampleRelics(pool, count, source, floor) {
     const options = [];
+    const available = [...pool];
+    const weights = relicRarityWeights(source, floor);
+    const owned = state.run?.player?.relics || {};
+    const allowDuplicatesAt = source === "shop" ? 2 : 3;
+
+    while (options.length < count && available.length > 0) {
+      const targetRarity = sampleRarity(weights);
+      const prioritizeFresh = options.length < allowDuplicatesAt;
+      let candidates = available.filter((relic) => normalizeRelicRarity(relic.rarity) === targetRarity);
+      if (prioritizeFresh) {
+        const unowned = candidates.filter((relic) => nonNegInt(owned[relic.id], 0) === 0);
+        if (unowned.length) {
+          candidates = unowned;
+        }
+      }
+      if (!candidates.length) {
+        candidates = available;
+        if (prioritizeFresh) {
+          const unownedFallback = candidates.filter((relic) => nonNegInt(owned[relic.id], 0) === 0);
+          if (unownedFallback.length) {
+            candidates = unownedFallback;
+          }
+        }
+      }
+      const picked = candidates[Math.floor(Math.random() * candidates.length)];
+      options.push(picked);
+      const idx = available.findIndex((entry) => entry.id === picked.id);
+      if (idx >= 0) {
+        available.splice(idx, 1);
+      }
+    }
+    return options;
+  }
+
+  function generateRewardOptions(count, includeBossRelic) {
+    const options = [];
+    const floor = state.run ? state.run.floor : 1;
+    const pool = shuffle(unlockedRelicPool());
 
     if (includeBossRelic) {
       options.push(BOSS_RELIC);
     }
-
-    while (options.length < count && pool.length > 0) {
-      options.push(pool.pop());
+    const rolled = sampleRelics(pool, Math.max(0, count - options.length), "reward", floor);
+    for (const relic of rolled) {
+      if (options.some((entry) => entry.id === relic.id)) {
+        continue;
+      }
+      options.push(relic);
+      if (options.length >= count) {
+        break;
+      }
     }
 
     return options;
@@ -2450,12 +3171,14 @@
 
   function generateShopStock(count) {
     const floorScale = state.run ? state.run.floor * 2 : 0;
-    const relics = shuffle([...RELICS]).slice(0, Math.max(1, count - 1));
+    const floor = state.run ? state.run.floor : 1;
+    const relicPool = shuffle(unlockedRelicPool());
+    const relics = sampleRelics(relicPool, Math.max(1, count - 1), "shop", floor);
 
     const stock = relics.map((relic) => ({
       type: "relic",
       relic,
-      cost: relic.shopCost + floorScale,
+      cost: relic.shopCost + floorScale + relicRarityMeta(relic).shopMarkup,
       sold: false,
     }));
 
@@ -2480,6 +3203,9 @@
     run.player.relics[relic.id] = (run.player.relics[relic.id] || 0) + 1;
     relic.apply(run);
     run.player.stats.critChance = Math.min(0.6, run.player.stats.critChance);
+    run.player.stats.flatDamage = Math.min(14, run.player.stats.flatDamage);
+    run.player.stats.block = Math.min(10, run.player.stats.block);
+    run.player.stats.goldMultiplier = Math.max(0.5, Math.min(2.35, run.player.stats.goldMultiplier));
     run.player.hp = Math.min(run.player.maxHp, run.player.hp);
 
     if (state.profile) {
@@ -2585,6 +3311,48 @@
     return Boolean(state.savedRunSnapshot && state.savedRunSnapshot.run);
   }
 
+  function collectionEntries(profile = state.profile) {
+    const safeProfile = profile || createProfile();
+    const relics = [...RELICS, BOSS_RELIC];
+    return relics
+      .map((relic) => {
+        const rarity = normalizeRelicRarity(relic.rarity);
+        return {
+          relic,
+          rarity,
+          rarityLabel: RELIC_RARITY_META[rarity].label,
+          unlocked: isRelicUnlocked(relic, safeProfile),
+          unlockText: relicUnlockLabel(relic, safeProfile),
+          copies: nonNegInt(safeProfile.relicCollection?.[relic.id], 0),
+        };
+      })
+      .sort((a, b) => {
+        const rarityDelta = RELIC_RARITY_ORDER.indexOf(a.rarity) - RELIC_RARITY_ORDER.indexOf(b.rarity);
+        if (rarityDelta !== 0) {
+          return rarityDelta;
+        }
+        return a.relic.name.localeCompare(b.relic.name);
+      });
+  }
+
+  function collectionPageLayout() {
+    const portrait = Boolean(state.viewport?.portraitZoomed);
+    if (portrait) {
+      return { cols: 2, rows: 3 };
+    }
+    if (state.compactControls) {
+      return { cols: 3, rows: 3 };
+    }
+    return { cols: 4, rows: 3 };
+  }
+
+  function openCollection(page = 0) {
+    playUiSfx("confirm");
+    state.mode = "collection";
+    state.collectionPage = Math.max(0, nonNegInt(page, 0));
+    state.collectionUi = null;
+  }
+
   function shouldUseMobileControls() {
     if (!mobileControls) {
       return false;
@@ -2597,6 +3365,22 @@
     if (state.mode === "menu") {
       if (action === "left") {
         return "R";
+      }
+      if (action === "right") {
+        return "C";
+      }
+      if (action === "confirm") {
+        return "Enter / Space";
+      }
+      return "";
+    }
+
+    if (state.mode === "collection") {
+      if (action === "left") {
+        return "←";
+      }
+      if (action === "right") {
+        return "→";
       }
       if (action === "confirm") {
         return "Enter / Space";
@@ -2664,7 +3448,7 @@
       return state.mode === "menu" ? "↺" : "◀";
     }
     if (action === "right") {
-      return "▶";
+      return state.mode === "menu" ? "▦" : "▶";
     }
     if (action === "hit") {
       return "✚";
@@ -2778,7 +3562,7 @@
     document.body.classList.toggle("mobile-ui-active", state.mobileActive);
     document.body.classList.toggle("mobile-portrait-ui", state.mobilePortrait);
     document.body.classList.toggle("compact-controls", state.compactControls);
-    document.body.classList.toggle("menu-screen", state.mode === "menu");
+    document.body.classList.toggle("menu-screen", state.mode === "menu" || state.mode === "collection");
     mobileControls.classList.remove("reward-claim-only");
 
     Object.values(mobileButtons).forEach((button) => {
@@ -2800,10 +3584,24 @@
     if (state.mode === "menu") {
       setMobileButton(mobileButtons.left, "Resume", hasSavedRun(), true);
       setMobileButton(mobileButtons.confirm, "New Run", true, true);
+      setMobileButton(mobileButtons.right, "Collection", true, true);
       setMobileButton(mobileButtons.hit, "Hit", false, false);
       setMobileButton(mobileButtons.stand, "Stand", false, false);
       setMobileButton(mobileButtons.double, "Double", false, false);
-      setMobileButton(mobileButtons.right, "Right", false, false);
+      return;
+    }
+
+    if (state.mode === "collection") {
+      const total = collectionEntries().length;
+      const { cols, rows } = collectionPageLayout();
+      const perPage = cols * rows;
+      const pages = Math.max(1, Math.ceil(total / Math.max(1, perPage)));
+      setMobileButton(mobileButtons.left, "Prev", state.collectionPage > 0, true);
+      setMobileButton(mobileButtons.right, "Next", state.collectionPage < pages - 1, true);
+      setMobileButton(mobileButtons.confirm, "Back", true, true);
+      setMobileButton(mobileButtons.hit, "Hit", false, false);
+      setMobileButton(mobileButtons.stand, "Stand", false, false);
+      setMobileButton(mobileButtons.double, "Double", false, false);
       return;
     }
 
@@ -2868,6 +3666,8 @@
         if (hasSavedRun() && resumeSavedRun()) {
           saveRunSnapshot();
         }
+      } else if (state.mode === "collection") {
+        state.collectionPage = Math.max(0, state.collectionPage - 1);
       } else if (state.mode === "reward") {
         moveSelection(-1, state.rewardOptions.length);
       } else if (state.mode === "shop") {
@@ -2877,7 +3677,15 @@
     }
 
     if (action === "right") {
-      if (state.mode === "reward") {
+      if (state.mode === "menu") {
+        openCollection(0);
+      } else if (state.mode === "collection") {
+        const total = collectionEntries().length;
+        const { cols, rows } = collectionPageLayout();
+        const perPage = Math.max(1, cols * rows);
+        const pages = Math.max(1, Math.ceil(total / perPage));
+        state.collectionPage = Math.min(pages - 1, state.collectionPage + 1);
+      } else if (state.mode === "reward") {
         moveSelection(1, state.rewardOptions.length);
       } else if (state.mode === "shop") {
         moveSelection(1, state.shopStock.length);
@@ -2907,6 +3715,8 @@
     if (action === "confirm") {
       if (state.mode === "menu") {
         startRun();
+      } else if (state.mode === "collection") {
+        state.mode = "menu";
       } else if (state.mode === "playing") {
         splitAction();
       } else if (state.mode === "reward") {
@@ -3018,11 +3828,45 @@
     return false;
   }
 
+  function handleCollectionPointerTap(worldX, worldY) {
+    if (state.mode !== "collection" || !state.collectionUi) {
+      return false;
+    }
+    const total = collectionEntries().length;
+    const { cols, rows } = collectionPageLayout();
+    const perPage = Math.max(1, cols * rows);
+    const pages = Math.max(1, Math.ceil(total / perPage));
+    if (state.collectionUi.leftArrow && pointInCircle(worldX, worldY, state.collectionUi.leftArrow)) {
+      state.collectionPage = Math.max(0, state.collectionPage - 1);
+      playUiSfx("select");
+      return true;
+    }
+    if (state.collectionUi.rightArrow && pointInCircle(worldX, worldY, state.collectionUi.rightArrow)) {
+      state.collectionPage = Math.min(pages - 1, state.collectionPage + 1);
+      playUiSfx("select");
+      return true;
+    }
+    if (state.collectionUi.backButton && pointInRect(worldX, worldY, state.collectionUi.backButton)) {
+      state.mode = "menu";
+      playUiSfx("confirm");
+      return true;
+    }
+    return false;
+  }
+
   function onCanvasPointerDown(event) {
     if (isLogsModalOpen()) {
       return;
     }
     unlockAudio();
+    if (state.mode === "collection") {
+      const point = canvasPointToWorld(event.clientX, event.clientY);
+      if (point) {
+        handleCollectionPointerTap(point.x, point.y);
+      }
+      event.preventDefault();
+      return;
+    }
     const carouselMode = state.mode === "reward" || state.mode === "shop" ? state.mode : null;
     if (!carouselMode) {
       state.rewardTouch = null;
@@ -3191,7 +4035,7 @@
     }
     if (raw.length === 1) {
       const low = raw.toLowerCase();
-      if (low === "a" || low === "b" || low === "s" || low === "r" || low === "m") {
+      if (low === "a" || low === "b" || low === "c" || low === "s" || low === "r" || low === "m") {
         return low;
       }
     }
@@ -3240,6 +4084,23 @@
         if (resumeSavedRun()) {
           saveRunSnapshot();
         }
+      } else if (key === "c") {
+        openCollection(0);
+      }
+      return;
+    }
+
+    if (state.mode === "collection") {
+      const total = collectionEntries().length;
+      const { cols, rows } = collectionPageLayout();
+      const perPage = Math.max(1, cols * rows);
+      const pages = Math.max(1, Math.ceil(total / perPage));
+      if (key === "left") {
+        state.collectionPage = Math.max(0, state.collectionPage - 1);
+      } else if (key === "right") {
+        state.collectionPage = Math.min(pages - 1, state.collectionPage + 1);
+      } else if (key === "enter" || key === "space" || key === "c" || key === "r") {
+        state.mode = "menu";
       }
       return;
     }
@@ -3361,6 +4222,10 @@
       if (Math.abs(state.shopDragOffset) < 0.45) {
         state.shopDragOffset = 0;
       }
+    }
+
+    if (state.mode !== "collection") {
+      state.collectionUi = null;
     }
 
     if (state.run) {
@@ -4436,6 +5301,11 @@
         setFont(14, 600, false);
         ctx.fillText(fitText(profileLine, panelW - panelPad * 2), centerX, y);
       }
+      if (!state.compactControls) {
+        ctx.fillStyle = "#8eb2ce";
+        setFont(13, 600, false);
+        ctx.fillText("Press C for Collection", centerX, panelY + panelH - 14);
+      }
       return;
     }
 
@@ -4530,6 +5400,158 @@
       setFont(compact ? 14 : 17, 600, false);
       wrapText(profileLine, panelX + panelPad, cursorY, panelW - panelPad * 2, compact ? 20 : 22, "center");
     }
+    if (!state.compactControls) {
+      ctx.fillStyle = "#8eb2ce";
+      setFont(compact ? 13 : 15, 600, false);
+      ctx.fillText("Press C for Collection", WIDTH * 0.5, panelY + panelH - 16);
+    }
+  }
+
+  function drawCollectionScreen() {
+    const entries = collectionEntries();
+    const { cols, rows } = collectionPageLayout();
+    const perPage = Math.max(1, cols * rows);
+    const pages = Math.max(1, Math.ceil(entries.length / perPage));
+    state.collectionPage = Math.min(Math.max(0, state.collectionPage), pages - 1);
+    const start = state.collectionPage * perPage;
+    const pageEntries = entries.slice(start, start + perPage);
+    const portrait = Boolean(state.viewport?.portraitZoomed);
+    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+    const visibleW = Math.max(portrait ? 320 : 760, WIDTH - cropX * 2);
+    const panelW = portrait ? Math.min(472, visibleW - 14) : Math.min(1120, visibleW - 38);
+    const panelH = portrait ? 568 : 604;
+    const panelX = WIDTH * 0.5 - panelW * 0.5;
+    const panelY = portrait ? 84 : 72;
+
+    ctx.fillStyle = "rgba(4, 10, 16, 0.68)";
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+    roundRect(panelX, panelY, panelW, panelH, 24);
+    const panelFill = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    panelFill.addColorStop(0, "rgba(16, 32, 48, 0.97)");
+    panelFill.addColorStop(1, "rgba(9, 20, 31, 0.95)");
+    ctx.fillStyle = panelFill;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(166, 208, 236, 0.34)";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    const collectedUnique = entries.filter((entry) => entry.copies > 0).length;
+    const unlockedCount = entries.filter((entry) => entry.unlocked).length;
+    const totalCopies = entries.reduce((acc, entry) => acc + entry.copies, 0);
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f3d193";
+    setFont(portrait ? 36 : 42, 700, true);
+    ctx.fillText("Relic Codex", WIDTH * 0.5, panelY + 50);
+
+    ctx.fillStyle = "#bed8ec";
+    setFont(portrait ? 14 : 16, 600, false);
+    ctx.fillText(
+      `Unlocked ${unlockedCount}/${entries.length}  |  Found ${collectedUnique}/${entries.length}  |  Copies ${totalCopies}`,
+      WIDTH * 0.5,
+      panelY + 82
+    );
+    ctx.fillStyle = "#9ac0dc";
+    setFont(portrait ? 13 : 14, 600, false);
+    ctx.fillText(`Page ${state.collectionPage + 1}/${pages}`, WIDTH * 0.5, panelY + 104);
+
+    const gridPadX = portrait ? 16 : 22;
+    const gridPadTop = portrait ? 120 : 124;
+    const gridPadBottom = portrait ? 116 : 124;
+    const gridX = panelX + gridPadX;
+    const gridY = panelY + gridPadTop;
+    const gridW = panelW - gridPadX * 2;
+    const gridH = panelH - gridPadTop - gridPadBottom;
+    const gapX = portrait ? 10 : 14;
+    const gapY = portrait ? 10 : 14;
+    const cardW = (gridW - gapX * (cols - 1)) / cols;
+    const cardH = (gridH - gapY * (rows - 1)) / rows;
+
+    pageEntries.forEach((entry, idx) => {
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      const x = gridX + col * (cardW + gapX);
+      const y = gridY + row * (cardH + gapY);
+      const rarityMeta = RELIC_RARITY_META[entry.rarity];
+      roundRect(x, y, cardW, cardH, 14);
+      const fill = ctx.createLinearGradient(x, y, x, y + cardH);
+      if (entry.unlocked) {
+        fill.addColorStop(0, "rgba(33, 54, 72, 0.95)");
+        fill.addColorStop(1, "rgba(20, 35, 49, 0.92)");
+      } else {
+        fill.addColorStop(0, "rgba(26, 33, 42, 0.94)");
+        fill.addColorStop(1, "rgba(16, 22, 31, 0.92)");
+      }
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.strokeStyle = entry.unlocked ? rarityMeta.glow : "rgba(145, 164, 182, 0.28)";
+      ctx.lineWidth = entry.unlocked ? 1.6 : 1.1;
+      ctx.stroke();
+
+      ctx.fillStyle = entry.unlocked ? rarityMeta.glow : "#9aa9b8";
+      setFont(portrait ? 12 : 13, 700, false);
+      ctx.fillText(entry.rarityLabel.toUpperCase(), x + cardW * 0.5, y + 22);
+
+      ctx.fillStyle = entry.unlocked ? "#ecf4ff" : "#b3bfcb";
+      setFont(portrait ? 20 : 22, 700, true);
+      ctx.fillText(fitText(entry.unlocked ? entry.relic.name : "LOCKED", cardW - 20), x + cardW * 0.5, y + 50);
+
+      ctx.fillStyle = entry.unlocked ? "#d5e6f6" : "#aeb8c4";
+      setFont(portrait ? 13 : 14, 600, false);
+      const body = entry.unlocked ? passiveDescription(entry.relic.description) : entry.unlockText;
+      const bodyWidth = cardW - 22;
+      const bodyLines = wrappedLines(body, bodyWidth);
+      const lineHeight = portrait ? 15 : 16;
+      const bodyTop = y + 76;
+      const bodyBottom = y + cardH - 34;
+      const maxLinesBySpace = Math.max(1, Math.floor((bodyBottom - bodyTop) / lineHeight));
+      const maxLines = Math.min(portrait ? 2 : 3, maxLinesBySpace);
+      const clipped = bodyLines.slice(0, maxLines);
+      if (bodyLines.length > maxLines && clipped.length > 0) {
+        const last = clipped.length - 1;
+        clipped[last] = fitText(`${clipped[last]}...`, bodyWidth);
+      }
+      clipped.forEach((line, lineIndex) => {
+        ctx.fillText(line, x + cardW * 0.5, bodyTop + lineIndex * lineHeight);
+      });
+
+      ctx.fillStyle = entry.copies > 0 ? "#f4d999" : "#90a9bf";
+      setFont(portrait ? 13 : 14, 700, false);
+      ctx.fillText(entry.copies > 0 ? `Owned x${entry.copies}` : "Not found yet", x + cardW * 0.5, y + cardH - 14);
+    });
+
+    const canPrev = state.collectionPage > 0;
+    const canNext = state.collectionPage < pages - 1;
+    const arrowY = gridY + gridH * 0.5;
+    const arrowR = portrait ? 18 : 22;
+    const leftArrowX = panelX + (portrait ? 22 : 30);
+    const rightArrowX = panelX + panelW - (portrait ? 22 : 30);
+    drawRewardCarouselArrow(leftArrowX, arrowY, arrowR, "◀", canPrev);
+    drawRewardCarouselArrow(rightArrowX, arrowY, arrowR, "▶", canNext);
+
+    const backW = portrait ? Math.min(280, panelW - 38) : 278;
+    const backH = portrait ? 46 : 48;
+    const backX = WIDTH * 0.5 - backW * 0.5;
+    const backY = panelY + panelH - (portrait ? 66 : 74);
+    roundRect(backX, backY, backW, backH, 12);
+    const backFill = ctx.createLinearGradient(backX, backY, backX, backY + backH);
+    backFill.addColorStop(0, "rgba(242, 208, 142, 0.98)");
+    backFill.addColorStop(1, "rgba(223, 173, 84, 0.96)");
+    ctx.fillStyle = backFill;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 245, 216, 0.35)";
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+    ctx.fillStyle = "#15263a";
+    setFont(portrait ? 20 : 22, 700, true);
+    ctx.fillText("Back", backX + backW * 0.5, backY + backH - 14);
+
+    state.collectionUi = {
+      leftArrow: canPrev ? { x: leftArrowX, y: arrowY, r: arrowR } : null,
+      rightArrow: canNext ? { x: rightArrowX, y: arrowY, r: arrowR } : null,
+      backButton: { x: backX, y: backY, w: backW, h: backH },
+    };
   }
 
   function wrapText(text, x, y, maxWidth, lineHeight, align) {
@@ -4797,8 +5819,11 @@
     ctx.translate(shake.x, shake.y);
     drawBackground();
 
-    if (state.mode === "menu") {
+    if (state.mode === "menu" || state.mode === "collection") {
       drawMenu();
+      if (state.mode === "collection") {
+        drawCollectionScreen();
+      }
       drawEffects();
       ctx.restore();
       drawFlashOverlays();
@@ -4828,7 +5853,12 @@
 
   function availableActions() {
     if (state.mode === "menu") {
-      return hasSavedRun() ? ["enter(start)", "space(start)", "r(resume)"] : ["enter(start)", "space(start)"];
+      return hasSavedRun()
+        ? ["enter(start)", "space(start)", "r(resume)", "c(collection)"]
+        : ["enter(start)", "space(start)", "c(collection)"];
+    }
+    if (state.mode === "collection") {
+      return ["left(prev page)", "right(next page)", "enter(back)", "space(back)"];
     }
     if (state.mode === "playing") {
       const canDouble = !!(
@@ -4927,6 +5957,29 @@
               selected: idx === state.selectionIndex,
             }))
           : [],
+      collection:
+        state.mode === "collection"
+          ? (() => {
+              const entries = collectionEntries();
+              const { cols, rows } = collectionPageLayout();
+              const perPage = Math.max(1, cols * rows);
+              const pages = Math.max(1, Math.ceil(entries.length / perPage));
+              const page = Math.min(pages - 1, Math.max(0, state.collectionPage));
+              const start = page * perPage;
+              return {
+                page,
+                pages,
+                totalRelics: entries.length,
+                items: entries.slice(start, start + perPage).map((entry) => ({
+                  id: entry.relic.id,
+                  name: entry.relic.name,
+                  rarity: entry.rarity,
+                  unlocked: entry.unlocked,
+                  copies: entry.copies,
+                })),
+              };
+            })()
+          : null,
       banner: state.announcement,
       hasSavedRun: hasSavedRun(),
       mobileControls: state.mobileActive,
