@@ -1279,6 +1279,9 @@
       hideDealerHole: Boolean(encounterLike.hideDealerHole),
       phase: ["player", "dealer", "resolve", "done"].includes(encounterLike.phase) ? encounterLike.phase : "player",
       resultText: typeof encounterLike.resultText === "string" ? encounterLike.resultText : "",
+      resultTone: ["neutral", "win", "loss", "push", "special"].includes(encounterLike.resultTone)
+        ? encounterLike.resultTone
+        : "neutral",
       resolveTimer: clampNumber(encounterLike.resolveTimer, 0, 10, 0),
       handIndex: Math.max(1, nonNegInt(encounterLike.handIndex, 1)),
       doubleDown: Boolean(encounterLike.doubleDown),
@@ -2524,6 +2527,7 @@
       hideDealerHole: true,
       phase: "player",
       resultText: "",
+      resultTone: "neutral",
       resolveTimer: 0,
       handIndex: 1,
       doubleDown: false,
@@ -2549,6 +2553,7 @@
     encounter.hideDealerHole = !encounter.dealerResolved;
     encounter.phase = "player";
     encounter.resultText = "";
+    encounter.resultTone = "neutral";
     encounter.resolveTimer = 0;
     encounter.doubleDown = false;
     encounter.bustGuardTriggered = false;
@@ -2739,6 +2744,7 @@
     encounter.hideDealerHole = !encounter.dealerResolved;
     encounter.phase = "player";
     encounter.resultText = "";
+    encounter.resultTone = "neutral";
     encounter.resolveTimer = 0;
     encounter.doubleDown = false;
     encounter.bustGuardTriggered = false;
@@ -2876,6 +2882,7 @@
     let outgoing = 0;
     let incoming = 0;
     let text = "Push.";
+    let resultTone = "push";
     const splitBonus = encounter.splitUsed ? run.player.stats.splitWinDamage : 0;
     const eliteBonus = enemy.type === "normal" ? 0 : run.player.stats.eliteDamage;
 
@@ -2891,6 +2898,7 @@
         firstHandBonus +
         (encounter.doubleDown ? 2 : 0);
       text = "Blackjack!";
+      resultTone = "special";
       run.blackjacks = nonNegInt(run.blackjacks, 0) + 1;
     } else if (outcome === "dealer_bust") {
       outgoing =
@@ -2905,6 +2913,7 @@
         (encounter.doubleDown ? 2 : 0) +
         (encounter.lastPlayerAction === "double" ? run.player.stats.doubleWinDamage : 0);
       text = "Dealer bust.";
+      resultTone = "win";
     } else if (outcome === "player_win") {
       outgoing =
         4 +
@@ -2919,15 +2928,19 @@
         (encounter.lastPlayerAction === "stand" ? run.player.stats.standWinDamage : 0) +
         (encounter.lastPlayerAction === "double" ? run.player.stats.doubleWinDamage : 0);
       text = "Win hand.";
+      resultTone = "win";
     } else if (outcome === "dealer_blackjack") {
       incoming = enemy.attack + 3;
       text = "Dealer blackjack.";
+      resultTone = "special";
     } else if (outcome === "dealer_win") {
       incoming = enemy.attack + Math.max(1, Math.floor((dTotal - pTotal) * 0.4));
       text = "Lose hand.";
+      resultTone = "loss";
     } else if (outcome === "player_bust") {
       incoming = Math.max(1, enemy.attack + 1 - run.player.stats.bustBlock);
       text = "Bust.";
+      resultTone = "loss";
     }
 
     if (outgoing > 0 && Math.random() < run.player.stats.critChance) {
@@ -3014,10 +3027,15 @@
 
     if (encounter.critTriggered && outgoing > 0) {
       text = `CRIT -${outgoing} HP`;
+      resultTone = "special";
     } else if (outgoing > 0) {
       text = `${text} -${outgoing} HP`;
+      if (resultTone !== "special") {
+        resultTone = "win";
+      }
     } else if (incoming > 0) {
       text = `${text} -${incoming} HP`;
+      resultTone = "loss";
     }
 
     if (encounter.bustGuardTriggered) {
@@ -3039,8 +3057,11 @@
       triggerScreenShake(8.5, 0.24);
     }
 
-    encounter.resultText = "";
-    setAnnouncement(text, 1.68);
+    encounter.resultText = text;
+    encounter.resultTone = resultTone;
+    state.announcement = "";
+    state.announcementTimer = 0;
+    state.announcementDuration = 0;
     addLog(text);
     run.totalHands += 1;
     updateProfileBest(run);
@@ -3062,7 +3083,14 @@
     }
 
     encounter.phase = "resolve";
-    encounter.resolveTimer = 1.05;
+    let resolveDelay = state.compactControls ? 1.78 : 1.52;
+    if (encounter.splitUsed) {
+      resolveDelay += 0.12;
+    }
+    if (encounter.critTriggered || outcome === "blackjack" || outcome === "dealer_blackjack") {
+      resolveDelay += 0.16;
+    }
+    encounter.resolveTimer = resolveDelay;
     saveRunSnapshot();
   }
 
@@ -4630,6 +4658,49 @@
       setFont(14, 600, false);
       ctx.fillText(`Split hand ${splitIndex}/${splitTotal}`, playerBox.centerX, playerLabelY + 20);
     }
+
+    if (encounter.phase === "resolve" && encounter.resultText) {
+      const tone = encounter.resultTone || "neutral";
+      const toneFill =
+        tone === "win"
+          ? "rgba(22, 52, 40, 0.94)"
+          : tone === "loss"
+            ? "rgba(58, 32, 34, 0.94)"
+            : tone === "special"
+              ? "rgba(44, 36, 23, 0.95)"
+              : "rgba(23, 42, 59, 0.93)";
+      const toneStroke =
+        tone === "win"
+          ? "rgba(118, 234, 178, 0.78)"
+          : tone === "loss"
+            ? "rgba(255, 148, 146, 0.76)"
+            : tone === "special"
+              ? "rgba(246, 214, 135, 0.82)"
+              : "rgba(170, 208, 233, 0.65)";
+      const toneText = tone === "loss" ? "#ffd7d7" : tone === "win" ? "#d9ffea" : "#fff0c8";
+      const centerY = dealerBox.y + dealerBox.h + (playerBox.y - (dealerBox.y + dealerBox.h)) * 0.5;
+      const widthCap = Math.max(300, Math.min(portrait ? 450 : 560, visibleW - 100));
+      setFont(portrait ? 36 : 34, 700, true);
+      const lines = wrappedLines(encounter.resultText, widthCap - 56).slice(0, 2);
+      const lineHeight = portrait ? 34 : 32;
+      const textW = Math.max(...lines.map((line) => ctx.measureText(line).width));
+      const panelW = Math.max(280, Math.min(widthCap, textW + 64));
+      const panelH = Math.max(56, 24 + lines.length * lineHeight);
+      const panelY = clampNumber(centerY - panelH * 0.5, 182, HEIGHT - 214, centerY - panelH * 0.5);
+      roundRect(WIDTH * 0.5 - panelW * 0.5, panelY, panelW, panelH, 16);
+      ctx.fillStyle = toneFill;
+      ctx.fill();
+      ctx.strokeStyle = toneStroke;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.textAlign = "center";
+      ctx.fillStyle = toneText;
+      setFont(portrait ? 34 : 32, 700, true);
+      lines.forEach((line, idx) => {
+        const lineY = panelY + panelH * 0.5 - ((lines.length - 1) * lineHeight) * 0.5 + idx * lineHeight + 10;
+        ctx.fillText(line, WIDTH * 0.5, lineY);
+      });
+    }
   }
 
   function hudMetrics() {
@@ -5986,6 +6057,7 @@
             playerTotal: encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total,
             dealerVisibleTotal: visibleDealerTotal(encounter),
             resultText: encounter.resultText,
+            resultTone: encounter.resultTone || "neutral",
             doubleDown: encounter.doubleDown,
             splitQueueHands: Array.isArray(encounter.splitQueue) ? encounter.splitQueue.length : 0,
             splitUsed: Boolean(encounter.splitUsed),
