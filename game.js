@@ -60,6 +60,95 @@
     menuArtImage.src = MENU_ART_SOURCES[0];
   }
   resolveMenuArtSource();
+  const ENEMY_AVATAR_SOURCE_ROOTS = ["public/images/avatars", "/images/avatars"];
+  const enemyAvatarCache = new Map();
+
+  function sanitizeEnemyAvatarKey(name) {
+    if (typeof name !== "string") {
+      return "";
+    }
+    return name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  function enemyAvatarSourcesForKey(key) {
+    return ENEMY_AVATAR_SOURCE_ROOTS.map((root) => `${root}/${key}.png`);
+  }
+
+  function ensureEnemyAvatarLoaded(key) {
+    if (!key) {
+      return null;
+    }
+    const cached = enemyAvatarCache.get(key);
+    if (cached && (cached.status === "loading" || cached.status === "ready")) {
+      return cached;
+    }
+
+    const image = new window.Image();
+    image.decoding = "async";
+    const entry = {
+      key,
+      status: "loading",
+      image,
+      sourceIndex: 0,
+    };
+    enemyAvatarCache.set(key, entry);
+    const sources = enemyAvatarSourcesForKey(key);
+
+    const tryNextSource = () => {
+      if (entry.sourceIndex >= sources.length) {
+        entry.status = "error";
+        return;
+      }
+      const src = sources[entry.sourceIndex];
+      image.onload = () => {
+        entry.status = "ready";
+      };
+      image.onerror = () => {
+        entry.sourceIndex += 1;
+        tryNextSource();
+      };
+      image.src = src;
+    };
+
+    tryNextSource();
+    return entry;
+  }
+
+  function enemyAvatarImage(enemy) {
+    if (!enemy) {
+      return null;
+    }
+    const key =
+      enemy.avatarKey ||
+      ENEMY_AVATAR_BY_NAME[enemy.name] ||
+      sanitizeEnemyAvatarKey(enemy.name);
+    if (!key) {
+      return null;
+    }
+    const entry = ensureEnemyAvatarLoaded(key);
+    return entry && entry.status === "ready" ? entry.image : null;
+  }
+
+  function enemyAvatarIntensity(enemy, run = state.run) {
+    const typeBase =
+      enemy?.type === "boss" ? 1.02 : enemy?.type === "elite" ? 0.68 : 0.36;
+    const floorProgress = run
+      ? (Math.max(1, run.floor) - 1) / Math.max(1, (run.maxFloor || 3) - 1)
+      : 0;
+    const roomProgress = run
+      ? (Math.max(1, run.room) - 1) / Math.max(1, (run.roomsPerFloor || 5) - 1)
+      : 0;
+    return clampNumber(
+      typeBase + floorProgress * 0.25 + roomProgress * 0.1,
+      0.3,
+      1.3,
+      typeBase
+    );
+  }
   const passiveThumbCache = new Map();
   const STORAGE_KEYS = {
     profile: "blackjack-abyss.profile.v1",
@@ -998,6 +1087,21 @@
     elite: ["Velvet Reaper", "Latch Queen", "Bone Accountant", "Stack Baron"],
     boss: ["The House", "Abyss Banker", "Null Dealer"],
   };
+  const ENEMY_AVATAR_BY_NAME = {
+    "Pit Croupier": "pit-croupier",
+    "Tin Dealer": "tin-dealer",
+    "Shiv Shark": "shiv-shark",
+    "Brick Smiler": "brick-smiler",
+    "Card Warden": "card-warden",
+    "Ash Gambler": "ash-gambler",
+    "Velvet Reaper": "velvet-reaper",
+    "Latch Queen": "latch-queen",
+    "Bone Accountant": "bone-accountant",
+    "Stack Baron": "stack-baron",
+    "The House": "the-house",
+    "Abyss Banker": "abyss-banker",
+    "Null Dealer": "null-dealer",
+  };
 
   const state = {
     mode: "menu",
@@ -1635,6 +1739,10 @@
   }
 
   function createEnemy(floor, room, type) {
+    const name = pickEnemyName(type);
+    const avatarKey = ENEMY_AVATAR_BY_NAME[name] || sanitizeEnemyAvatarKey(name);
+    ensureEnemyAvatarLoaded(avatarKey);
+
     const baseHp = 14 + floor * 4 + room * 2;
     const hp =
       type === "boss"
@@ -1658,7 +1766,8 @@
           : 10 + floor * 4 + room * 2;
 
     return {
-      name: pickEnemyName(type),
+      name,
+      avatarKey,
       type,
       hp,
       maxHp: hp,
@@ -4573,6 +4682,91 @@
     };
   }
 
+  function enemyAvatarAccent(enemyType) {
+    if (enemyType === "boss") {
+      return {
+        glow: "rgba(255, 138, 104, 0.7)",
+        rim: "rgba(255, 170, 136, 0.72)",
+      };
+    }
+    if (enemyType === "elite") {
+      return {
+        glow: "rgba(248, 208, 112, 0.66)",
+        rim: "rgba(255, 224, 164, 0.7)",
+      };
+    }
+    return {
+      glow: "rgba(131, 185, 255, 0.62)",
+      rim: "rgba(180, 222, 255, 0.66)",
+    };
+  }
+
+  function drawEnemyAvatarPanel(enemy, portrait) {
+    if (!enemy) {
+      return;
+    }
+    const avatar = enemyAvatarImage(enemy);
+    if (!avatar) {
+      return;
+    }
+
+    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+    const intensity = enemyAvatarIntensity(enemy);
+    const accent = enemyAvatarAccent(enemy.type);
+    const panelW = portrait ? 108 : 186;
+    const panelH = portrait ? 132 : 228;
+    const panelX = portrait ? cropX + 42 : WIDTH - cropX - panelW - 44;
+    const panelY = portrait ? 96 : 94;
+    const radius = portrait ? 14 : 20;
+    const pulse = 0.28 + (Math.sin(state.worldTime * (2.2 + intensity * 0.65)) * 0.5 + 0.5) * 0.26;
+
+    roundRect(panelX, panelY, panelW, panelH, radius);
+    const panelGradient = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    panelGradient.addColorStop(0, "rgba(18, 42, 65, 0.95)");
+    panelGradient.addColorStop(1, "rgba(11, 25, 40, 0.95)");
+    ctx.fillStyle = panelGradient;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(154, 198, 232, 0.38)";
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    const inset = portrait ? 6 : 8;
+    const innerX = panelX + inset;
+    const innerY = panelY + inset;
+    const innerW = panelW - inset * 2;
+    const innerH = panelH - inset * 2;
+
+    ctx.save();
+    roundRect(innerX, innerY, innerW, innerH, Math.max(10, radius - 4));
+    ctx.clip();
+    const oldFilter = ctx.filter;
+    const sat = Math.round((1.15 + intensity * 0.72) * 100);
+    const contrast = Math.round((1.05 + intensity * 0.44) * 100);
+    const brightness = Math.round((1.02 + intensity * 0.08) * 100);
+    ctx.filter = `saturate(${sat}%) contrast(${contrast}%) brightness(${brightness}%)`;
+    const bob = Math.sin(state.worldTime * (1.75 + intensity)) * (portrait ? 1.6 : 2.4);
+    const focusY = clampNumber(0.24 - intensity * 0.05, 0.16, 0.28, 0.22);
+    drawImageCover(avatar, innerX, innerY + bob, innerW, innerH, 0.5, focusY);
+    ctx.filter = oldFilter;
+    const gloss = ctx.createLinearGradient(innerX, innerY, innerX, innerY + innerH);
+    gloss.addColorStop(0, "rgba(255, 255, 255, 0.12)");
+    gloss.addColorStop(0.52, "rgba(255, 255, 255, 0.02)");
+    gloss.addColorStop(1, "rgba(0, 0, 0, 0.18)");
+    ctx.fillStyle = gloss;
+    ctx.fillRect(innerX, innerY, innerW, innerH);
+    ctx.restore();
+
+    ctx.save();
+    roundRect(panelX - 2, panelY - 2, panelW + 4, panelH + 4, radius + 2);
+    ctx.strokeStyle = accent.rim;
+    ctx.lineWidth = 1.6 + intensity * 1.15;
+    ctx.shadowColor = accent.glow;
+    ctx.shadowBlur = 16 + intensity * 20;
+    ctx.globalAlpha = 0.42 + pulse * 0.24;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   function drawEncounter() {
     if (!state.encounter || !state.run) {
       return;
@@ -4595,6 +4789,8 @@
     ctx.fillStyle = "#cbe6ff";
     setFont(17, 600, false);
     ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, WIDTH * 0.5, enemyTitleY + 26);
+
+    drawEnemyAvatarPanel(enemy, portrait);
 
     drawHand(encounter.dealerHand, "dealer", encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player");
     drawHand(encounter.playerHand, "player", false);
