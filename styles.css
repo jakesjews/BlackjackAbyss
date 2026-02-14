@@ -448,6 +448,11 @@ body.compact-controls #mobile-controls.reward-claim-only button[data-mobile-acti
     gap: 6px;
   }
 
+  body.compact-controls #passive-rail {
+    left: 8px;
+    top: max(192px, env(safe-area-inset-top) + 182px);
+  }
+
   .passive-card {
     width: 48px;
     height: 62px;
