@@ -4713,11 +4713,11 @@
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
     const intensity = enemyAvatarIntensity(enemy);
     const accent = enemyAvatarAccent(enemy.type);
-    const panelW = portrait ? 108 : 186;
-    const panelH = portrait ? 132 : 228;
-    const panelX = portrait ? cropX + 42 : WIDTH - cropX - panelW - 44;
-    const panelY = portrait ? 96 : 94;
-    const radius = portrait ? 14 : 20;
+    const panelW = portrait ? 90 : 186;
+    const panelH = portrait ? 106 : 228;
+    const panelX = portrait ? cropX + 24 : WIDTH - cropX - panelW - 44;
+    const panelY = portrait ? 78 : 94;
+    const radius = portrait ? 12 : 20;
     const pulse = 0.28 + (Math.sin(state.worldTime * (2.2 + intensity * 0.65)) * 0.5 + 0.5) * 0.26;
 
     roundRect(panelX, panelY, panelW, panelH, radius);
@@ -4730,7 +4730,7 @@
     ctx.lineWidth = 1.6;
     ctx.stroke();
 
-    const inset = portrait ? 6 : 8;
+    const inset = portrait ? 5 : 8;
     const innerX = panelX + inset;
     const innerY = panelY + inset;
     const innerW = panelW - inset * 2;
@@ -4744,7 +4744,7 @@
     const contrast = Math.round((1.05 + intensity * 0.44) * 100);
     const brightness = Math.round((1.02 + intensity * 0.08) * 100);
     ctx.filter = `saturate(${sat}%) contrast(${contrast}%) brightness(${brightness}%)`;
-    const bob = Math.sin(state.worldTime * (1.75 + intensity)) * (portrait ? 1.6 : 2.4);
+    const bob = Math.sin(state.worldTime * (1.75 + intensity)) * (portrait ? 1.2 : 2.4);
     const focusY = clampNumber(0.24 - intensity * 0.05, 0.16, 0.28, 0.22);
     drawImageCover(avatar, innerX, innerY + bob, innerW, innerH, 0.5, focusY);
     ctx.filter = oldFilter;
@@ -4775,22 +4775,23 @@
     const encounter = state.encounter;
     const enemy = encounter.enemy;
     const portrait = Boolean(state.viewport?.portraitZoomed);
+    const enemyTitleX = portrait ? WIDTH * 0.56 : WIDTH * 0.5;
+    const enemyTitleY = portrait ? 150 : 88;
+
+    drawEnemyAvatarPanel(enemy, portrait);
 
     ctx.textAlign = "center";
     ctx.fillStyle = enemy.color;
-    const enemyTitleY = portrait ? 136 : 88;
     setFont(53, 700, true);
     ctx.globalAlpha = 0.16;
-    ctx.fillText(enemy.name, WIDTH * 0.5, enemyTitleY + 4);
+    ctx.fillText(enemy.name, enemyTitleX, enemyTitleY + 4);
     ctx.globalAlpha = 1;
     setFont(36, 700, true);
-    ctx.fillText(enemy.name, WIDTH * 0.5, enemyTitleY);
+    ctx.fillText(enemy.name, enemyTitleX, enemyTitleY);
 
     ctx.fillStyle = "#cbe6ff";
     setFont(17, 600, false);
-    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, WIDTH * 0.5, enemyTitleY + 26);
-
-    drawEnemyAvatarPanel(enemy, portrait);
+    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, enemyTitleX, enemyTitleY + 26);
 
     drawHand(encounter.dealerHand, "dealer", encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player");
     drawHand(encounter.playerHand, "player", false);
