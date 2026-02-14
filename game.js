@@ -1806,9 +1806,9 @@
     }
   }
 
-  function setAnnouncement(message, duration = 1.8) {
+  function setAnnouncement(message, duration = 2.2) {
     state.announcement = typeof message === "string" ? message : "";
-    const safeDuration = Math.max(0.25, Number(duration) || 1.8);
+    const safeDuration = Math.max(0.25, Number(duration) || 2.2);
     state.announcementTimer = safeDuration;
     state.announcementDuration = safeDuration;
   }
@@ -2499,7 +2499,7 @@
     triggerScreenShake(12, 0.46);
     triggerFlash(color, 0.14, 0.28);
     playImpactSfx(16, target === "enemy" ? "enemy" : "player");
-    state.pendingTransition = { target, timer: 0.76 };
+    state.pendingTransition = { target, timer: 1.02 };
     state.encounter.phase = "done";
     state.encounter.resolveTimer = 0;
   }
@@ -2638,6 +2638,7 @@
       resultText: "",
       resultTone: "neutral",
       resolveTimer: 0,
+      nextDealPrompted: false,
       handIndex: 1,
       doubleDown: false,
       bustGuardTriggered: false,
@@ -2664,6 +2665,7 @@
     encounter.resultText = "";
     encounter.resultTone = "neutral";
     encounter.resolveTimer = 0;
+    encounter.nextDealPrompted = false;
     encounter.doubleDown = false;
     encounter.bustGuardTriggered = false;
     encounter.critTriggered = false;
@@ -2750,6 +2752,31 @@
       state.encounter.phase === "player" &&
       state.encounter.resolveTimer <= 0
     );
+  }
+
+  function canAdvanceDeal() {
+    return (
+      state.mode === "playing" &&
+      Boolean(state.encounter) &&
+      state.encounter.phase === "resolve" &&
+      !state.pendingTransition &&
+      state.encounter.resolveTimer <= 0
+    );
+  }
+
+  function advanceToNextDeal() {
+    if (!canAdvanceDeal() || !state.encounter) {
+      playUiSfx("error");
+      return false;
+    }
+    const encounter = state.encounter;
+    encounter.handIndex += 1;
+    encounter.nextDealPrompted = false;
+    if (!beginQueuedSplitHand(encounter)) {
+      startHand();
+    }
+    saveRunSnapshot();
+    return true;
   }
 
   function activeSplitHandCount(encounter) {
@@ -2855,6 +2882,7 @@
     encounter.resultText = "";
     encounter.resultTone = "neutral";
     encounter.resolveTimer = 0;
+    encounter.nextDealPrompted = false;
     encounter.doubleDown = false;
     encounter.bustGuardTriggered = false;
     encounter.critTriggered = false;
@@ -3192,12 +3220,13 @@
     }
 
     encounter.phase = "resolve";
-    let resolveDelay = state.compactControls ? 1.78 : 1.52;
+    encounter.nextDealPrompted = false;
+    let resolveDelay = state.compactControls ? 2.35 : 2.1;
     if (encounter.splitUsed) {
-      resolveDelay += 0.12;
+      resolveDelay += 0.16;
     }
     if (encounter.critTriggered || outcome === "blackjack" || outcome === "dealer_blackjack") {
-      resolveDelay += 0.16;
+      resolveDelay += 0.28;
     }
     encounter.resolveTimer = resolveDelay;
     saveRunSnapshot();
@@ -3589,7 +3618,7 @@
         return "Space";
       }
       if (action === "confirm") {
-        return "S";
+        return canAdvanceDeal() ? "Enter" : "S";
       }
       return "";
     }
@@ -3651,6 +3680,9 @@
     }
     if (action === "confirm") {
       if (state.mode === "playing") {
+        if (label === "Next Deal") {
+          return "↻";
+        }
         return "⇄";
       }
       if (state.mode === "reward") {
@@ -3796,6 +3828,7 @@
     }
 
     if (state.mode === "playing") {
+      const canAdvance = canAdvanceDeal();
       const canAct = canPlayerAct();
       const canDouble =
         canAct &&
@@ -3804,10 +3837,15 @@
         !state.encounter.doubleDown &&
         !state.encounter.splitUsed;
       const canSplit = canSplitCurrentHand();
-      setMobileButton(mobileButtons.hit, "Hit", canAct, true);
-      setMobileButton(mobileButtons.stand, "Stand", canAct, true);
-      setMobileButton(mobileButtons.double, "Double", canDouble, true);
-      setMobileButton(mobileButtons.confirm, "Split", canSplit, true);
+      setMobileButton(mobileButtons.hit, "Hit", canAct && !canAdvance, true);
+      setMobileButton(mobileButtons.stand, "Stand", canAct && !canAdvance, true);
+      setMobileButton(mobileButtons.double, "Double", canDouble && !canAdvance, true);
+      setMobileButton(
+        mobileButtons.confirm,
+        canAdvance ? "Next Deal" : "Split",
+        canAdvance || canSplit,
+        true
+      );
       setMobileButton(mobileButtons.left, "Left", false, false);
       setMobileButton(mobileButtons.right, "Right", false, false);
       return;
@@ -3908,7 +3946,11 @@
       } else if (state.mode === "collection") {
         state.mode = "menu";
       } else if (state.mode === "playing") {
-        splitAction();
+        if (canAdvanceDeal()) {
+          advanceToNextDeal();
+        } else {
+          splitAction();
+        }
       } else if (state.mode === "reward") {
         claimReward();
       } else if (state.mode === "shop") {
@@ -4304,6 +4346,8 @@
         splitAction();
       } else if (key === "space") {
         doubleAction();
+      } else if (key === "enter" && canAdvanceDeal()) {
+        advanceToNextDeal();
       }
       return;
     }
@@ -4456,12 +4500,15 @@
     }
 
     if (state.mode === "playing" && state.encounter && state.encounter.phase === "resolve" && !state.pendingTransition) {
-      state.encounter.resolveTimer -= dt;
-      if (state.encounter.resolveTimer <= 0) {
-        state.encounter.handIndex += 1;
-        if (!beginQueuedSplitHand(state.encounter)) {
-          startHand();
-        }
+      if (state.encounter.resolveTimer > 0) {
+        state.encounter.resolveTimer = Math.max(0, state.encounter.resolveTimer - dt);
+      }
+      if (state.encounter.resolveTimer <= 0 && !state.encounter.nextDealPrompted) {
+        state.encounter.nextDealPrompted = true;
+        const advancePrompt = state.compactControls
+          ? "Result locked. Tap Next Deal when ready."
+          : "Result locked. Press Next Deal when ready.";
+        setAnnouncement(advancePrompt, 2.6);
       }
     }
   }
@@ -6181,6 +6228,12 @@
       return ["left(prev page)", "right(next page)", "enter(back)", "space(back)"];
     }
     if (state.mode === "playing") {
+      if (canAdvanceDeal()) {
+        return ["enter(next deal)", "tap(next deal)"];
+      }
+      if (!canPlayerAct()) {
+        return ["observe(result)"];
+      }
       const canDouble = !!(
         state.encounter &&
         state.encounter.phase === "player" &&
@@ -6255,6 +6308,7 @@
             dealerVisibleTotal: visibleDealerTotal(encounter),
             resultText: encounter.resultText,
             resultTone: encounter.resultTone || "neutral",
+            nextDealReady: canAdvanceDeal(),
             doubleDown: encounter.doubleDown,
             splitQueueHands: Array.isArray(encounter.splitQueue) ? encounter.splitQueue.length : 0,
             splitUsed: Boolean(encounter.splitUsed),
