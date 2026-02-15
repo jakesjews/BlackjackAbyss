@@ -1198,6 +1198,7 @@
     collectionPage: 0,
     pendingTransition: null,
     menuSparks: [],
+    handMessageAnchor: null,
     logsFeedSignature: "",
     collectionDomSignature: "",
     passiveRailSignature: "",
@@ -2365,21 +2366,20 @@
       return;
     }
 
-    const hud = hudMetrics();
-    const portrait = hud.portrait;
-    const rowTopY = portrait ? 20 : 18;
-    const statsH = portrait ? 58 : 62;
-    const actionReserve = 78;
+    const row = hudRowMetrics();
+    const hud = row.hud;
+    const statsH = row.statsH;
+    const actionReserve = row.actionReserve;
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
     const scale = Math.max(0.0001, state.viewport?.scale || rect.width / WIDTH || 1);
-    const worldCenterX = hud.right - actionReserve * 0.5;
-    const worldCenterY = rowTopY + statsH * 0.5;
-    const screenCenterX = rect.left + (worldCenterX - cropX) * scale;
+    const worldLeftX = hud.right - actionReserve;
+    const worldCenterY = row.rowTopY + statsH * 0.5;
+    const screenLeftX = rect.left + (worldLeftX - cropX) * scale;
     const screenCenterY = rect.top + worldCenterY * scale;
-    const actionW = Math.max(42, topRightActions.offsetWidth || 58);
+    const actionW = Math.max(42, topRightActions.offsetWidth || 48);
     const actionH = Math.max(42, topRightActions.offsetHeight || 58);
 
-    topRightActions.style.left = `${Math.round(screenCenterX - actionW * 0.5)}px`;
+    topRightActions.style.left = `${Math.round(screenLeftX)}px`;
     topRightActions.style.right = "auto";
     topRightActions.style.top = `${Math.round(screenCenterY - actionH * 0.5)}px`;
   }
@@ -2895,8 +2895,9 @@
       rows,
       w,
       h,
-      spacing: Math.max(Math.round(w * 0.68), 42),
-      rowStep: Math.max(Math.round(h * 0.38), 30),
+      // Keep hands visually tighter without moving the overall hand anchors.
+      spacing: Math.max(Math.round(w * 0.56), 34),
+      rowStep: Math.max(Math.round(h * 0.34), 26),
     };
   }
 
@@ -5256,7 +5257,7 @@
     };
   }
 
-  function drawEnemyAvatarPanel(enemy, portrait, anchor = null) {
+  function drawEnemyAvatarPanel(enemy, portrait, anchor = null, position = null) {
     if (!enemy) {
       return;
     }
@@ -5273,8 +5274,9 @@
     const defaultX = portrait ? cropX + 24 : WIDTH - cropX - panelW - 44;
     const defaultY = portrait ? 78 : 94;
     const anchorGap = portrait ? 8 : 14;
-    const panelX = anchor ? anchor.x - panelW - anchorGap : defaultX;
-    const centerAlignedY = anchor ? anchor.y + anchor.h * 0.5 - panelH * 0.5 : defaultY;
+    const panelX = position && Number.isFinite(position.x) ? position.x : anchor ? anchor.x - panelW - anchorGap : defaultX;
+    const centerAlignedY =
+      position && Number.isFinite(position.y) ? position.y : anchor ? anchor.y + anchor.h * 0.5 - panelH * 0.5 : defaultY;
     const minY = portrait ? 72 : 46;
     const maxY = portrait ? 246 : 248;
     const panelY = clampNumber(centerAlignedY, minY, maxY, defaultY);
@@ -5328,15 +5330,16 @@
     ctx.restore();
   }
 
-  function drawPlayerAvatarPanel(portrait, anchor = null) {
+  function drawPlayerAvatarPanel(portrait, anchor = null, position = null) {
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
     const panelW = portrait ? 45 : 93;
     const panelH = portrait ? 53 : 114;
     const defaultX = portrait ? cropX + 24 : cropX + 44;
     const defaultY = portrait ? HEIGHT - panelH - 154 : HEIGHT - panelH - 138;
     const anchorGap = portrait ? 8 : 14;
-    const panelX = anchor ? anchor.x - panelW - anchorGap : defaultX;
-    const centerAlignedY = anchor ? anchor.y + anchor.h * 0.5 - panelH * 0.5 : defaultY;
+    const panelX = position && Number.isFinite(position.x) ? position.x : anchor ? anchor.x - panelW - anchorGap : defaultX;
+    const centerAlignedY =
+      position && Number.isFinite(position.y) ? position.y : anchor ? anchor.y + anchor.h * 0.5 - panelH * 0.5 : defaultY;
     const minY = portrait ? 300 : 360;
     const maxY = HEIGHT - panelH - 18;
     const panelY = clampNumber(centerAlignedY, minY, maxY, defaultY);
@@ -5394,27 +5397,13 @@
 
   function drawEncounter() {
     if (!state.encounter || !state.run) {
+      state.handMessageAnchor = null;
       return;
     }
 
     const encounter = state.encounter;
     const enemy = encounter.enemy;
     const portrait = Boolean(state.viewport?.portraitZoomed);
-    const enemyTitleX = portrait ? WIDTH * 0.56 : WIDTH * 0.5;
-    const enemyTitleY = portrait ? 150 : 88;
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = enemy.color;
-    setFont(53, 700, true);
-    ctx.globalAlpha = 0.16;
-    ctx.fillText(enemy.name, enemyTitleX, enemyTitleY + 4);
-    ctx.globalAlpha = 1;
-    setFont(36, 700, true);
-    ctx.fillText(enemy.name, enemyTitleX, enemyTitleY);
-
-    ctx.fillStyle = "#cbe6ff";
-    setFont(17, 600, false);
-    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, enemyTitleX, enemyTitleY + 26);
 
     const playerTotal = encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total;
     const dealerTotal = visibleDealerTotal(encounter);
@@ -5426,33 +5415,69 @@
     const barH = 24;
     const handLabelGap = 24;
     const handLabelClearance = 14;
-    const playerBarGap = portrait ? 8 : 10;
     const splitExtra = encounter.splitUsed ? 20 : 0;
+    const avatarW = portrait ? 45 : 93;
+    const avatarH = portrait ? 53 : 114;
+    const groupGap = portrait ? 8 : 12;
+    const groupPad = portrait ? 18 : 24;
+    const colW = fixedBarW;
+    const enemyGroupY = portrait ? 96 : 102;
+    const enemyAvatarX = WIDTH - cropX - groupPad - avatarW;
+    const enemyColX = enemyAvatarX - groupGap - colW;
+    const playerGroupY = HEIGHT - avatarH - (portrait ? 16 : 20);
+    const playerAvatarX = cropX + groupPad;
+    const playerColX = playerAvatarX + avatarW + groupGap;
+    const groupNameY = portrait ? 17 : 19;
+    const groupBarY = portrait ? 24 : 28;
 
+    const baseDealerBox = handBounds("dealer", dealerCount, 0);
     const basePlayerBox = handBounds("player", playerCount, 0);
-    const playerGroupBottomBase = basePlayerBox.y + basePlayerBox.h + playerBarGap + barH + handLabelGap + splitExtra;
-    const playerGroupBottomTarget = HEIGHT - (portrait ? 16 : 14);
-    const playerYOffset = playerGroupBottomTarget - playerGroupBottomBase;
+    // Keep dealer hand, center message lane, and player hand as one centered canvas group.
+    const reservedMessageH = portrait ? 72 : 84;
+    const sectionGap = portrait ? 14 : 18;
+    const totalStackH = baseDealerBox.h + sectionGap + reservedMessageH + sectionGap + basePlayerBox.h;
+    const topBarHeight = hudRowMetrics().statsH;
+    const stackTop = HEIGHT * 0.5 - totalStackH * 0.5 + topBarHeight * 0.5;
+    const dealerTargetY = stackTop;
+    const playerTargetY = stackTop + baseDealerBox.h + sectionGap + reservedMessageH + sectionGap;
+    const dealerYOffset = dealerTargetY - baseDealerBox.y;
+    const playerYOffset = playerTargetY - basePlayerBox.y;
 
-    drawHand(encounter.dealerHand, "dealer", encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player", 0);
+    drawHand(
+      encounter.dealerHand,
+      "dealer",
+      encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player",
+      dealerYOffset
+    );
     drawHand(encounter.playerHand, "player", false, playerYOffset);
 
-    const dealerBox = handBounds("dealer", dealerCount, 0);
+    const dealerBox = handBounds("dealer", dealerCount, dealerYOffset);
     const playerBox = handBounds("player", playerCount, playerYOffset);
+    const leftBound = 24 + cropX;
+    const rightBound = WIDTH - 24 - cropX;
+    const dealerBottom = dealerBox.y + dealerBox.h;
+    const playerTop = playerBox.y;
+    const gapCenter = dealerBottom + (playerTop - dealerBottom) * 0.5;
+    state.handMessageAnchor = {
+      centerX: (leftBound + rightBound) * 0.5,
+      centerY: gapCenter,
+    };
 
-    const dealerBarTopMin = enemyTitleY + 36;
-    const dealerBarY = Math.max(
-      dealerBarTopMin,
-      dealerBox.y - (barH + handLabelGap + handLabelClearance)
-    );
-    drawEnemyAvatarPanel(enemy, portrait, {
-      x: dealerBox.centerX - fixedBarW * 0.5,
-      y: dealerBarY,
-      w: fixedBarW,
-      h: barH,
+    const dealerBarX = enemyColX;
+    const dealerBarY = enemyGroupY + groupBarY;
+    drawEnemyAvatarPanel(enemy, portrait, null, {
+      x: enemyAvatarX,
+      y: enemyGroupY,
     });
+    ctx.textAlign = "left";
+    ctx.fillStyle = enemy.color;
+    setFont(portrait ? 18 : 22, 700, true);
+    ctx.fillText(enemy.name, enemyColX, enemyGroupY + groupNameY);
+    ctx.fillStyle = "#9fc2dc";
+    setFont(portrait ? 11 : 13, 600, false);
+    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, enemyColX, enemyGroupY + groupNameY + (portrait ? 13 : 16));
     drawHealthBar(
-      dealerBox.centerX - fixedBarW * 0.5,
+      dealerBarX,
       dealerBarY,
       fixedBarW,
       barH,
@@ -5463,22 +5488,25 @@
     ctx.textAlign = "center";
     ctx.fillStyle = "#d7e8f8";
     setFont(17, 700, false);
-    const dealerHandLabelY = dealerBarY + barH + handLabelGap;
+    const dealerHandLabelY = dealerBox.y - handLabelClearance;
     ctx.fillText(
       `Hand ${dealerTotal}${encounter.hideDealerHole && encounter.phase === "player" ? "+?" : ""}`,
       dealerBox.centerX,
       dealerHandLabelY
     );
 
-    const playerBarY = playerBox.y + playerBox.h + playerBarGap;
-    drawPlayerAvatarPanel(portrait, {
-      x: playerBox.centerX - fixedBarW * 0.5,
-      y: playerBarY,
-      w: fixedBarW,
-      h: barH,
+    const playerBarX = playerColX;
+    const playerBarY = playerGroupY + groupBarY;
+    drawPlayerAvatarPanel(portrait, null, {
+      x: playerAvatarX,
+      y: playerGroupY,
     });
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#cbe6ff";
+    setFont(portrait ? 18 : 22, 700, true);
+    ctx.fillText("Player", playerColX, playerGroupY + groupNameY);
     drawHealthBar(
-      playerBox.centerX - fixedBarW * 0.5,
+      playerBarX,
       playerBarY,
       fixedBarW,
       barH,
@@ -5489,7 +5517,7 @@
     ctx.textAlign = "center";
     ctx.fillStyle = "#d7e8f8";
     setFont(17, 700, false);
-    const playerLabelY = playerBarY + barH + handLabelGap;
+    const playerLabelY = playerBox.y + playerBox.h + handLabelGap;
     ctx.fillText(`Hand ${playerTotal}`, playerBox.centerX, playerLabelY);
     if (encounter.splitUsed) {
       const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, activeSplitHandCount(encounter)));
@@ -5518,7 +5546,7 @@
               ? "rgba(246, 214, 135, 0.82)"
               : "rgba(170, 208, 233, 0.65)";
       const toneText = tone === "loss" ? "#ffd7d7" : tone === "win" ? "#d9ffea" : "#fff0c8";
-      const centerY = dealerBox.y + dealerBox.h + (playerBox.y - (dealerBox.y + dealerBox.h)) * 0.5;
+      const centerY = handMessageAnchor(encounter).centerY;
       const widthCap = Math.max(300, Math.min(portrait ? 450 : 560, visibleW - 100));
       setFont(portrait ? 36 : 34, 700, true);
       const lines = wrappedLines(encounter.resultText, widthCap - 56).slice(0, 2);
@@ -5562,19 +5590,34 @@
     };
   }
 
+  function hudRowMetrics() {
+    const hud = hudMetrics();
+    const rowTopY = hud.portrait ? 18 : 16;
+    const statsH = hud.portrait ? 52 : 56;
+    const actionReserve = 78;
+    return {
+      hud,
+      rowTopY,
+      statsH,
+      actionReserve,
+      rowBottomY: rowTopY + statsH,
+    };
+  }
+
   function drawHud() {
     if (!state.run) {
       return;
     }
 
     const run = state.run;
-    const hud = hudMetrics();
-    const rowTopY = hud.portrait ? 20 : 18;
+    const row = hudRowMetrics();
+    const hud = row.hud;
+    const rowTopY = row.rowTopY;
     const actionReserve = state.mode !== "menu" && state.mode !== "collection" ? 78 : 0;
 
-    const statsW = hud.portrait ? Math.min(272, Math.max(214, Math.floor(hud.span * 0.66))) : 304;
-    const statsH = hud.portrait ? 58 : 62;
-    const leftGap = hud.portrait ? 10 : 12;
+    const statsW = hud.portrait ? Math.min(266, Math.max(206, Math.floor(hud.span * 0.64))) : 296;
+    const statsH = row.statsH;
+    const leftGap = hud.portrait ? 8 : 10;
     const leftInfoX = hud.left;
     const statsX = hud.right - statsW - actionReserve;
     const leftInfoW = Math.max(220, statsX - leftInfoX - leftGap);
@@ -5589,10 +5632,10 @@
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#dbeaf7";
-    setFont(hud.portrait ? 20 : 22, 700, true);
+    setFont(hud.portrait ? 13 : 15, 700, false);
     ctx.fillText(
       `Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`,
-      leftInfoX + 12,
+      leftInfoX + 8,
       leftInfoY + Math.floor(statsH * 0.57)
     );
 
@@ -5606,8 +5649,8 @@
     ctx.textAlign = "left";
     ctx.fillStyle = "#f4d88d";
     setFont(hud.portrait ? 18 : 21, 700, false);
-    const leftPad = hud.portrait ? 10 : 10;
-    const rightPad = 12;
+    const leftPad = hud.portrait ? 8 : 8;
+    const rightPad = 8;
     const splitX = statsX + Math.max(hud.portrait ? 78 : 92, Math.floor(statsW * 0.33));
     const chipsAreaW = Math.max(58, splitX - statsX - leftPad - 6);
     const chipsText = fitText(String(run.player.gold), Math.max(42, chipsAreaW - 48));
@@ -5624,10 +5667,8 @@
     ctx.fillStyle = "#b7ddff";
     setFont(hud.portrait ? 13 : 15, 700, false);
     const stackX = splitX + rightPad;
-    const streakY = statsY + (hud.portrait ? 24 : 27);
-    const guardsY = statsY + (hud.portrait ? 43 : 49);
-    ctx.fillText(`Streak ${run.player.streak}`, stackX, streakY);
-    ctx.fillText(`Guards ${run.player.bustGuardsLeft}`, stackX, guardsY);
+    const statLineY = statsY + Math.floor(statsH * 0.57);
+    ctx.fillText(`Streak ${run.player.streak}   Guards ${run.player.bustGuardsLeft}`, stackX, statLineY);
   }
 
   function carouselDelta(index, selected, length) {
@@ -6633,25 +6674,27 @@
     return `${out}…`;
   }
 
-  function announcementAnchor() {
+  function handMessageAnchor(encounterLike = state.encounter) {
+    if (encounterLike && encounterLike === state.encounter && state.handMessageAnchor) {
+      return state.handMessageAnchor;
+    }
+
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
     const leftBound = 24 + cropX;
     const rightBound = WIDTH - 24 - cropX;
     const centerX = (leftBound + rightBound) * 0.5;
 
-    if (state.encounter) {
-      const dealerCount = Math.max(1, state.encounter.dealerHand.length);
-      const playerCount = Math.max(1, state.encounter.playerHand.length);
+    if (encounterLike) {
+      const dealerCount = Math.max(1, encounterLike.dealerHand.length);
+      const playerCount = Math.max(1, encounterLike.playerHand.length);
       const dealerBox = handBounds("dealer", dealerCount);
       const playerBox = handBounds("player", playerCount);
       const dealerBottom = dealerBox.y + dealerBox.h;
       const playerTop = playerBox.y;
       const gapCenter = dealerBottom + (playerTop - dealerBottom) * 0.5;
-      const topPad = state.viewport?.portraitZoomed ? 170 : 140;
-      const bottomPad = state.viewport?.portraitZoomed ? HEIGHT - 170 : HEIGHT - 120;
       return {
         centerX,
-        centerY: clampNumber(gapCenter, topPad, bottomPad, gapCenter),
+        centerY: gapCenter,
       };
     }
 
@@ -6659,6 +6702,10 @@
       centerX,
       centerY: state.viewport?.portraitZoomed ? 220 : 150,
     };
+  }
+
+  function announcementAnchor() {
+    return handMessageAnchor(state.encounter);
   }
 
   function drawEffects() {
@@ -6731,11 +6778,13 @@
         const panelW = Math.max(220, Math.min(maxW, Math.max(...lines.map((line) => ctx.measureText(line).width)) + 44));
         const panelH = Math.max(48, 20 + lines.length * lineHeight);
         const toastY =
-          state.mode === "reward" || state.mode === "shop"
-            ? 64
-            : state.viewport?.portraitZoomed
-              ? clampNumber(centerY - 36, 236, 338, 264)
-              : 136;
+          state.mode === "playing"
+            ? centerY
+            : state.mode === "reward" || state.mode === "shop"
+              ? 64
+              : state.viewport?.portraitZoomed
+                ? clampNumber(centerY - 36, 236, 338, 264)
+                : 136;
         ctx.save();
         ctx.translate(centerX, toastY - slamOffset);
         ctx.scale(scale, scale);
