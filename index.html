@@ -11,13 +11,24 @@
       href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Sora:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=menufix3" />
   </head>
   <body>
     <div id="game-shell">
       <canvas id="game-canvas" width="1280" height="720" aria-label="Blackjack Abyss game"></canvas>
     </div>
-    <button id="logs-toggle" type="button" aria-label="Open run log" hidden>🗒</button>
+    <div id="menu-home" hidden>
+      <div id="menu-home-title-wrap" aria-hidden="true">
+        <div id="menu-home-title">BLACKJACK ABYSS</div>
+      </div>
+      <button id="menu-new-run" type="button">New Run</button>
+      <button id="menu-resume" type="button">Resume</button>
+      <button id="menu-achievements" type="button">Achievements</button>
+    </div>
+    <div id="top-right-actions" hidden>
+      <button id="achievements-toggle" type="button" aria-label="Open achievements" hidden></button>
+      <button id="logs-toggle" type="button" aria-label="Open run log" hidden>🗒</button>
+    </div>
     <div id="logs-modal" hidden>
       <div id="logs-modal-panel" role="dialog" aria-modal="true" aria-label="Run log">
         <div id="logs-modal-header">
@@ -37,6 +48,6 @@
       <button type="button" data-mobile-action="right">Right</button>
       <button type="button" data-mobile-action="confirm">Confirm</button>
     </div>
-    <script src="game.js"></script>
+    <script src="game.js?v=menufix3"></script>
   </body>
 </html>

@@ -69,6 +69,12 @@ body.menu-screen.mobile-ui-active #game-shell {
   margin-bottom: 0;
 }
 
+body.menu-screen #game-shell {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
 #game-canvas {
   display: block;
   position: absolute;
@@ -77,29 +83,151 @@ body.menu-screen.mobile-ui-active #game-shell {
   background: #0d1722;
 }
 
-#logs-toggle {
+#menu-home {
   position: fixed;
-  top: max(10px, env(safe-area-inset-top));
+  left: 50%;
+  top: calc(50% + 120px);
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  z-index: 88;
+  width: 360px;
+  height: 380px;
+  min-width: 360px;
+  max-width: 360px;
+  min-height: 380px;
+  max-height: 380px;
+  flex-shrink: 0;
+  padding-bottom: 0;
+}
+
+#menu-home[hidden] {
+  display: none !important;
+}
+
+#menu-home-title-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  margin-bottom: 8px;
+}
+
+#menu-home-title {
+  font-family: "Chakra Petch", "Sora", sans-serif;
+  font-size: 68px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  text-align: center;
+  color: #e6c57b;
+  text-shadow:
+    0 3px 0 rgba(8, 5, 2, 0.9),
+    0 10px 18px rgba(0, 0, 0, 0.82),
+    0 22px 40px rgba(0, 0, 0, 0.7),
+    0 34px 64px rgba(0, 0, 0, 0.58);
+  max-width: 100%;
+  white-space: normal;
+  text-wrap: balance;
+}
+
+#menu-home button,
+#mobile-controls button,
+#logs-close {
+  text-transform: uppercase;
+}
+
+#menu-home button {
+  width: 248px;
+  height: 52px;
+  border: 0;
+  border-radius: 11px;
+  font-family: "Sora", "Segoe UI", sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: #1a2a3b;
+  background: linear-gradient(180deg, rgba(247, 216, 146, 0.98) 0%, rgba(220, 172, 83, 0.98) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 244, 215, 0.36), 0 5px 12px rgba(56, 38, 10, 0.24);
+  cursor: pointer;
+}
+
+#menu-home button:first-of-type {
+  margin-top: 16px;
+}
+
+#menu-achievements {
+  margin-top: auto;
+}
+
+#menu-home button:disabled {
+  opacity: 0.5;
+  filter: saturate(0.7);
+  cursor: default;
+}
+
+#menu-home button:not(:disabled):active {
+  transform: translateY(1px);
+}
+
+#top-right-actions {
+  position: fixed;
+  top: max(46px, calc(env(safe-area-inset-top) + 42px));
   right: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 86;
+}
+
+#top-right-actions[hidden] {
+  display: none !important;
+}
+
+#achievements-toggle,
+#logs-toggle {
   width: 42px;
   height: 42px;
   border: 0;
   border-radius: 12px;
-  background: rgba(12, 29, 44, 0.88);
-  color: #eaf4ff;
+  color: #15263a;
   font-size: 22px;
   line-height: 1;
   display: grid;
   place-items: center;
-  box-shadow: inset 0 0 0 1px rgba(185, 220, 245, 0.24), 0 10px 24px rgba(0, 0, 0, 0.35);
-  z-index: 85;
+  box-shadow: inset 0 0 0 1px rgba(255, 244, 215, 0.35), 0 10px 24px rgba(0, 0, 0, 0.35);
   cursor: pointer;
 }
 
+#achievements-toggle {
+  width: 58px;
+  height: 58px;
+  background:
+    linear-gradient(180deg, rgba(116, 141, 167, 0.95) 0%, rgba(71, 94, 118, 0.95) 100%);
+  background-image:
+    url("public/images/icons/achievements.png"),
+    linear-gradient(180deg, rgba(116, 141, 167, 0.95) 0%, rgba(71, 94, 118, 0.95) 100%);
+  background-repeat: no-repeat, no-repeat;
+  background-position: center, center;
+  background-size: 36px 36px, 100% 100%;
+  filter: brightness(0.98);
+}
+
+body.menu-screen #top-right-actions {
+  top: auto;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  right: 10px;
+  left: auto;
+  transform: none;
+}
+
+#achievements-toggle[hidden],
 #logs-toggle[hidden] {
   display: none !important;
 }
 
+#achievements-toggle:active,
 #logs-toggle:active {
   transform: translateY(1px);
 }
@@ -303,47 +431,52 @@ body.menu-screen.mobile-ui-active #game-shell {
   font-size: 16px;
   font-weight: 700;
   letter-spacing: 0.01em;
-  color: #e8f4ff;
-  background:
-    linear-gradient(180deg, rgba(62, 105, 140, 0.95) 0%, rgba(32, 61, 86, 0.95) 100%);
+  color: #1a2a3b;
+  background: linear-gradient(180deg, rgba(247, 216, 146, 0.98) 0%, rgba(220, 172, 83, 0.98) 100%);
   display: inline-flex;
   flex: 0 1 clamp(128px, 30%, 280px);
   max-width: 300px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  column-gap: 7px;
-  row-gap: 2px;
+  column-gap: 8px;
   padding: 7px 10px;
   box-shadow:
-    inset 0 0 0 1px rgba(189, 225, 248, 0.24),
-    0 4px 10px rgba(0, 0, 0, 0.22);
+    inset 0 0 0 1px rgba(255, 244, 215, 0.36),
+    0 5px 12px rgba(56, 38, 10, 0.24);
   transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+  position: relative;
+  overflow: hidden;
 }
 
 #mobile-controls button .mobile-control-icon {
-  font-size: 19px;
-  line-height: 1;
-  opacity: 0.92;
+  width: 76px;
+  height: 76px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.98;
+  flex: 0 0 auto;
+  filter: brightness(0) saturate(100%);
 }
 
 #mobile-controls button .mobile-control-label {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 #mobile-controls button .mobile-control-shortcut {
-  flex-basis: 100%;
-  text-align: center;
-  font-size: 11px;
+  font-size: 0.88em;
   font-weight: 600;
-  line-height: 1;
-  opacity: 0.74;
+  color: rgba(26, 42, 59, 0.62);
+  line-height: 1.1;
 }
 
 #mobile-controls button:disabled {
-  opacity: 0.38;
+  opacity: 0.42;
+  filter: saturate(0.8);
 }
 
 #mobile-controls button:not(:disabled):active {
@@ -352,14 +485,32 @@ body.menu-screen.mobile-ui-active #game-shell {
 }
 
 #mobile-controls button[data-mobile-action="confirm"] {
-  color: #132135;
-  background: linear-gradient(180deg, #f2cf91 0%, #dcab55 100%);
-  box-shadow: inset 0 0 0 1px rgba(255, 244, 215, 0.35), 0 5px 12px rgba(56, 38, 10, 0.24);
+  background: linear-gradient(180deg, rgba(252, 227, 170, 1) 0%, rgba(226, 175, 78, 1) 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 245, 220, 0.45), 0 6px 13px rgba(56, 38, 10, 0.24);
 }
 
 #mobile-controls.reward-claim-only button[data-mobile-action="confirm"] {
   flex-basis: min(380px, 58%);
   max-width: min(380px, 58%);
+}
+
+#mobile-controls.single-action-only button[data-mobile-action="confirm"] {
+  flex-basis: min(420px, 62%);
+  max-width: min(420px, 62%);
+}
+
+#mobile-controls button.control-attention-pop {
+  animation: control-pop-in 0.62s cubic-bezier(0.16, 0.96, 0.24, 1) 1;
+}
+
+#mobile-controls button.control-attention-pop::after {
+  content: "";
+  position: absolute;
+  inset: -11px;
+  border-radius: inherit;
+  border: 3px solid rgba(248, 220, 154, 0.8);
+  pointer-events: none;
+  animation: control-radar-burst 0.76s cubic-bezier(0.15, 0.85, 0.2, 1) 1;
 }
 
 body.compact-controls #mobile-controls button {
@@ -368,7 +519,6 @@ body.compact-controls #mobile-controls button {
   border-radius: 14px;
   padding: 9px 10px;
   column-gap: 8px;
-  row-gap: 2px;
   flex-basis: clamp(152px, 31%, 320px);
   max-width: 320px;
 }
@@ -382,11 +532,12 @@ body.compact-controls #mobile-controls {
 }
 
 body.compact-controls #mobile-controls button .mobile-control-icon {
-  font-size: 25px;
+  width: 96px;
+  height: 96px;
 }
 
 body.compact-controls #mobile-controls button .mobile-control-label {
-  font-size: 17px;
+  font-size: 20px;
   line-height: 1.08;
 }
 
@@ -397,6 +548,54 @@ body.compact-controls #mobile-controls button .mobile-control-shortcut {
 body.compact-controls #mobile-controls.reward-claim-only button[data-mobile-action="confirm"] {
   flex-basis: min(520px, 76%);
   max-width: min(520px, 76%);
+}
+
+body.compact-controls #mobile-controls.single-action-only button[data-mobile-action="confirm"] {
+  flex-basis: min(540px, 78%);
+  max-width: min(540px, 78%);
+}
+
+@keyframes control-pop-in {
+  0%,
+  15% {
+    transform: translateY(14px) scale(0.84);
+    filter: brightness(1.05);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 244, 215, 0.36),
+      0 5px 12px rgba(56, 38, 10, 0.24);
+  }
+  48% {
+    transform: translateY(-5px) scale(1.14);
+    filter: brightness(1.28);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 244, 215, 0.5),
+      0 12px 28px rgba(116, 78, 16, 0.42);
+  }
+  72% {
+    transform: translateY(1px) scale(0.98);
+    filter: brightness(1.06);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 244, 215, 0.36),
+      0 5px 12px rgba(56, 38, 10, 0.24);
+  }
+}
+
+@keyframes control-radar-burst {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.94;
+  }
+  38% {
+    opacity: 0.72;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
 }
 
 @keyframes canvas-breath {
@@ -439,7 +638,17 @@ body.compact-controls #mobile-controls.reward-claim-only button[data-mobile-acti
   #logs-toggle {
     width: 40px;
     height: 40px;
-    right: 8px;
+  }
+
+  #achievements-toggle {
+    width: 54px;
+    height: 54px;
+    background-size: 32px 32px, 100% 100%;
+  }
+
+  body.menu-screen #top-right-actions {
+    left: auto;
+    right: 6px;
   }
 
   #passive-rail {
@@ -470,7 +679,7 @@ body.compact-controls #mobile-controls.reward-claim-only button[data-mobile-acti
   }
 
   body.compact-controls #mobile-controls button .mobile-control-label {
-    font-size: 16px;
+    font-size: 18px;
     line-height: 1.06;
   }
 

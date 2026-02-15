@@ -4,7 +4,13 @@
   const gameShell = document.getElementById("game-shell");
   const canvas = document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d");
+  const menuHome = document.getElementById("menu-home");
+  const menuNewRun = document.getElementById("menu-new-run");
+  const menuResume = document.getElementById("menu-resume");
+  const menuAchievements = document.getElementById("menu-achievements");
   const mobileControls = document.getElementById("mobile-controls");
+  const topRightActions = document.getElementById("top-right-actions");
+  const achievementsToggle = document.getElementById("achievements-toggle");
   const logsToggle = document.getElementById("logs-toggle");
   const logsModal = document.getElementById("logs-modal");
   const logsClose = document.getElementById("logs-close");
@@ -27,6 +33,8 @@
 
   const WIDTH = 1280;
   const HEIGHT = 720;
+  const MENU_FRAME_DISPLAY_WIDTH = 464;
+  const MENU_FRAME_DISPLAY_HEIGHT = 698;
   const MAX_SPLIT_HANDS = 4;
   const CARD_W = 88;
   const CARD_H = 124;
@@ -163,6 +171,18 @@
     [3, 7, 10],
     [5, 8, 12],
   ];
+  const ACTION_ICON_BASE = "public/images/icons";
+  const ACTION_ICON_FILES = Object.freeze({
+    achievements: `${ACTION_ICON_BASE}/achievements.png`,
+    chips: `${ACTION_ICON_BASE}/chips.png`,
+    deal: `${ACTION_ICON_BASE}/deal.png`,
+    double: `${ACTION_ICON_BASE}/double.png`,
+    hit: `${ACTION_ICON_BASE}/hit.png`,
+    newRun: `${ACTION_ICON_BASE}/new-run.png`,
+    resume: `${ACTION_ICON_BASE}/resume.png`,
+    split: `${ACTION_ICON_BASE}/split.png`,
+    stand: `${ACTION_ICON_BASE}/stand.png`,
+  });
 
   function defaultPlayerStats() {
     return {
@@ -1158,6 +1178,8 @@
       cropWorldX: 0,
       portraitZoomed: false,
     },
+    uiMobileSignature: "",
+    uiMobileViewportSignature: "",
   };
 
   function clampNumber(value, min, max, fallback) {
@@ -2090,10 +2112,25 @@
 
   function syncOverlayUi() {
     const runActive = Boolean(state.run);
-    if (logsToggle) {
-      logsToggle.hidden = true;
+    const menuActive = state.mode === "menu";
+    if (menuHome) {
+      menuHome.hidden = !menuActive;
     }
-    if ((!runActive || state.mode === "menu" || (logsToggle && logsToggle.hidden)) && isLogsModalOpen()) {
+    if (menuResume) {
+      menuResume.disabled = !hasSavedRun();
+    }
+    const showAchievements = false;
+    const showLogs = runActive && state.mode !== "menu" && state.mode !== "collection";
+    if (topRightActions) {
+      topRightActions.hidden = !(showAchievements || showLogs);
+    }
+    if (achievementsToggle) {
+      achievementsToggle.hidden = !showAchievements;
+    }
+    if (logsToggle) {
+      logsToggle.hidden = !showLogs;
+    }
+    if ((!runActive || state.mode === "menu" || state.mode === "collection" || (logsToggle && logsToggle.hidden)) && isLogsModalOpen()) {
       closeLogsModal();
     }
     if (isLogsModalOpen()) {
@@ -3586,10 +3623,10 @@
         return "R";
       }
       if (action === "right") {
-        return "C";
+        return "A";
       }
       if (action === "confirm") {
-        return "Enter / Space";
+        return "Enter";
       }
       return "";
     }
@@ -3602,7 +3639,7 @@
         return "→";
       }
       if (action === "confirm") {
-        return "Enter / Space";
+        return "Enter / Space / A";
       }
       return "";
     }
@@ -3618,7 +3655,7 @@
         return "Space";
       }
       if (action === "confirm") {
-        return canAdvanceDeal() ? "Enter" : "S";
+        return canAdvanceDeal() ? "Enter" : canSplitCurrentHand() ? "S" : "";
       }
       return "";
     }
@@ -3654,7 +3691,7 @@
 
     if (state.mode === "gameover" || state.mode === "victory") {
       if (action === "confirm") {
-        return "Enter / Space";
+        return "Enter";
       }
       return "";
     }
@@ -3663,40 +3700,56 @@
   }
 
   function iconForAction(action, label) {
-    if (action === "left") {
-      return state.mode === "menu" ? "↺" : "◀";
-    }
-    if (action === "right") {
-      return state.mode === "menu" ? "▦" : "▶";
-    }
+    const lower = (label || "").toLowerCase();
     if (action === "hit") {
-      return "✚";
+      return ACTION_ICON_FILES.hit;
     }
     if (action === "stand") {
-      return "■";
+      return ACTION_ICON_FILES.stand;
     }
     if (action === "double") {
-      return state.mode === "shop" || label === "Buy" ? "⛒" : "×2";
+      if (state.mode === "shop" || lower === "buy") {
+        return ACTION_ICON_FILES.chips;
+      }
+      return ACTION_ICON_FILES.double;
+    }
+    if (action === "left") {
+      if (state.mode === "menu") {
+        return lower === "resume" ? ACTION_ICON_FILES.resume : ACTION_ICON_FILES.deal;
+      }
+      return "";
+    }
+    if (action === "right") {
+      if (state.mode === "menu") {
+        return ACTION_ICON_FILES.achievements;
+      }
+      return "";
     }
     if (action === "confirm") {
-      if (state.mode === "playing") {
-        if (label === "Next Deal") {
-          return "↻";
-        }
-        return "⇄";
+      if (state.mode === "menu") {
+        return ACTION_ICON_FILES.newRun;
       }
-      if (state.mode === "reward") {
+      if (state.mode === "playing") {
+        if (lower === "new deal") {
+          return ACTION_ICON_FILES.deal;
+        }
+        if (lower === "split") {
+          return ACTION_ICON_FILES.split;
+        }
+        return ACTION_ICON_FILES.deal;
+      }
+      if (state.mode === "reward" || lower === "claim") {
         return "";
       }
-      if (state.mode === "menu") {
-        return "▶";
+      if (state.mode === "shop" || lower === "continue") {
+        return ACTION_ICON_FILES.deal;
       }
-      if (state.mode === "shop") {
-        return "⎋";
+      if (lower === "back") {
+        return ACTION_ICON_FILES.achievements;
       }
-      return "✓";
+      return ACTION_ICON_FILES.deal;
     }
-    return "•";
+    return "";
   }
 
   function ensureMobileButtonText(button) {
@@ -3709,7 +3762,6 @@
       button.textContent = "";
       iconNode = document.createElement("span");
       iconNode.className = "mobile-control-icon";
-      iconNode.textContent = "•";
       iconNode.setAttribute("aria-hidden", "true");
       button.appendChild(iconNode);
       labelNode = document.createElement("span");
@@ -3721,7 +3773,6 @@
     if (!iconNode) {
       iconNode = document.createElement("span");
       iconNode.className = "mobile-control-icon";
-      iconNode.textContent = "•";
       iconNode.setAttribute("aria-hidden", "true");
       button.prepend(iconNode);
     }
@@ -3743,20 +3794,46 @@
     button.style.display = visible ? "inline-flex" : "none";
     button.disabled = !enabled;
     const { iconNode, labelNode, shortcutNode } = ensureMobileButtonText(button);
-    if (labelNode.textContent !== label) {
-      labelNode.textContent = label;
+    const rawShortcut = shortcutHintForAction(button.dataset.mobileAction || "");
+    const displayLabel = String(label || "").toUpperCase();
+    if (labelNode.textContent !== displayLabel) {
+      labelNode.textContent = displayLabel;
     }
     const icon = iconForAction(button.dataset.mobileAction || "", label);
-    if (iconNode.textContent !== icon) {
-      iconNode.textContent = icon;
-    }
+    iconNode.style.backgroundImage = icon ? `url("${icon}")` : "";
+    iconNode.textContent = "";
     iconNode.hidden = !icon;
-    const shortcut = shortcutHintForAction(button.dataset.mobileAction || "");
-    if (shortcutNode.textContent !== shortcut) {
-      shortcutNode.textContent = shortcut;
+    const inlineShortcut = !state.compactControls && rawShortcut ? ` (${rawShortcut})` : "";
+    if (shortcutNode.textContent !== inlineShortcut) {
+      shortcutNode.textContent = inlineShortcut;
     }
-    shortcutNode.hidden = !shortcut;
+    shortcutNode.hidden = !inlineShortcut;
     button.setAttribute("aria-label", label);
+    if (!visible) {
+      clearMobileButtonAttention(button);
+    }
+  }
+
+  function clearMobileButtonAttention(button) {
+    if (!button) {
+      return;
+    }
+    button.classList.remove("control-attention-pop");
+    delete button.dataset.attentionToken;
+  }
+
+  function triggerMobileButtonAttention(button, token) {
+    if (!button || !token) {
+      return;
+    }
+    if (button.dataset.attentionToken === token) {
+      return;
+    }
+    clearMobileButtonAttention(button);
+    // Restart keyframe animation cleanly when a new token appears.
+    void button.offsetWidth;
+    button.dataset.attentionToken = token;
+    button.classList.add("control-attention-pop");
   }
 
   function updateMobileControls() {
@@ -3764,6 +3841,8 @@
       state.mobileActive = false;
       state.compactControls = false;
       state.mobilePortrait = false;
+      state.uiMobileSignature = "";
+      state.uiMobileViewportSignature = "";
       document.body.classList.remove("mobile-ui-active");
       document.body.classList.remove("mobile-portrait-ui");
       document.body.classList.remove("compact-controls");
@@ -3780,12 +3859,51 @@
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
     state.mobilePortrait = state.compactControls && viewportHeight > viewportWidth;
-    mobileControls.classList.toggle("active", state.mobileActive);
+
+    const canAdvance = state.mode === "playing" ? canAdvanceDeal() : false;
+    const canAct = state.mode === "playing" ? canPlayerAct() : false;
+    const canDouble =
+      state.mode === "playing" &&
+      canAct &&
+      state.encounter &&
+      state.encounter.playerHand.length === 2 &&
+      !state.encounter.doubleDown &&
+      !state.encounter.splitUsed;
+    const canSplit = state.mode === "playing" ? canSplitCurrentHand() : false;
+    const viewportSignature = `${viewportWidth}x${viewportHeight}`;
+    const mobileSignature = [
+      state.mode,
+      state.mobileActive ? 1 : 0,
+      state.compactControls ? 1 : 0,
+      state.mobilePortrait ? 1 : 0,
+      state.selectionIndex,
+      state.rewardOptions.length,
+      state.shopStock.length,
+      state.run ? state.run.player.gold : -1,
+      state.run && state.run.shopPurchaseMade ? 1 : 0,
+      canAdvance ? 1 : 0,
+      canAct ? 1 : 0,
+      canDouble ? 1 : 0,
+      canSplit ? 1 : 0,
+      state.encounter ? state.encounter.phase : "",
+      state.encounter ? state.encounter.playerHand.length : 0,
+      state.encounter && state.encounter.doubleDown ? 1 : 0,
+      state.encounter && state.encounter.splitUsed ? 1 : 0,
+    ].join("|");
+    if (state.uiMobileSignature === mobileSignature && state.uiMobileViewportSignature === viewportSignature) {
+      return;
+    }
+    state.uiMobileSignature = mobileSignature;
+    state.uiMobileViewportSignature = viewportSignature;
+
+    const showMobileControls = state.mobileActive && state.mode !== "menu";
+    mobileControls.classList.toggle("active", showMobileControls);
     document.body.classList.toggle("mobile-ui-active", state.mobileActive);
     document.body.classList.toggle("mobile-portrait-ui", state.mobilePortrait);
     document.body.classList.toggle("compact-controls", state.compactControls);
     document.body.classList.toggle("menu-screen", state.mode === "menu" || state.mode === "collection");
     mobileControls.classList.remove("reward-claim-only");
+    mobileControls.classList.remove("single-action-only");
 
     Object.values(mobileButtons).forEach((button) => {
       if (!button) {
@@ -3804,9 +3922,10 @@
     setMobileButton(mobileButtons.confirm, "Confirm", false, true);
 
     if (state.mode === "menu") {
-      setMobileButton(mobileButtons.left, "Resume", hasSavedRun(), true);
-      setMobileButton(mobileButtons.confirm, "New Run", true, true);
-      setMobileButton(mobileButtons.right, "Collection", true, true);
+      Object.values(mobileButtons).forEach(clearMobileButtonAttention);
+      setMobileButton(mobileButtons.left, "Resume", false, false);
+      setMobileButton(mobileButtons.confirm, "New Run", false, false);
+      setMobileButton(mobileButtons.right, "Achievements", false, false);
       setMobileButton(mobileButtons.hit, "Hit", false, false);
       setMobileButton(mobileButtons.stand, "Stand", false, false);
       setMobileButton(mobileButtons.double, "Double", false, false);
@@ -3814,6 +3933,7 @@
     }
 
     if (state.mode === "collection") {
+      Object.values(mobileButtons).forEach(clearMobileButtonAttention);
       const total = collectionEntries().length;
       const { cols, rows } = collectionPageLayout();
       const perPage = cols * rows;
@@ -3828,30 +3948,41 @@
     }
 
     if (state.mode === "playing") {
-      const canAdvance = canAdvanceDeal();
-      const canAct = canPlayerAct();
-      const canDouble =
-        canAct &&
-        state.encounter &&
-        state.encounter.playerHand.length === 2 &&
-        !state.encounter.doubleDown &&
-        !state.encounter.splitUsed;
-      const canSplit = canSplitCurrentHand();
-      setMobileButton(mobileButtons.hit, "Hit", canAct && !canAdvance, true);
-      setMobileButton(mobileButtons.stand, "Stand", canAct && !canAdvance, true);
-      setMobileButton(mobileButtons.double, "Double", canDouble && !canAdvance, true);
-      setMobileButton(
-        mobileButtons.confirm,
-        canAdvance ? "Next Deal" : "Split",
-        canAdvance || canSplit,
-        true
-      );
+      if (canAdvance) {
+        setMobileButton(mobileButtons.confirm, "New Deal", true, true);
+        setMobileButton(mobileButtons.left, "Left", false, false);
+        setMobileButton(mobileButtons.right, "Right", false, false);
+        setMobileButton(mobileButtons.hit, "Hit", false, false);
+        setMobileButton(mobileButtons.stand, "Stand", false, false);
+        setMobileButton(mobileButtons.double, "Double", false, false);
+        mobileControls.classList.add("single-action-only");
+        if (mobileButtons.confirm) {
+          triggerMobileButtonAttention(
+            mobileButtons.confirm,
+            `newdeal-${state.run?.totalHands || 0}-${state.encounter?.phase || "idle"}`
+          );
+        }
+        return;
+      }
+      setMobileButton(mobileButtons.hit, "Hit", canAct, true);
+      setMobileButton(mobileButtons.stand, "Stand", canAct, true);
+      setMobileButton(mobileButtons.double, "Double", canDouble, true);
+      setMobileButton(mobileButtons.confirm, "Split", canSplit, canSplit);
       setMobileButton(mobileButtons.left, "Left", false, false);
       setMobileButton(mobileButtons.right, "Right", false, false);
+      if (canSplit && mobileButtons.confirm) {
+        triggerMobileButtonAttention(
+          mobileButtons.confirm,
+          `split-${state.run?.totalHands || 0}-${state.encounter?.playerHand?.[0]?.rank || ""}-${state.encounter?.playerHand?.[1]?.rank || ""}`
+        );
+      } else if (mobileButtons.confirm) {
+        clearMobileButtonAttention(mobileButtons.confirm);
+      }
       return;
     }
 
     if (state.mode === "reward") {
+      Object.values(mobileButtons).forEach(clearMobileButtonAttention);
       setMobileButton(mobileButtons.left, "Left", false, false);
       setMobileButton(mobileButtons.right, "Right", false, false);
       setMobileButton(mobileButtons.confirm, "Claim", state.rewardOptions.length > 0, true);
@@ -3863,6 +3994,7 @@
     }
 
     if (state.mode === "shop") {
+      Object.values(mobileButtons).forEach(clearMobileButtonAttention);
       const selectedItem = state.shopStock[state.selectionIndex];
       const canBuy = Boolean(selectedItem && !selectedItem.sold && state.run && !state.run.shopPurchaseMade);
       setMobileButton(mobileButtons.left, "Prev", false, false);
@@ -3875,6 +4007,7 @@
     }
 
     if (state.mode === "gameover" || state.mode === "victory") {
+      Object.values(mobileButtons).forEach(clearMobileButtonAttention);
       setMobileButton(mobileButtons.confirm, "New Run", true, true);
       setMobileButton(mobileButtons.left, "Left", false, false);
       setMobileButton(mobileButtons.right, "Right", false, false);
@@ -4267,7 +4400,7 @@
     }
     if (raw.length === 1) {
       const low = raw.toLowerCase();
-      if (low === "a" || low === "b" || low === "c" || low === "s" || low === "r" || low === "m") {
+      if (low === "a" || low === "b" || low === "s" || low === "r" || low === "m") {
         return low;
       }
     }
@@ -4310,13 +4443,13 @@
     }
 
     if (state.mode === "menu") {
-      if (key === "enter" || key === "space") {
+      if (key === "enter") {
         startRun();
       } else if (key === "r") {
         if (resumeSavedRun()) {
           saveRunSnapshot();
         }
-      } else if (key === "c") {
+      } else if (key === "a") {
         openCollection(0);
       }
       return;
@@ -4331,7 +4464,7 @@
         state.collectionPage = Math.max(0, state.collectionPage - 1);
       } else if (key === "right") {
         state.collectionPage = Math.min(pages - 1, state.collectionPage + 1);
-      } else if (key === "enter" || key === "space" || key === "c" || key === "r") {
+      } else if (key === "enter" || key === "space" || key === "a" || key === "r") {
         state.mode = "menu";
       }
       return;
@@ -4376,7 +4509,7 @@
       return;
     }
 
-    if ((state.mode === "gameover" || state.mode === "victory") && (key === "enter" || key === "space")) {
+    if ((state.mode === "gameover" || state.mode === "victory") && key === "enter") {
       startRun();
     }
   }
@@ -4505,10 +4638,6 @@
       }
       if (state.encounter.resolveTimer <= 0 && !state.encounter.nextDealPrompted) {
         state.encounter.nextDealPrompted = true;
-        const advancePrompt = state.compactControls
-          ? "Result locked. Tap Next Deal when ready."
-          : "Result locked. Press Next Deal when ready.";
-        setAnnouncement(advancePrompt, 2.6);
       }
     }
   }
@@ -4748,7 +4877,7 @@
     };
   }
 
-  function drawEnemyAvatarPanel(enemy, portrait) {
+  function drawEnemyAvatarPanel(enemy, portrait, anchor = null) {
     if (!enemy) {
       return;
     }
@@ -4762,8 +4891,14 @@
     const accent = enemyAvatarAccent(enemy.type);
     const panelW = portrait ? 90 : 186;
     const panelH = portrait ? 106 : 228;
-    const panelX = portrait ? cropX + 24 : WIDTH - cropX - panelW - 44;
-    const panelY = portrait ? 78 : 94;
+    const defaultX = portrait ? cropX + 24 : WIDTH - cropX - panelW - 44;
+    const defaultY = portrait ? 78 : 94;
+    const anchorGap = portrait ? 8 : 14;
+    const panelX = anchor ? anchor.x - panelW - anchorGap : defaultX;
+    const centerAlignedY = anchor ? anchor.y + anchor.h * 0.5 - panelH * 0.5 : defaultY;
+    const minY = portrait ? 72 : 46;
+    const maxY = portrait ? 246 : 248;
+    const panelY = clampNumber(centerAlignedY, minY, maxY, defaultY);
     const radius = portrait ? 12 : 20;
     const pulse = 0.28 + (Math.sin(state.worldTime * (2.2 + intensity * 0.65)) * 0.5 + 0.5) * 0.26;
 
@@ -4825,8 +4960,6 @@
     const enemyTitleX = portrait ? WIDTH * 0.56 : WIDTH * 0.5;
     const enemyTitleY = portrait ? 150 : 88;
 
-    drawEnemyAvatarPanel(enemy, portrait);
-
     ctx.textAlign = "center";
     ctx.fillStyle = enemy.color;
     setFont(53, 700, true);
@@ -4861,6 +4994,12 @@
       dealerBarTopMin,
       dealerBox.y - (barH + handLabelGap + handLabelClearance)
     );
+    drawEnemyAvatarPanel(enemy, portrait, {
+      x: dealerBox.centerX - fixedBarW * 0.5,
+      y: dealerBarY,
+      w: fixedBarW,
+      h: barH,
+    });
     drawHealthBar(
       dealerBox.centerX - fixedBarW * 0.5,
       dealerBarY,
@@ -4974,15 +5113,16 @@
     const run = state.run;
     const hud = hudMetrics();
     const topY = hud.portrait ? 34 : 38;
+    const actionReserve = state.mode !== "menu" && state.mode !== "collection" ? 102 : 0;
     ctx.textAlign = "left";
     ctx.fillStyle = "#dbeaf7";
     setFont(hud.portrait ? 20 : 22, 700, true);
     ctx.fillText(`Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`, hud.left + 2, topY);
 
-    const statsW = hud.portrait ? Math.min(272, Math.max(214, Math.floor(hud.span * 0.66))) : 314;
+    const statsW = hud.portrait ? Math.min(272, Math.max(214, Math.floor(hud.span * 0.66))) : 304;
     const statsH = hud.portrait ? 58 : 66;
-    const statsX = hud.right - statsW;
-    const statsY = hud.portrait ? topY + 14 : HEIGHT - statsH - 42;
+    const statsX = hud.right - statsW - actionReserve;
+    const statsY = topY + (hud.portrait ? 14 : 12);
     roundRect(statsX, statsY, statsW, statsH, 14);
     const panel = ctx.createLinearGradient(statsX, statsY, statsX, statsY + statsH);
     panel.addColorStop(0, "rgba(15, 30, 45, 0.9)");
@@ -4996,12 +5136,14 @@
     ctx.textAlign = "left";
     ctx.fillStyle = "#f4d88d";
     setFont(hud.portrait ? 18 : 22, 700, false);
-    const leftPad = hud.portrait ? 10 : 12;
+    const leftPad = hud.portrait ? 10 : 10;
     const rightPad = 12;
-    const splitX = statsX + Math.max(hud.portrait ? 96 : 116, Math.floor(statsW * 0.53));
+    const splitX = statsX + Math.max(hud.portrait ? 78 : 92, Math.floor(statsW * 0.33));
     const dividerY = statsY + 10;
     const dividerH = statsH - 20;
-    ctx.fillText(`◍ ${run.player.gold}`, statsX + leftPad, statsY + Math.floor(statsH * 0.56));
+    const chipsAreaW = Math.max(58, splitX - statsX - leftPad - 6);
+    const chipsText = fitText(`◍ ${run.player.gold}`, chipsAreaW);
+    ctx.fillText(chipsText, statsX + leftPad, statsY + Math.floor(statsH * 0.56));
 
     ctx.strokeStyle = "rgba(168, 206, 234, 0.24)";
     ctx.lineWidth = 1;
@@ -5608,80 +5750,43 @@
   }
 
   function drawMenu() {
-    const resumeReady = hasSavedRun();
     const compact = state.compactControls;
     if (compact) {
-      const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
-      const leftBound = cropX + 10;
-      const rightBound = WIDTH - cropX - 10;
-      const visibleW = Math.max(260, rightBound - leftBound);
-      const centerX = (leftBound + rightBound) * 0.5;
-      const panelW = Math.min(430, visibleW);
-      const panelX = centerX - panelW * 0.5;
-
       const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
       bg.addColorStop(0, "#081420");
       bg.addColorStop(1, "#040b12");
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-      const artDrawn = drawImageContain(menuArtImage, 0, 0, WIDTH, HEIGHT, 0.5, 0.5);
+      const artDrawn = drawImageCover(menuArtImage, 0, 0, WIDTH, HEIGHT, 0.5, 0.5);
       const darken = ctx.createLinearGradient(0, 0, 0, HEIGHT);
       darken.addColorStop(0, artDrawn ? "rgba(5, 10, 18, 0.38)" : "rgba(5, 10, 18, 0.2)");
       darken.addColorStop(0.55, "rgba(5, 10, 18, 0.7)");
       darken.addColorStop(1, "rgba(5, 10, 18, 0.9)");
       ctx.fillStyle = darken;
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
-
-      const panelPad = 20;
-      const subtitle = "Roguelike deck duels where each hand hits like combat.";
-      const profileLine = state.profile
-        ? `Lifetime: ${state.profile.totals.runsStarted} runs | ${state.profile.totals.runsWon} wins | ${state.profile.totals.enemiesDefeated} enemies`
-        : "";
-
-      setFont(18, 600, false);
-      const subtitleLines = wrappedLines(subtitle, panelW - panelPad * 2);
-      const panelH = Math.max(170, 90 + subtitleLines.length * 18 + (profileLine ? 24 : 0));
-      const safeBottom = 170;
-      const panelY = Math.max(24, HEIGHT - safeBottom - panelH);
-      roundRect(panelX, panelY, panelW, panelH, 20);
-      const panelFill = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
-      panelFill.addColorStop(0, "rgba(11, 28, 43, 0.82)");
-      panelFill.addColorStop(1, "rgba(7, 19, 30, 0.9)");
-      ctx.fillStyle = panelFill;
-      ctx.fill();
-      ctx.strokeStyle = "rgba(178, 216, 245, 0.32)";
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#f3d193";
-      setFont(34, 700, true);
-      ctx.fillText(fitText("BLACKJACK ABYSS", panelW - 26), centerX, panelY + 52);
-
-      ctx.fillStyle = "#d7e6f4";
-      setFont(18, 600, false);
-      let y = panelY + 84;
-      wrapText(subtitle, panelX + panelPad, y, panelW - panelPad * 2, 18, "center");
-      y += subtitleLines.length * 18 + 8;
-
-      if (profileLine) {
-        ctx.fillStyle = "#a6c8e2";
-        setFont(14, 600, false);
-        ctx.fillText(fitText(profileLine, panelW - panelPad * 2), centerX, y);
-      }
-      if (!state.compactControls) {
-        ctx.fillStyle = "#8eb2ce";
-        setFont(13, 600, false);
-        ctx.fillText("Press C for Collection", centerX, panelY + panelH - 14);
-      }
       return;
     }
 
-    const sideMargin = Math.max(88, Math.min(220, WIDTH * 0.17));
     const art = compact
       ? { x: 0, y: 0, w: WIDTH, h: HEIGHT, radius: 0 }
-      : { x: sideMargin, y: 0, w: WIDTH - sideMargin * 2, h: HEIGHT, radius: 24 };
+      : (() => {
+          const viewW = Math.max(1, Number(state.viewport?.width) || WIDTH);
+          const viewH = Math.max(1, Number(state.viewport?.height) || HEIGHT);
+          const scaleX = viewW / WIDTH;
+          const scaleY = viewH / HEIGHT;
+          const frameDisplayH = MENU_FRAME_DISPLAY_HEIGHT;
+          const frameDisplayW = MENU_FRAME_DISPLAY_WIDTH;
+          const frameH = frameDisplayH / Math.max(0.001, scaleY);
+          const frameW = frameDisplayW / Math.max(0.001, scaleX);
+          return {
+            x: Math.floor((WIDTH - frameW) * 0.5),
+            y: Math.floor((HEIGHT - frameH) * 0.5),
+            w: frameW,
+            h: frameH,
+            radius: 24,
+          };
+        })();
 
     const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
     bg.addColorStop(0, "#081420");
@@ -5723,57 +5828,6 @@
     ctx.fillStyle = shadowFade;
     ctx.fillRect(art.x, fadeTop, art.w, art.h - (fadeTop - art.y));
     ctx.restore();
-
-    const panelW = Math.max(340, Math.min(compact ? WIDTH - 34 : 860, art.w - (compact ? 24 : 86)));
-    const panelPad = compact ? 22 : 30;
-    const subtitle = "Roguelike deck duels where each hand hits like combat.";
-    const subtitleLineH = compact ? 24 : 28;
-
-    setFont(compact ? 18 : 22, 600, false);
-    const subtitleLines = wrappedLines(subtitle, panelW - panelPad * 2);
-
-    const profileLine = state.profile
-      ? `Lifetime: ${state.profile.totals.runsStarted} runs | ${state.profile.totals.runsWon} wins | ${state.profile.totals.enemiesDefeated} enemies`
-      : "";
-    const panelH = Math.max(
-      compact ? 164 : 186,
-      104 + subtitleLines.length * subtitleLineH + (profileLine ? (compact ? 28 : 32) : 0)
-    );
-    const panelX = WIDTH * 0.5 - panelW * 0.5;
-    const safeBottom = compact ? 152 : 86;
-    const panelY = Math.max(HEIGHT * 0.5, HEIGHT - safeBottom - panelH);
-
-    roundRect(panelX, panelY, panelW, panelH, compact ? 20 : 22);
-    const panelFill = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
-    panelFill.addColorStop(0, "rgba(13, 27, 41, 0.78)");
-    panelFill.addColorStop(1, "rgba(8, 18, 29, 0.9)");
-    ctx.fillStyle = panelFill;
-    ctx.fill();
-    ctx.strokeStyle = "rgba(178, 216, 245, 0.33)";
-    ctx.lineWidth = 1.4;
-    ctx.stroke();
-
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#f3d193";
-    setFont(compact ? 45 : 72, 700, true);
-    ctx.fillText("BLACKJACK ABYSS", WIDTH * 0.5, panelY + (compact ? 58 : 72));
-
-    let cursorY = panelY + (compact ? 94 : 122);
-    ctx.fillStyle = "#d7e6f4";
-    setFont(compact ? 18 : 22, 600, false);
-    wrapText(subtitle, panelX + panelPad, cursorY, panelW - panelPad * 2, subtitleLineH, "center");
-    cursorY += subtitleLines.length * subtitleLineH + 10;
-
-    if (profileLine) {
-      ctx.fillStyle = "#a6c8e2";
-      setFont(compact ? 14 : 17, 600, false);
-      wrapText(profileLine, panelX + panelPad, cursorY, panelW - panelPad * 2, compact ? 20 : 22, "center");
-    }
-    if (!state.compactControls) {
-      ctx.fillStyle = "#8eb2ce";
-      setFont(compact ? 13 : 15, 600, false);
-      ctx.fillText("Press C for Collection", WIDTH * 0.5, panelY + panelH - 16);
-    }
   }
 
   function drawCollectionScreen() {
@@ -5812,7 +5866,7 @@
     ctx.textAlign = "center";
     ctx.fillStyle = "#f3d193";
     setFont(portrait ? 36 : 42, 700, true);
-    ctx.fillText("Relic Codex", WIDTH * 0.5, panelY + 50);
+    ctx.fillText("Achievements", WIDTH * 0.5, panelY + 50);
 
     ctx.fillStyle = "#bed8ec";
     setFont(portrait ? 14 : 16, 600, false);
@@ -6049,11 +6103,18 @@
     if (state.announcementTimer > 0 && state.announcement) {
       const duration = Math.max(0.25, state.announcementDuration || state.announcementTimer || 1.4);
       const progress = Math.max(0, Math.min(1, 1 - state.announcementTimer / duration));
-      const intro = Math.max(0, Math.min(1, progress / 0.24));
-      const settle = Math.max(0, Math.min(1, (progress - 0.24) / 0.18));
+      const introWindow = 0.11;
+      const settleWindow = 0.19;
+      const intro = Math.max(0, Math.min(1, progress / introWindow));
+      const settle = Math.max(0, Math.min(1, (progress - introWindow) / settleWindow));
       const fade = progress > 0.74 ? 1 - (progress - 0.74) / 0.26 : 1;
-      const scale = progress < 0.24 ? 0.68 + easeOutBack(intro) * 0.54 : 1.12 - settle * 0.14;
-      const alpha = Math.max(0, Math.min(1, (0.2 + intro * 0.8) * fade));
+      const popScale =
+        progress < introWindow
+          ? 0.46 + easeOutBack(intro) * 0.88
+          : 1.16 - settle * 0.16 + Math.sin(settle * Math.PI) * 0.035 * (1 - settle);
+      const slamOffset = progress < introWindow ? (1 - intro) * 26 : Math.max(0, 8 - settle * 24);
+      const scale = Math.max(0.86, popScale);
+      const alpha = Math.max(0, Math.min(1, (0.34 + intro * 0.66) * fade));
       const anchor = announcementAnchor();
       const centerX = anchor.centerX;
       const centerY = anchor.centerY;
@@ -6077,9 +6138,11 @@
               ? clampNumber(centerY - 36, 236, 338, 264)
               : 136;
         ctx.save();
+        ctx.translate(centerX, toastY - slamOffset);
+        ctx.scale(scale, scale);
         ctx.globalAlpha = alpha;
-        roundRect(centerX - panelW * 0.5, toastY - panelH * 0.5, panelW, panelH, 13);
-        const panel = ctx.createLinearGradient(0, toastY - panelH * 0.5, 0, toastY + panelH * 0.5);
+        roundRect(-panelW * 0.5, -panelH * 0.5, panelW, panelH, 13);
+        const panel = ctx.createLinearGradient(0, -panelH * 0.5, 0, panelH * 0.5);
         panel.addColorStop(0, "rgba(25, 44, 62, 0.96)");
         panel.addColorStop(1, "rgba(14, 27, 40, 0.94)");
         ctx.fillStyle = panel;
@@ -6091,8 +6154,8 @@
         ctx.textAlign = "center";
         setFont(24, 700, true);
         lines.forEach((line, idx) => {
-          const y = toastY - ((lines.length - 1) * lineHeight) * 0.5 + idx * lineHeight + 8;
-          ctx.fillText(line, centerX, y);
+          const y = -((lines.length - 1) * lineHeight) * 0.5 + idx * lineHeight + 8;
+          ctx.fillText(line, 0, y);
         });
         ctx.restore();
         return;
@@ -6136,7 +6199,7 @@
       const panelH = Math.max(62, 30 + lines.length * lineHeight);
 
       ctx.save();
-      ctx.translate(centerX, centerY);
+      ctx.translate(centerX, centerY - slamOffset);
       ctx.scale(scale, scale);
       ctx.globalAlpha = alpha;
       roundRect(-messageWidth * 0.5, -panelH * 0.5, messageWidth, panelH, 15);
@@ -6221,15 +6284,15 @@
   function availableActions() {
     if (state.mode === "menu") {
       return hasSavedRun()
-        ? ["enter(start)", "space(start)", "r(resume)", "c(collection)"]
-        : ["enter(start)", "space(start)", "c(collection)"];
+        ? ["enter(start)", "r(resume)", "a(achievements)"]
+        : ["enter(start)", "a(achievements)"];
     }
     if (state.mode === "collection") {
-      return ["left(prev page)", "right(next page)", "enter(back)", "space(back)"];
+      return ["left(prev page)", "right(next page)", "enter(back)", "space(back)", "a(back)"];
     }
     if (state.mode === "playing") {
       if (canAdvanceDeal()) {
-        return ["enter(next deal)", "tap(next deal)"];
+        return ["enter(new deal)", "tap(new deal)"];
       }
       if (!canPlayerAct()) {
         return ["observe(result)"];
@@ -6258,7 +6321,7 @@
       return ["left(prev)", "right(next)", "space(buy)", "enter(continue)"];
     }
     if (state.mode === "gameover" || state.mode === "victory") {
-      return ["enter(restart)", "space(restart)"];
+      return ["enter(restart)"];
     }
     return [];
   }
@@ -6397,6 +6460,24 @@
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
     const menuScreen = state.mode === "menu";
+    if (menuScreen) {
+      gameShell.style.width = `${WIDTH}px`;
+      gameShell.style.height = `${HEIGHT}px`;
+      canvas.style.width = `${WIDTH}px`;
+      canvas.style.height = `${HEIGHT}px`;
+      canvas.style.left = "0px";
+      canvas.style.top = "0px";
+
+      state.viewport = {
+        width: WIDTH,
+        height: HEIGHT,
+        scale: 1,
+        cropWorldX: 0,
+        portraitZoomed: false,
+      };
+      return;
+    }
+
     const reservedHeight =
       !menuScreen && state.mobileActive && mobileControls ? mobileControls.offsetHeight + (state.compactControls ? 8 : 12) : 0;
     const availableHeight = Math.max(
@@ -6479,6 +6560,48 @@
       event.preventDefault();
       unlockAudio();
       toggleLogsModal();
+    });
+  }
+
+  if (achievementsToggle) {
+    achievementsToggle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      unlockAudio();
+      if (state.mode === "menu") {
+        openCollection(0);
+      }
+    });
+  }
+
+  if (menuNewRun) {
+    menuNewRun.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      unlockAudio();
+      if (state.mode === "menu") {
+        startRun();
+      }
+    });
+  }
+
+  if (menuResume) {
+    menuResume.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      unlockAudio();
+      if (state.mode === "menu" && hasSavedRun()) {
+        if (resumeSavedRun()) {
+          saveRunSnapshot();
+        }
+      }
+    });
+  }
+
+  if (menuAchievements) {
+    menuAchievements.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      unlockAudio();
+      if (state.mode === "menu") {
+        openCollection(0);
+      }
     });
   }
 
