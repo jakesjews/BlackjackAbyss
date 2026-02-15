@@ -25,6 +25,8 @@
   const passiveModalList = document.getElementById("passive-modal-list");
   const passiveRail = document.getElementById("passive-rail");
   const passiveTooltip = document.getElementById("passive-tooltip");
+  const topbarTooltip = document.getElementById("topbar-tooltip");
+  let topbarTooltipAnchor = null;
   if (passiveRail && gameShell && passiveRail.parentElement !== gameShell) {
     gameShell.appendChild(passiveRail);
   }
@@ -92,6 +94,9 @@
   const chipIconImage = new window.Image();
   chipIconImage.decoding = "async";
   chipIconImage.src = "public/images/icons/chips.png";
+  const buyIconImage = new window.Image();
+  buyIconImage.decoding = "async";
+  buyIconImage.src = "public/images/icons/buy.png";
   async function resolveMenuArtSource() {
     for (const src of MENU_ART_SOURCES) {
       try {
@@ -1161,6 +1166,46 @@
     "Abyss Banker": "abyss-banker",
     "Null Dealer": "null-dealer",
   };
+  const ENCOUNTER_INTRO_OPENERS = Object.freeze({
+    normal: [
+      "You walked into my lane, now play it clean.",
+      "I deal fast and I punish slow hands.",
+      "This table eats nerves for breakfast.",
+      "Keep your pulse steady if you want out alive.",
+    ],
+    elite: [
+      "You've reached an elite table, and the stakes bite back.",
+      "I break hopeful runs for a living.",
+      "One mistake here and your chips turn to smoke.",
+      "You've climbed high enough to lose something real.",
+    ],
+    boss: [
+      "So you finally reached the heart of the abyss.",
+      "Every deal ends in debt when I run the table.",
+      "This is where winning runs come to die.",
+      "The house is watching, and I never miss.",
+    ],
+  });
+  const ENCOUNTER_INTRO_CLOSERS = Object.freeze({
+    normal: [
+      "Show me your best hand.",
+      "Deal if you dare.",
+      "Let's see if you can hold your ground.",
+      "Try not to fold under pressure.",
+    ],
+    elite: [
+      "Bring your best, because I won't blink.",
+      "Show me a hand worth remembering.",
+      "Survive this round and maybe you belong here.",
+      "Step up and prove you're not bluffing.",
+    ],
+    boss: [
+      "Play now and earn your way out.",
+      "Show me a hand strong enough to break the house.",
+      "No more warmups, this is the final test.",
+      "Deal and face the table's true owner.",
+    ],
+  });
 
   const state = {
     mode: "menu",
@@ -1439,6 +1484,14 @@
       Math.max(0, nonNegInt(encounterLike.splitHandsResolved, 0)),
       Math.max(0, splitHandsTotal - 1)
     );
+    const introLike = encounterLike.intro && typeof encounterLike.intro === "object" ? encounterLike.intro : null;
+    const introState =
+      introLike && introLike.active
+        ? createEncounterIntroState(enemy, {
+            ...introLike,
+            active: true,
+          })
+        : null;
 
     const encounter = {
       enemy,
@@ -1465,6 +1518,7 @@
       lastPlayerAction: ["hit", "stand", "double", "split", "none"].includes(encounterLike.lastPlayerAction)
         ? encounterLike.lastPlayerAction
         : "none",
+      intro: introState,
     };
 
     return encounter;
@@ -1592,7 +1646,13 @@
       : [];
     state.shopStock = hydrateShopStock(snapshot.shopStock);
     state.selectionIndex = nonNegInt(snapshot.selectionIndex, 0);
-    setAnnouncement("Run resumed.", 1.8);
+    if (encounter.intro?.active) {
+      state.announcement = "";
+      state.announcementTimer = 0;
+      state.announcementDuration = 0;
+    } else {
+      setAnnouncement("Run resumed.", 1.8);
+    }
     state.floatingTexts = [];
     state.cardBursts = [];
     state.sparkParticles = [];
@@ -1852,6 +1912,39 @@
           : type === "elite"
             ? "#f2c05c"
             : "#83b9ff",
+    };
+  }
+
+  function buildEnemyIntroDialogue(enemy) {
+    const encounterType = enemy?.type === "boss" ? "boss" : enemy?.type === "elite" ? "elite" : "normal";
+    const openers = ENCOUNTER_INTRO_OPENERS[encounterType] || ENCOUNTER_INTRO_OPENERS.normal;
+    const closers = ENCOUNTER_INTRO_CLOSERS[encounterType] || ENCOUNTER_INTRO_CLOSERS.normal;
+    const seed = hashSeed(`${enemy?.name || "dealer"}|${encounterType}`);
+    const opener = openers[Math.max(0, seed % openers.length)] || openers[0] || "You made it to my table.";
+    const closer = closers[Math.max(0, (seed >>> 3) % closers.length)] || closers[0] || "Show me your hand.";
+    return `${opener} ${closer}`.replace(/\s+/g, " ").trim();
+  }
+
+  function createEncounterIntroState(enemy, introLike = null) {
+    const typedLike = introLike && typeof introLike === "object" ? introLike : {};
+    const sourceDialogue =
+      typeof typedLike.dialogue === "string" && typedLike.dialogue.trim().length > 0
+        ? typedLike.dialogue.trim()
+        : buildEnemyIntroDialogue(enemy);
+    const dialogue = sourceDialogue.replace(/\s+/g, " ").trim();
+    const maxChars = dialogue.length;
+    let visibleChars = clampNumber(typedLike.visibleChars, 0, maxChars, 0);
+    let ready = Boolean(typedLike.ready) || visibleChars >= maxChars;
+    if (ready) {
+      visibleChars = maxChars;
+    }
+    return {
+      active: Boolean(typedLike.active),
+      dialogue,
+      visibleChars,
+      typeTimer: clampNumber(typedLike.typeTimer, 0, 4, 0.18),
+      ready,
+      confirmRect: null,
     };
   }
 
@@ -2150,6 +2243,55 @@
     state.passiveTooltipTimer = 0;
   }
 
+  function canUseDesktopHoverTooltips() {
+    return (
+      !state.compactControls &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(hover: hover) and (pointer: fine)").matches
+    );
+  }
+
+  function positionTopbarTooltip(button) {
+    if (!topbarTooltip || topbarTooltip.hidden || !button) {
+      return;
+    }
+    const rect = button.getBoundingClientRect();
+    const tipRect = topbarTooltip.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0 || tipRect.width <= 0 || tipRect.height <= 0) {
+      return;
+    }
+    const viewportW = window.innerWidth || document.documentElement.clientWidth || 1280;
+    const viewportH = window.innerHeight || document.documentElement.clientHeight || 720;
+    const pad = 8;
+    let left = rect.left + rect.width * 0.5 - tipRect.width * 0.5;
+    let top = rect.bottom + 8;
+    if (top + tipRect.height + pad > viewportH) {
+      top = rect.top - tipRect.height - 8;
+    }
+    left = clampNumber(left, pad, Math.max(pad, viewportW - tipRect.width - pad), left);
+    top = clampNumber(top, pad, Math.max(pad, viewportH - tipRect.height - pad), top);
+    topbarTooltip.style.left = `${Math.round(left)}px`;
+    topbarTooltip.style.top = `${Math.round(top)}px`;
+  }
+
+  function showTopbarTooltip(button, message) {
+    if (!topbarTooltip || !button || !message || !canUseDesktopHoverTooltips() || button.hidden) {
+      return;
+    }
+    topbarTooltip.textContent = message;
+    topbarTooltip.hidden = false;
+    topbarTooltipAnchor = button;
+    positionTopbarTooltip(button);
+  }
+
+  function hideTopbarTooltip() {
+    if (!topbarTooltip) {
+      return;
+    }
+    topbarTooltip.hidden = true;
+    topbarTooltipAnchor = null;
+  }
+
   function passiveStacksForRun(run = state.run) {
     if (!run || !run.player || !run.player.relics) {
       return [];
@@ -2373,6 +2515,7 @@
         topRightActions.style.right = "";
         topRightActions.style.top = "";
       }
+      hideTopbarTooltip();
       return;
     }
 
@@ -2382,22 +2525,24 @@
     }
 
     const row = hudRowMetrics();
+    const hud = row.hud;
     const statsH = row.statsH;
     const scale = Math.max(0.0001, state.viewport?.scale || 1);
     const worldCenterY = row.rowTopY + statsH * 0.5;
     const screenCenterY = rect.top + worldCenterY * scale;
     const actionW = Math.max(42, topRightActions.offsetWidth || 48);
     const actionH = Math.max(42, topRightActions.offsetHeight || 58);
-    const rightInset = 8;
-    const safePad = 6;
-    const targetLeft = rect.right - actionW - rightInset;
-    const clampedLeft = clampNumber(targetLeft, safePad, Math.max(safePad, window.innerWidth - actionW - safePad), targetLeft);
+    // Anchor to HUD right margin so this matches enemy portrait distance from browser right edge.
+    const targetLeft = rect.left + hud.right * scale - actionW;
     const targetTop = screenCenterY - actionH * 0.5;
-    const clampedTop = clampNumber(targetTop, safePad, Math.max(safePad, window.innerHeight - actionH - safePad), targetTop);
+    const clampedTop = clampNumber(targetTop, 6, Math.max(6, window.innerHeight - actionH - 6), targetTop);
 
-    topRightActions.style.left = `${Math.round(clampedLeft)}px`;
+    topRightActions.style.left = `${Math.round(targetLeft)}px`;
     topRightActions.style.right = "auto";
     topRightActions.style.top = `${Math.round(clampedTop)}px`;
+    if (topbarTooltipAnchor && topbarTooltip && !topbarTooltip.hidden) {
+      positionTopbarTooltip(topbarTooltipAnchor);
+    }
   }
 
   function alignPassiveRailToCombatLayout() {
@@ -2421,7 +2566,11 @@
     const railH = Math.max(0, passiveRail.offsetHeight || 0);
     const anchor = state.combatLayout.playerPassiveAnchor;
     passiveRail.style.left = `${Math.round(anchor.x)}px`;
-    passiveRail.style.top = `${Math.round(anchor.yBottom - railH)}px`;
+    if (Number.isFinite(anchor.yTop)) {
+      passiveRail.style.top = `${Math.round(anchor.yTop)}px`;
+    } else {
+      passiveRail.style.top = `${Math.round(anchor.yBottom - railH)}px`;
+    }
     passiveRail.style.transform = "";
   }
 
@@ -2441,16 +2590,42 @@
     if (menuResume) {
       menuResume.disabled = !hasSavedRun();
     }
-    const showAchievements = false;
+    const showHome = runActive && state.mode !== "menu" && state.mode !== "collection";
     const showLogs = runActive && state.mode !== "menu" && state.mode !== "collection";
     if (topRightActions) {
-      topRightActions.hidden = !(showAchievements || showLogs);
+      topRightActions.hidden = !(showHome || showLogs);
     }
     if (achievementsToggle) {
-      achievementsToggle.hidden = !showAchievements;
+      achievementsToggle.hidden = !showHome;
     }
     if (logsToggle) {
       logsToggle.hidden = !showLogs;
+    }
+    const showDesktopTooltips = canUseDesktopHoverTooltips();
+    if (logsToggle) {
+      if (showDesktopTooltips && !logsToggle.hidden) {
+        logsToggle.dataset.uiTooltip = "Current run logs";
+      } else {
+        delete logsToggle.dataset.uiTooltip;
+      }
+      logsToggle.removeAttribute("title");
+    }
+    if (achievementsToggle) {
+      if (showDesktopTooltips && !achievementsToggle.hidden) {
+        achievementsToggle.dataset.uiTooltip = "Return to title screen";
+      } else {
+        delete achievementsToggle.dataset.uiTooltip;
+      }
+      achievementsToggle.removeAttribute("title");
+    }
+    if (
+      !showDesktopTooltips ||
+      (topbarTooltipAnchor &&
+        (!topbarTooltipAnchor.dataset.uiTooltip ||
+          topbarTooltipAnchor.hidden ||
+          topRightActions?.hidden))
+    ) {
+      hideTopbarTooltip();
     }
     if ((!runActive || state.mode === "menu" || state.mode === "collection" || (logsToggle && logsToggle.hidden)) && isLogsModalOpen()) {
       closeLogsModal();
@@ -2924,20 +3099,20 @@
     };
   }
 
-  function triggerHandTackle(winner, amount) {
+  function triggerHandTackle(winner, amount, impactPayload = null) {
     if (!state.encounter) {
-      return;
+      return false;
     }
     const points = handTackleTargets(winner);
     if (!points) {
-      return;
+      return false;
     }
     const layout = state.combatLayout || null;
     const sourceRects = winner === "enemy" ? layout?.dealerCards : layout?.playerCards;
     const sourceHand = winner === "enemy" ? state.encounter.dealerHand : state.encounter.playerHand;
     const count = Math.min(4, sourceHand.length);
     if (count <= 0) {
-      return;
+      return false;
     }
     const projectiles = [];
     for (let i = 0; i < count; i += 1) {
@@ -2966,7 +3141,97 @@
       impacted: false,
       amount: Math.max(1, Number(amount) || 1),
       color: winner === "enemy" ? "#ff8eaf" : "#f6d06e",
+      impactPayload,
     });
+    return true;
+  }
+
+  function damageFloatAnchor(target) {
+    const layout = state.combatLayout || null;
+    if (target === "enemy" && layout?.enemyPortrait) {
+      return {
+        x: layout.enemyPortrait.centerX,
+        y: layout.enemyPortrait.y - 8,
+      };
+    }
+    if (target === "player" && layout?.playerPortrait) {
+      return {
+        x: layout.playerPortrait.centerX,
+        y: layout.playerPortrait.y - 8,
+      };
+    }
+    return target === "enemy"
+      ? { x: WIDTH * 0.72, y: 108 }
+      : { x: WIDTH * 0.26, y: 576 };
+  }
+
+  function finalizeResolveState() {
+    if (!state.run || !state.encounter || state.pendingTransition) {
+      return;
+    }
+
+    const run = state.run;
+    const encounter = state.encounter;
+    const enemy = encounter.enemy;
+    if (!enemy) {
+      return;
+    }
+
+    if (run.player.hp <= 0) {
+      startDefeatTransition("player");
+      setAnnouncement("You were defeated.", 1.2);
+      addLog("You were defeated.");
+      saveRunSnapshot();
+      return;
+    }
+
+    if (enemy.hp <= 0) {
+      startDefeatTransition("enemy");
+      setAnnouncement(`${enemy.name} down!`, 1.2);
+      addLog(`${enemy.name} is down.`);
+      saveRunSnapshot();
+      return;
+    }
+
+    encounter.phase = "resolve";
+    encounter.nextDealPrompted = false;
+    encounter.resolveTimer = 0;
+    saveRunSnapshot();
+  }
+
+  function applyImpactDamage(payload) {
+    if (!payload || !state.run || !state.encounter || !state.encounter.enemy) {
+      return;
+    }
+
+    const amount = Math.max(1, Number(payload.amount) || 1);
+    const run = state.run;
+    const enemy = state.encounter.enemy;
+    const anchor = damageFloatAnchor(payload.target);
+
+    if (payload.target === "enemy") {
+      enemy.hp = Math.max(0, enemy.hp - amount);
+      run.player.totalDamageDealt += amount;
+      if (payload.crit) {
+        spawnFloatText(`CRIT -${amount}`, anchor.x, anchor.y, "#ffe4a8", {
+          size: 58,
+          life: 1.45,
+          vy: 9,
+          weight: 800,
+          jitter: true,
+          glow: "#ffb86a",
+        });
+      } else {
+        spawnFloatText(`-${amount}`, anchor.x, anchor.y, payload.color || "#ff916e");
+      }
+    } else if (payload.target === "player") {
+      run.player.hp = Math.max(0, run.player.hp - amount);
+      run.player.totalDamageTaken += amount;
+      run.player.streak = 0;
+      spawnFloatText(`-${amount}`, anchor.x, anchor.y, payload.color || "#ff86aa");
+    }
+
+    finalizeResolveState();
   }
 
   function startDefeatTransition(target) {
@@ -2975,7 +3240,12 @@
     }
     const handType = target === "enemy" ? "dealer" : "player";
     const hand = target === "enemy" ? state.encounter.dealerHand : state.encounter.playerHand;
-    const bounds = handBounds(handType, Math.max(1, hand.length));
+    const layout = state.combatLayout || null;
+    const cardScale = layout?.cardScale || 1;
+    const bounds =
+      target === "enemy"
+        ? layout?.dealerBox || handBounds(handType, Math.max(1, hand.length), 0, cardScale)
+        : layout?.playerBox || handBounds(handType, Math.max(1, hand.length), 0, cardScale);
     const color = target === "enemy" ? "#ffb07a" : "#ff8eaf";
     for (let i = 0; i < 3; i += 1) {
       const xJitter = (Math.random() * 2 - 1) * 24;
@@ -3038,27 +3308,28 @@
     return upgraded;
   }
 
-  function handLayout(count) {
+  function handLayout(count, layoutScale = 1) {
     const safeCount = Math.max(1, count);
     const cardsPerRow = 6;
     const rows = Math.max(1, Math.ceil(safeCount / cardsPerRow));
     const baseScale = 1 - Math.max(0, safeCount - 4) * 0.06 - (rows - 1) * 0.12;
-    const scale = clampNumber(baseScale, 0.54, 1, 1);
-    const w = Math.max(52, Math.round(CARD_W * scale));
-    const h = Math.max(74, Math.round(CARD_H * scale));
+    const viewportScale = clampNumber(Number(layoutScale) || 1, 0.5, 1.2, 1);
+    const scale = clampNumber(baseScale * viewportScale, 0.38, 1, 1);
+    const w = Math.max(36, Math.round(CARD_W * scale));
+    const h = Math.max(52, Math.round(CARD_H * scale));
     return {
       cardsPerRow,
       rows,
       w,
       h,
       // Keep hands visually tighter without moving the overall hand anchors.
-      spacing: Math.max(Math.round(w * 0.56), 34),
-      rowStep: Math.max(Math.round(h * 0.34), 26),
+      spacing: Math.max(Math.round(w * 0.56), 22),
+      rowStep: Math.max(Math.round(h * 0.34), 18),
     };
   }
 
-  function handCardPosition(handType, index, count) {
-    const metrics = handLayout(count);
+  function handCardPosition(handType, index, count, layoutScale = 1) {
+    const metrics = handLayout(count, layoutScale);
     const portraitOffset = state.viewport?.portraitZoomed ? 72 : 0;
     const baseY = handType === "dealer" ? 190 + portraitOffset : 486 + portraitOffset;
     const row = Math.floor(index / metrics.cardsPerRow);
@@ -3131,6 +3402,7 @@
       bustGuardTriggered: false,
       critTriggered: false,
       lastPlayerAction: "none",
+      intro: createEncounterIntroState(enemy, { active: true, visibleChars: 0, ready: false, typeTimer: 0.28 }),
     };
   }
 
@@ -3199,10 +3471,10 @@
     state.selectionIndex = 0;
 
     const enemy = state.encounter.enemy;
-    setAnnouncement(`${enemy.name} enters the table.`, 1.9);
+    state.announcement = "";
+    state.announcementTimer = 0;
+    state.announcementDuration = 0;
     addLog(`${enemy.name} enters the table.`);
-
-    startHand();
     saveRunSnapshot();
   }
 
@@ -3233,10 +3505,72 @@
     state.passiveRailSignature = "";
     hidePassiveTooltip();
     closeLogsModal();
-    setAnnouncement("Deal the first hand.", 2.2);
     clearSavedRun();
     beginEncounter();
     resizeCanvas();
+  }
+
+  function isEncounterIntroActive(encounter = state.encounter) {
+    return Boolean(
+      state.mode === "playing" &&
+      encounter &&
+      encounter.intro &&
+      encounter.intro.active
+    );
+  }
+
+  function updateEncounterIntroTyping(encounter, dt) {
+    if (!encounter || !encounter.intro || !encounter.intro.active || encounter.intro.ready) {
+      return;
+    }
+    const intro = encounter.intro;
+    const dialogue = intro.dialogue || "";
+    if (!dialogue.length) {
+      intro.visibleChars = 0;
+      intro.ready = true;
+      intro.typeTimer = 0;
+      return;
+    }
+
+    intro.typeTimer = Number.isFinite(intro.typeTimer) ? intro.typeTimer : 0;
+    intro.typeTimer -= dt;
+
+    while (intro.typeTimer <= 0 && intro.visibleChars < dialogue.length) {
+      const ch = dialogue.charAt(intro.visibleChars);
+      intro.visibleChars += 1;
+      if (/[.!?,]/.test(ch)) {
+        intro.typeTimer += 0.11;
+      } else if (ch === " ") {
+        intro.typeTimer += 0.016;
+      } else {
+        intro.typeTimer += 0.028;
+      }
+    }
+
+    if (intro.visibleChars >= dialogue.length) {
+      intro.visibleChars = dialogue.length;
+      intro.ready = true;
+      intro.typeTimer = 0;
+    }
+  }
+
+  function confirmEncounterIntro() {
+    if (!isEncounterIntroActive() || !state.encounter) {
+      return false;
+    }
+    const intro = state.encounter.intro;
+    if (!intro?.ready) {
+      playUiSfx("error");
+      return false;
+    }
+    intro.active = false;
+    intro.confirmRect = null;
+    intro.typeTimer = 0;
+    intro.visibleChars = (intro.dialogue || "").length;
+    playUiSfx("confirm");
+    startHand();
+    saveRunSnapshot();
+    return true;
   }
 
   function canPlayerAct() {
@@ -3244,7 +3578,8 @@
       state.mode === "playing" &&
       Boolean(state.encounter) &&
       state.encounter.phase === "player" &&
-      state.encounter.resolveTimer <= 0
+      state.encounter.resolveTimer <= 0 &&
+      !isEncounterIntroActive(state.encounter)
     );
   }
 
@@ -3255,7 +3590,8 @@
       state.encounter.phase === "resolve" &&
       !state.pendingTransition &&
       state.encounter.resolveTimer <= 0 &&
-      state.handTackles.length === 0
+      state.handTackles.length === 0 &&
+      !isEncounterIntroActive(state.encounter)
     );
   }
 
@@ -3601,31 +3937,28 @@
     playOutcomeSfx(outcome, outgoing, incoming);
 
     if (outgoing > 0) {
-      enemy.hp = Math.max(0, enemy.hp - outgoing);
-      run.player.totalDamageDealt += outgoing;
-      if (encounter.critTriggered) {
-        spawnFloatText(`CRIT -${outgoing}`, WIDTH * 0.72, 124, "#ffe4a8", {
-          size: 58,
-          life: 1.45,
-          vy: 9,
-          weight: 800,
-          jitter: true,
-          glow: "#ffb86a",
-        });
-      } else {
-        spawnFloatText(`-${outgoing}`, WIDTH * 0.72, 108, "#ff916e");
+      const outgoingPayload = {
+        target: "enemy",
+        amount: outgoing,
+        color: outcome === "blackjack" ? "#f8d37b" : "#ff916e",
+        crit: encounter.critTriggered,
+      };
+      if (!triggerHandTackle("player", outgoing, outgoingPayload)) {
+        applyImpactDamage(outgoingPayload);
+        triggerImpactBurst("enemy", outgoing, outgoingPayload.color);
       }
-      triggerImpactBurst("enemy", outgoing, outcome === "blackjack" ? "#f8d37b" : "#ff916e");
-      triggerHandTackle("player", outgoing);
     }
 
     if (incoming > 0) {
-      run.player.hp = Math.max(0, run.player.hp - incoming);
-      run.player.totalDamageTaken += incoming;
-      run.player.streak = 0;
-      spawnFloatText(`-${incoming}`, WIDTH * 0.26, 576, "#ff86aa");
-      triggerImpactBurst("player", incoming, "#ff86aa");
-      triggerHandTackle("enemy", incoming);
+      const incomingPayload = {
+        target: "player",
+        amount: incoming,
+        color: "#ff86aa",
+      };
+      if (!triggerHandTackle("enemy", incoming, incomingPayload)) {
+        applyImpactDamage(incomingPayload);
+        triggerImpactBurst("player", incoming, incomingPayload.color);
+      }
     } else if (outgoing > 0) {
       run.player.streak += 1;
       run.maxStreak = Math.max(run.maxStreak || 0, run.player.streak);
@@ -3699,27 +4032,7 @@
     addLog(text);
     run.totalHands += 1;
     updateProfileBest(run);
-
-    if (run.player.hp <= 0) {
-      startDefeatTransition("player");
-      setAnnouncement("You were defeated.", 1.2);
-      addLog("You were defeated.");
-      saveRunSnapshot();
-      return;
-    }
-
-    if (enemy.hp <= 0) {
-      startDefeatTransition("enemy");
-      setAnnouncement(`${enemy.name} down!`, 1.2);
-      addLog(`${enemy.name} is down.`);
-      saveRunSnapshot();
-      return;
-    }
-
-    encounter.phase = "resolve";
-    encounter.nextDealPrompted = false;
-    encounter.resolveTimer = 0;
-    saveRunSnapshot();
+    finalizeResolveState();
   }
 
   function onEncounterWin() {
@@ -4437,14 +4750,13 @@
 
     if (state.mode === "shop") {
       Object.values(mobileButtons).forEach(clearMobileButtonAttention);
-      const selectedItem = state.shopStock[state.selectionIndex];
-      const canBuy = Boolean(selectedItem && !selectedItem.sold && state.run && !state.run.shopPurchaseMade);
       setMobileButton(mobileButtons.left, "Prev", false, false);
       setMobileButton(mobileButtons.right, "Next", false, false);
-      setMobileButton(mobileButtons.double, "Buy", canBuy, true);
+      setMobileButton(mobileButtons.double, "Buy", false, false);
       setMobileButton(mobileButtons.confirm, "Continue", true, true);
       setMobileButton(mobileButtons.hit, "Hit", false, false);
       setMobileButton(mobileButtons.stand, "Stand", false, false);
+      mobileControls.classList.add("single-action-only");
       return;
     }
 
@@ -4513,7 +4825,9 @@
       } else if (state.mode === "collection") {
         state.mode = "menu";
       } else if (state.mode === "playing") {
-        if (canAdvanceDeal()) {
+        if (isEncounterIntroActive()) {
+          confirmEncounterIntro();
+        } else if (canAdvanceDeal()) {
           advanceToNextDeal();
         } else {
           splitAction();
@@ -4659,6 +4973,15 @@
     }
     unlockAudio();
     if (state.mode === "collection") {
+      event.preventDefault();
+      return;
+    }
+    if (state.mode === "playing" && isEncounterIntroActive()) {
+      const point = canvasPointToWorld(event.clientX, event.clientY);
+      const intro = state.encounter?.intro;
+      if (point && intro?.confirmRect && pointInRect(point.x, point.y, intro.confirmRect)) {
+        confirmEncounterIntro();
+      }
       event.preventDefault();
       return;
     }
@@ -4905,6 +5228,12 @@
     }
 
     if (state.mode === "playing") {
+      if (isEncounterIntroActive()) {
+        if (key === "enter" || key === "space") {
+          confirmEncounterIntro();
+        }
+        return;
+      }
       if (key === "a") {
         hitAction();
       } else if (key === "b") {
@@ -5027,6 +5356,9 @@
         tackle.impacted = true;
         triggerImpactBurstAt(tackle.toX, tackle.toY, tackle.amount + 2, tackle.color);
         playGruntSfx();
+        if (tackle.impactPayload) {
+          applyImpactDamage(tackle.impactPayload);
+        }
       } else if (!tackle.impacted && Math.random() < dt * 24) {
         spawnSparkBurst(currentX, currentY, tackle.color, 2, 68);
       }
@@ -5063,6 +5395,10 @@
         state.announcement = "";
         state.announcementDuration = 0;
       }
+    }
+
+    if (state.mode === "playing" && state.encounter) {
+      updateEncounterIntroTyping(state.encounter, dt);
     }
 
     if (state.mode !== "reward") {
@@ -5218,18 +5554,20 @@
     const value = String(amountText || "0");
 
     ctx.save();
-    ctx.textAlign = align;
+    ctx.textAlign = "left";
     ctx.textBaseline = baseline;
     setFont(fontSize, 700, false);
 
     const textW = ctx.measureText(value).width;
     const totalW = iconSize + gap + textW;
-    let startX = x;
+    let leftX = x;
     if (align === "center") {
-      startX = x - totalW * 0.5;
+      leftX = x - totalW * 0.5;
     } else if (align === "right") {
-      startX = x - totalW;
+      leftX = x - totalW;
     }
+    const iconX = leftX;
+    const textX = iconX + iconSize + gap;
     const iconY = y - iconSize * 0.5;
 
     if (chipIconImage.complete && chipIconImage.naturalWidth > 0 && chipIconImage.naturalHeight > 0) {
@@ -5244,19 +5582,38 @@
       } else {
         ctx.filter = "grayscale(1) brightness(0) invert(1)";
       }
-      ctx.drawImage(chipIconImage, startX, iconY, iconSize, iconSize);
+      ctx.drawImage(chipIconImage, iconX, iconY, iconSize, iconSize);
       ctx.filter = oldFilter;
       ctx.restore();
     } else {
       ctx.fillStyle = iconColor;
       ctx.beginPath();
-      ctx.arc(startX + iconSize * 0.5, iconY + iconSize * 0.5, iconSize * 0.42, 0, Math.PI * 2);
+      ctx.arc(iconX + iconSize * 0.5, iconY + iconSize * 0.5, iconSize * 0.42, 0, Math.PI * 2);
       ctx.fill();
     }
 
     ctx.fillStyle = textColor;
-    ctx.fillText(value, startX + iconSize + gap, y);
+    ctx.fillText(value, textX, y);
     ctx.restore();
+  }
+
+  function combatArenaBounds() {
+    const row = hudRowMetrics();
+    const frameTop = Math.round(row.rowBottomY + (row.hud.portrait ? 8 : 10));
+    const frameX = Math.round(row.hud.left - 4);
+    const frameW = Math.round(row.hud.span + 8);
+    const frameBottomPad = row.hud.portrait ? 8 : 10;
+    const frameH = Math.max(120, HEIGHT - frameTop - frameBottomPad);
+    return {
+      x: frameX,
+      y: frameTop,
+      w: frameW,
+      h: frameH,
+      top: frameTop,
+      right: frameX + frameW,
+      bottom: frameTop + frameH,
+      left: frameX,
+    };
   }
 
   function drawBackground() {
@@ -5306,14 +5663,20 @@
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
+    const arena = combatArenaBounds();
+    const frameTop = arena.y;
+    const frameX = arena.x;
+    const frameW = arena.w;
+    const frameH = arena.h;
+
     ctx.strokeStyle = "rgba(103, 168, 224, 0.12)";
     ctx.lineWidth = 2;
-    roundRect(36, 86, WIDTH - 72, HEIGHT - 144, 24);
+    roundRect(frameX, frameTop, frameW, frameH, 24);
     ctx.stroke();
 
     ctx.strokeStyle = "rgba(166, 215, 245, 0.16)";
     ctx.lineWidth = 1;
-    roundRect(40, 90, WIDTH - 80, HEIGHT - 152, 22);
+    roundRect(frameX + 4, frameTop + 4, frameW - 8, frameH - 8, 22);
     ctx.stroke();
   }
 
@@ -5386,11 +5749,11 @@
     return rankValue(encounter.dealerHand[0].rank);
   }
 
-  function drawHand(hand, type, hideSecond, yOffset = 0) {
+  function drawHand(hand, type, hideSecond, yOffset = 0, layoutScale = 1) {
     const total = hand.length;
     const renderedCards = [];
     for (let i = 0; i < total; i += 1) {
-      const pos = handCardPosition(type, i, total);
+      const pos = handCardPosition(type, i, total, layoutScale);
       const animated = animatedCardPosition(hand[i], pos.x, pos.y + yOffset);
       ctx.save();
       ctx.globalAlpha = animated.alpha;
@@ -5408,14 +5771,14 @@
     return renderedCards;
   }
 
-  function handBounds(handType, count, yOffset = 0) {
+  function handBounds(handType, count, yOffset = 0, layoutScale = 1) {
     const safeCount = Math.max(1, count);
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
     let maxX = Number.NEGATIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
     for (let i = 0; i < safeCount; i += 1) {
-      const pos = handCardPosition(handType, i, safeCount);
+      const pos = handCardPosition(handType, i, safeCount, layoutScale);
       minX = Math.min(minX, pos.x);
       minY = Math.min(minY, pos.y + yOffset);
       maxX = Math.max(maxX, pos.x + pos.w);
@@ -5462,8 +5825,8 @@
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
     const intensity = enemyAvatarIntensity(enemy);
     const accent = enemyAvatarAccent(enemy.type);
-    const panelW = portrait ? 68 : 140;
-    const panelH = portrait ? 80 : 171;
+    const panelW = portrait ? 102 : 140;
+    const panelH = portrait ? 120 : 171;
     const defaultX = portrait ? cropX + 24 : WIDTH - cropX - panelW - 44;
     const defaultY = portrait ? 78 : 94;
     const anchorGap = portrait ? 8 : 14;
@@ -5533,8 +5896,8 @@
 
   function drawPlayerAvatarPanel(portrait, anchor = null, position = null) {
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
-    const panelW = portrait ? 45 : 93;
-    const panelH = portrait ? 53 : 114;
+    const panelW = portrait ? 90 : 93;
+    const panelH = portrait ? 106 : 114;
     const defaultX = portrait ? cropX + 24 : cropX + 44;
     const defaultY = portrait ? HEIGHT - panelH - 154 : HEIGHT - panelH - 138;
     const anchorGap = portrait ? 8 : 14;
@@ -5604,6 +5967,176 @@
     };
   }
 
+  function drawEnemyIntroPortrait(enemy, x, y, w, h, radius = 16) {
+    if (!enemy) {
+      return null;
+    }
+    const avatar = enemyAvatarImage(enemy);
+    const accent = enemyAvatarAccent(enemy.type);
+    const intensity = enemyAvatarIntensity(enemy);
+
+    roundRect(x, y, w, h, radius);
+    const panelGradient = ctx.createLinearGradient(x, y, x, y + h);
+    panelGradient.addColorStop(0, "rgba(20, 44, 66, 0.96)");
+    panelGradient.addColorStop(1, "rgba(11, 24, 38, 0.95)");
+    ctx.fillStyle = panelGradient;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(170, 210, 239, 0.4)";
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    const inset = 7;
+    const innerX = x + inset;
+    const innerY = y + inset;
+    const innerW = Math.max(10, w - inset * 2);
+    const innerH = Math.max(10, h - inset * 2);
+    ctx.save();
+    roundRect(innerX, innerY, innerW, innerH, Math.max(10, radius - 4));
+    ctx.clip();
+    const bg = ctx.createLinearGradient(innerX, innerY, innerX, innerY + innerH);
+    bg.addColorStop(0, "rgba(18, 36, 52, 0.94)");
+    bg.addColorStop(1, "rgba(10, 20, 30, 0.96)");
+    ctx.fillStyle = bg;
+    ctx.fillRect(innerX, innerY, innerW, innerH);
+
+    if (avatar) {
+      const oldFilter = ctx.filter;
+      const sat = Math.round((1.08 + intensity * 0.64) * 100);
+      const contrast = Math.round((1.05 + intensity * 0.3) * 100);
+      const brightness = Math.round((1.03 + intensity * 0.06) * 100);
+      ctx.filter = `saturate(${sat}%) contrast(${contrast}%) brightness(${brightness}%)`;
+      drawImageCover(avatar, innerX, innerY, innerW, innerH, 0.5, 0.24);
+      ctx.filter = oldFilter;
+    } else {
+      const cx = innerX + innerW * 0.5;
+      const headR = Math.max(6, innerW * 0.14);
+      const headY = innerY + innerH * 0.32;
+      ctx.fillStyle = "rgba(208, 225, 242, 0.72)";
+      ctx.beginPath();
+      ctx.arc(cx, headY, headR, 0, Math.PI * 2);
+      ctx.fill();
+      const torsoW = innerW * 0.58;
+      const torsoH = innerH * 0.42;
+      roundRect(cx - torsoW * 0.5, headY + headR * 0.85, torsoW, torsoH, torsoW * 0.2);
+      ctx.fillStyle = "rgba(184, 204, 224, 0.62)";
+      ctx.fill();
+    }
+    const gloss = ctx.createLinearGradient(innerX, innerY, innerX, innerY + innerH);
+    gloss.addColorStop(0, "rgba(255, 255, 255, 0.11)");
+    gloss.addColorStop(0.56, "rgba(255, 255, 255, 0.02)");
+    gloss.addColorStop(1, "rgba(0, 0, 0, 0.22)");
+    ctx.fillStyle = gloss;
+    ctx.fillRect(innerX, innerY, innerW, innerH);
+    ctx.restore();
+
+    ctx.save();
+    roundRect(x - 2, y - 2, w + 4, h + 4, radius + 2);
+    ctx.strokeStyle = accent.rim;
+    ctx.lineWidth = 1.5 + intensity * 0.9;
+    ctx.shadowColor = accent.glow;
+    ctx.shadowBlur = 14 + intensity * 16;
+    ctx.globalAlpha = 0.5;
+    ctx.stroke();
+    ctx.restore();
+    return { x, y, w, h };
+  }
+
+  function drawEncounterIntroModal(encounter) {
+    const intro = encounter?.intro;
+    if (!intro || !intro.active) {
+      return;
+    }
+
+    const portrait = Boolean(state.viewport?.portraitZoomed);
+    const arena = combatArenaBounds();
+    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+    const visibleW = Math.max(320, WIDTH - cropX * 2);
+    const panelW = portrait ? Math.max(330, Math.min(560, visibleW - 24)) : Math.max(620, Math.min(820, visibleW - 140));
+    const panelH = portrait ? 304 : 284;
+    const panelX = Math.round(WIDTH * 0.5 - panelW * 0.5);
+    const panelY = Math.round(
+      clampNumber(arena.y + (arena.h - panelH) * 0.5, arena.y + 12, Math.max(arena.y + 12, arena.bottom - panelH - 12), arena.y + 24)
+    );
+
+    ctx.fillStyle = "rgba(5, 11, 17, 0.56)";
+    ctx.fillRect(arena.x, arena.y, arena.w, arena.h);
+
+    roundRect(panelX, panelY, panelW, panelH, 22);
+    const panelFill = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    panelFill.addColorStop(0, "rgba(22, 41, 58, 0.97)");
+    panelFill.addColorStop(1, "rgba(12, 24, 36, 0.96)");
+    ctx.fillStyle = panelFill;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(176, 214, 242, 0.38)";
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+
+    const portraitW = portrait ? 118 : 168;
+    const portraitH = portrait ? 146 : 208;
+    const portraitX = panelX + 20;
+    const portraitY = panelY + 22;
+    drawEnemyIntroPortrait(encounter.enemy, portraitX, portraitY, portraitW, portraitH, portrait ? 14 : 18);
+
+    const textX = portraitX + portraitW + (portrait ? 16 : 24);
+    const textRightPad = portrait ? 18 : 24;
+    const textW = Math.max(180, panelX + panelW - textX - textRightPad);
+    const titleY = panelY + (portrait ? 52 : 60);
+    const subtitleY = titleY + (portrait ? 28 : 30);
+
+    ctx.textAlign = "left";
+    ctx.fillStyle = encounter.enemy?.color || "#93c4f4";
+    setFont(portrait ? 24 : 30, 700, true);
+    ctx.fillText(String(encounter.enemy?.name || "Dealer").toUpperCase(), textX, titleY);
+    ctx.fillStyle = "#a8c9e3";
+    setFont(portrait ? 11 : 13, 700, false);
+    ctx.fillText(`${String(encounter.enemy?.type || "normal").toUpperCase()} ENCOUNTER`, textX, subtitleY);
+
+    const typed = (intro.dialogue || "").slice(0, Math.max(0, Math.floor(intro.visibleChars || 0)));
+    const lineHeight = portrait ? 21 : 25;
+    const messageY = subtitleY + (portrait ? 26 : 30);
+    ctx.fillStyle = "#def1ff";
+    setFont(portrait ? 16 : 19, 600, false);
+    const messageLines = wrappedLines(typed || " ", textW).slice(0, 4);
+    messageLines.forEach((line, idx) => {
+      ctx.fillText(line, textX, messageY + idx * lineHeight);
+    });
+    if (!intro.ready && Math.floor(state.worldTime * 2.4) % 2 === 0) {
+      const cursorLine = messageLines.length > 0 ? messageLines[messageLines.length - 1] : "";
+      const cursorX = textX + Math.min(textW - 10, ctx.measureText(cursorLine).width + 6);
+      const cursorY = messageY + Math.max(0, messageLines.length - 1) * lineHeight - 16;
+      ctx.fillRect(cursorX, cursorY, 5, 18);
+    }
+
+    const buttonW = portrait ? 158 : 188;
+    const buttonH = portrait ? 44 : 50;
+    const buttonX = panelX + panelW - buttonW - 22;
+    const buttonY = panelY + panelH - buttonH - 18;
+    intro.confirmRect = {
+      x: buttonX,
+      y: buttonY,
+      w: buttonW,
+      h: buttonH,
+    };
+
+    roundRect(buttonX, buttonY, buttonW, buttonH, 12);
+    if (intro.ready) {
+      const buttonFill = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + buttonH);
+      buttonFill.addColorStop(0, "rgba(242, 208, 140, 0.98)");
+      buttonFill.addColorStop(1, "rgba(220, 171, 87, 0.97)");
+      ctx.fillStyle = buttonFill;
+    } else {
+      ctx.fillStyle = "rgba(74, 86, 100, 0.72)";
+    }
+    ctx.fill();
+    ctx.strokeStyle = intro.ready ? "rgba(255, 245, 216, 0.5)" : "rgba(188, 205, 220, 0.22)";
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+    ctx.fillStyle = intro.ready ? "#15263a" : "rgba(220, 235, 248, 0.62)";
+    ctx.textAlign = "center";
+    setFont(portrait ? 18 : 20, 700, true);
+    ctx.fillText("Let's go!", buttonX + buttonW * 0.5, buttonY + buttonH * 0.64);
+  }
+
   function drawEncounter() {
     if (!state.encounter || !state.run) {
       state.handMessageAnchor = null;
@@ -5613,10 +6146,16 @@
 
     const encounter = state.encounter;
     const enemy = encounter.enemy;
+    if (encounter.intro) {
+      encounter.intro.confirmRect = null;
+    }
     const portrait = Boolean(state.viewport?.portraitZoomed);
+    const arena = combatArenaBounds();
 
     const playerTotal = encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total;
     const dealerTotal = visibleDealerTotal(encounter);
+    const hasDealerCards = encounter.dealerHand.length > 0;
+    const hasPlayerCards = encounter.playerHand.length > 0;
     const dealerCount = Math.max(1, encounter.dealerHand.length);
     const playerCount = Math.max(1, encounter.playerHand.length);
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
@@ -5625,50 +6164,82 @@
     const barH = 24;
     const handLabelGap = 24;
     const handLabelClearance = 14;
-    const splitExtra = encounter.splitUsed ? 20 : 0;
-    const enemyAvatarW = portrait ? 68 : 140;
-    const enemyAvatarH = portrait ? 80 : 171;
-    const playerAvatarW = portrait ? 45 : 93;
-    const playerAvatarH = portrait ? 53 : 114;
+    const enemyAvatarW = portrait ? 102 : 140;
+    const enemyAvatarH = portrait ? 120 : 171;
+    const playerAvatarW = portrait ? 90 : 93;
+    const playerAvatarH = portrait ? 106 : 114;
     const groupGap = portrait ? 8 : 12;
     const groupPad = portrait ? 18 : 24;
     const colW = fixedBarW;
-    const enemyGroupY = portrait ? 96 : 102;
-    const enemyAvatarX = WIDTH - cropX - groupPad - enemyAvatarW;
+    const arenaTop = arena.y;
+    const arenaBottom = arena.bottom;
+    const enemyGroupY = arenaTop + groupPad;
+    const enemyAvatarX = arena.right - groupPad - enemyAvatarW;
     const enemyColX = enemyAvatarX - groupGap - colW;
-    const playerGroupY = HEIGHT - playerAvatarH - (portrait ? 16 : 20);
-    const playerAvatarX = cropX + groupPad;
+    const playerGroupY = arenaBottom - groupPad - playerAvatarH;
+    const playerAvatarX = arena.x + groupPad;
     const playerColX = playerAvatarX + playerAvatarW + groupGap;
     const groupNameY = portrait ? 17 : 19;
     const groupBarY = portrait ? 24 : 28;
     const enemyTypeGap = portrait ? 15 : 18;
     const enemyBarGap = portrait ? 14 : 16;
 
-    const baseDealerBox = handBounds("dealer", dealerCount, 0);
-    const basePlayerBox = handBounds("player", playerCount, 0);
-    // Keep dealer hand, center message lane, and player hand as one centered canvas group.
-    const reservedMessageH = portrait ? 72 : 84;
-    const sectionGap = portrait ? 14 : 18;
-    const totalStackH = baseDealerBox.h + sectionGap + reservedMessageH + sectionGap + basePlayerBox.h;
-    const topBarHeight = hudRowMetrics().statsH;
-    const stackTop = HEIGHT * 0.5 - totalStackH * 0.5 + topBarHeight * 0.5;
-    const dealerTargetY = stackTop;
-    const playerTargetY = stackTop + baseDealerBox.h + sectionGap + reservedMessageH + sectionGap;
-    const dealerYOffset = dealerTargetY - baseDealerBox.y;
-    const playerYOffset = playerTargetY - basePlayerBox.y;
+    const leftBound = arena.x + 8;
+    const rightBound = arena.right - 8;
+    const stackAreaTop = arenaTop + (portrait ? 12 : 16);
+    const stackAreaBottom = arenaBottom - (portrait ? 12 : 16);
+    const reservedMessageBaseH = portrait ? 54 : 84;
+    const sectionGapBase = portrait ? 10 : 18;
+
+    const baseDealerBox = handBounds("dealer", dealerCount, 0, 1);
+    const basePlayerBox = handBounds("player", playerCount, 0, 1);
+    const availableStackH = Math.max(160, stackAreaBottom - stackAreaTop);
+    const availableStackW = Math.max(220, rightBound - leftBound - (portrait ? 8 : 16));
+    const baseCardsH = Math.max(1, baseDealerBox.h + basePlayerBox.h);
+    const baseCardsW = Math.max(baseDealerBox.w, basePlayerBox.w);
+    const heightScale = (availableStackH - reservedMessageBaseH - sectionGapBase * 2) / baseCardsH;
+    const widthScale = availableStackW / Math.max(1, baseCardsW);
+    const cardScale = clampNumber(Math.min(1, heightScale, widthScale), portrait ? 0.5 : 0.56, 1, 1);
+
+    const dealerBaseScaled = handBounds("dealer", dealerCount, 0, cardScale);
+    const playerBaseScaled = handBounds("player", playerCount, 0, cardScale);
+    const reservedMessageH = Math.max(portrait ? 42 : 66, Math.round(reservedMessageBaseH * (0.9 + cardScale * 0.1)));
+    const sectionGap = Math.max(portrait ? 8 : 12, Math.round(sectionGapBase * Math.max(0.84, cardScale)));
+    const dealerLabelPadTop = handLabelClearance + Math.round(18 * Math.max(0.88, cardScale));
+    const playerLabelPadBottom =
+      handLabelGap +
+      Math.round((encounter.splitUsed ? 42 : 24) * Math.max(0.88, cardScale));
+    const totalStackH =
+      dealerLabelPadTop +
+      dealerBaseScaled.h +
+      sectionGap +
+      reservedMessageH +
+      sectionGap +
+      playerBaseScaled.h +
+      playerLabelPadBottom;
+    const stackTop = clampNumber(
+      stackAreaTop + (availableStackH - totalStackH) * 0.5,
+      stackAreaTop,
+      Math.max(stackAreaTop, stackAreaBottom - totalStackH),
+      stackAreaTop
+    );
+    const dealerTargetY = stackTop + dealerLabelPadTop;
+    const playerTargetY =
+      stackTop + dealerLabelPadTop + dealerBaseScaled.h + sectionGap + reservedMessageH + sectionGap;
+    const dealerYOffset = dealerTargetY - dealerBaseScaled.y;
+    const playerYOffset = playerTargetY - playerBaseScaled.y;
 
     const dealerCards = drawHand(
       encounter.dealerHand,
       "dealer",
       encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player",
-      dealerYOffset
+      dealerYOffset,
+      cardScale
     );
-    const playerCards = drawHand(encounter.playerHand, "player", false, playerYOffset);
+    const playerCards = drawHand(encounter.playerHand, "player", false, playerYOffset, cardScale);
 
-    const dealerBox = handBounds("dealer", dealerCount, dealerYOffset);
-    const playerBox = handBounds("player", playerCount, playerYOffset);
-    const leftBound = 24 + cropX;
-    const rightBound = WIDTH - 24 - cropX;
+    const dealerBox = handBounds("dealer", dealerCount, dealerYOffset, cardScale);
+    const playerBox = handBounds("player", playerCount, playerYOffset, cardScale);
     const dealerBottom = dealerBox.y + dealerBox.h;
     const playerTop = playerBox.y;
     const gapCenter = dealerBottom + (playerTop - dealerBottom) * 0.5;
@@ -5685,13 +6256,13 @@
       x: enemyAvatarX,
       y: enemyGroupY,
     });
-    ctx.textAlign = "left";
+    ctx.textAlign = "right";
     ctx.fillStyle = enemy.color;
-    setFont(portrait ? 18 : 22, 700, true);
-    ctx.fillText(enemy.name, enemyColX, enemyNameY);
+    setFont(portrait ? 16 : 19, 700, true);
+    ctx.fillText(String(enemy.name || "").toUpperCase(), enemyColX + fixedBarW, enemyNameY);
     ctx.fillStyle = "#9fc2dc";
-    setFont(portrait ? 11 : 13, 600, false);
-    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, enemyColX, enemyTypeY);
+    setFont(portrait ? 10 : 12, 600, false);
+    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, enemyColX + fixedBarW, enemyTypeY);
     drawHealthBar(
       dealerBarX,
       dealerBarY,
@@ -5704,12 +6275,14 @@
     ctx.textAlign = "center";
     ctx.fillStyle = "#d7e8f8";
     setFont(17, 700, false);
-    const dealerHandLabelY = dealerBox.y - handLabelClearance;
-    ctx.fillText(
-      `Hand ${dealerTotal}${encounter.hideDealerHole && encounter.phase === "player" ? "+?" : ""}`,
-      dealerBox.centerX,
-      dealerHandLabelY
-    );
+    if (hasDealerCards) {
+      const dealerHandLabelY = dealerBox.y - handLabelClearance;
+      ctx.fillText(
+        `Hand ${dealerTotal}${encounter.hideDealerHole && encounter.phase === "player" ? "+?" : ""}`,
+        dealerBox.centerX,
+        dealerHandLabelY
+      );
+    }
 
     const playerBarX = playerColX;
     const playerBarY = playerGroupY + groupBarY;
@@ -5719,8 +6292,8 @@
     });
     ctx.textAlign = "left";
     ctx.fillStyle = "#cbe6ff";
-    setFont(portrait ? 18 : 22, 700, true);
-    ctx.fillText("Player", playerColX, playerGroupY + groupNameY);
+    setFont(portrait ? 16 : 19, 700, true);
+    ctx.fillText("PLAYER", playerColX, playerGroupY + groupNameY);
     drawHealthBar(
       playerBarX,
       playerBarY,
@@ -5733,14 +6306,23 @@
     ctx.textAlign = "center";
     ctx.fillStyle = "#d7e8f8";
     setFont(17, 700, false);
-    const playerLabelY = playerBox.y + playerBox.h + handLabelGap;
-    ctx.fillText(`Hand ${playerTotal}`, playerBox.centerX, playerLabelY);
-    if (encounter.splitUsed) {
+    if (hasPlayerCards) {
+      const playerLabelY = playerBox.y + playerBox.h + handLabelGap;
+      ctx.fillText(`Hand ${playerTotal}`, playerBox.centerX, playerLabelY);
+      if (encounter.splitUsed) {
+        const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, activeSplitHandCount(encounter)));
+        const splitIndex = Math.min(splitTotal, nonNegInt(encounter.splitHandsResolved, 0) + 1);
+        ctx.fillStyle = "#a8c6df";
+        setFont(14, 600, false);
+        ctx.fillText(`Split hand ${splitIndex}/${splitTotal}`, playerBox.centerX, playerLabelY + 20);
+      }
+    }
+    if (encounter.splitUsed && !hasPlayerCards) {
       const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, activeSplitHandCount(encounter)));
       const splitIndex = Math.min(splitTotal, nonNegInt(encounter.splitHandsResolved, 0) + 1);
       ctx.fillStyle = "#a8c6df";
       setFont(14, 600, false);
-      ctx.fillText(`Split hand ${splitIndex}/${splitTotal}`, playerBox.centerX, playerLabelY + 20);
+      ctx.fillText(`Split hand ${splitIndex}/${splitTotal}`, playerBox.centerX, playerBox.y + playerBox.h + handLabelGap + 20);
     }
     state.combatLayout = {
       dealerBox: { ...dealerBox },
@@ -5749,6 +6331,7 @@
       playerBar: { x: playerBarX, y: playerBarY, w: fixedBarW, h: barH },
       dealerCards: dealerCards.map((card) => ({ ...card })),
       playerCards: playerCards.map((card) => ({ ...card })),
+      cardScale,
       enemyPortrait: enemyPortrait ? { ...enemyPortrait } : null,
       playerPortrait: playerPortrait ? { ...playerPortrait } : null,
       playerPassiveAnchor:
@@ -5758,7 +6341,8 @@
               const canvasLeft = Number.parseFloat(canvas.style.left) || 0;
               const canvasTop = Number.parseFloat(canvas.style.top) || 0;
               return {
-                x: canvasLeft + (playerPortrait.x + playerPortrait.w + 8) * scale,
+                x: canvasLeft + playerBarX * scale,
+                yTop: canvasTop + (playerBarY + barH + (portrait ? 8 : 10)) * scale,
                 yBottom: canvasTop + (playerPortrait.y + playerPortrait.h) * scale,
               };
             })()
@@ -5785,13 +6369,13 @@
               : "rgba(170, 208, 233, 0.65)";
       const toneText = tone === "loss" ? "#ffd7d7" : tone === "win" ? "#d9ffea" : "#fff0c8";
       const centerY = handMessageAnchor(encounter).centerY;
-      const widthCap = Math.max(300, Math.min(portrait ? 450 : 560, visibleW - 100));
-      setFont(portrait ? 36 : 34, 700, true);
+      const widthCap = Math.max(portrait ? 230 : 300, Math.min(portrait ? 338 : 560, visibleW - (portrait ? 84 : 100)));
+      setFont(portrait ? 27 : 34, 700, true);
       const lines = wrappedLines(encounter.resultText, widthCap - 56).slice(0, 2);
-      const lineHeight = portrait ? 34 : 32;
+      const lineHeight = portrait ? 26 : 32;
       const textW = Math.max(...lines.map((line) => ctx.measureText(line).width));
       const panelW = Math.max(280, Math.min(widthCap, textW + 64));
-      const panelH = Math.max(56, 24 + lines.length * lineHeight);
+      const panelH = Math.max(portrait ? 42 : 56, 24 + lines.length * lineHeight);
       const panelY = clampNumber(centerY - panelH * 0.5, 182, HEIGHT - 214, centerY - panelH * 0.5);
       roundRect(WIDTH * 0.5 - panelW * 0.5, panelY, panelW, panelH, 16);
       ctx.fillStyle = toneFill;
@@ -5801,18 +6385,23 @@
       ctx.stroke();
       ctx.textAlign = "center";
       ctx.fillStyle = toneText;
-      setFont(portrait ? 34 : 32, 700, true);
+      setFont(portrait ? 25 : 32, 700, true);
       lines.forEach((line, idx) => {
-        const lineY = panelY + panelH * 0.5 - ((lines.length - 1) * lineHeight) * 0.5 + idx * lineHeight + 10;
+        const lineY = panelY + panelH * 0.5 - ((lines.length - 1) * lineHeight) * 0.5 + idx * lineHeight + (portrait ? 8 : 10);
         ctx.fillText(line, WIDTH * 0.5, lineY);
       });
+    }
+    if (isEncounterIntroActive(encounter)) {
+      drawEncounterIntroModal(encounter);
     }
   }
 
   function hudMetrics() {
     const cropWorldX = state.viewport?.cropWorldX || 0;
-    const left = 42 + cropWorldX;
-    const right = WIDTH - 42 - cropWorldX;
+    const portrait = Boolean(state.viewport?.portraitZoomed);
+    const pagePad = portrait ? 18 : 24;
+    const left = pagePad + cropWorldX;
+    const right = WIDTH - pagePad - cropWorldX;
     const span = Math.max(220, right - left);
     const barW = Math.max(130, Math.min(340, Math.floor((span - 34) * 0.5)));
     return {
@@ -5822,7 +6411,7 @@
       barW,
       leftBarX: left,
       rightBarX: right - barW,
-      portrait: Boolean(state.viewport?.portraitZoomed),
+      portrait,
       logMaxWidth: Math.max(190, Math.min(560, Math.floor(span * 0.8))),
       passiveMaxWidth: Math.max(180, Math.min(580, Math.floor(span * 0.84))),
     };
@@ -5830,9 +6419,18 @@
 
   function hudRowMetrics() {
     const hud = hudMetrics();
-    const rowTopY = hud.portrait ? 18 : 16;
-    const statsH = hud.portrait ? 52 : 56;
-    const actionReserve = 78;
+    const rowTopY = hud.portrait ? 10 : 8;
+    const statsH = hud.portrait ? 40 : 42;
+    const scale = Math.max(0.0001, state.viewport?.scale || 1);
+    const hasTopActions =
+      Boolean(state.run) &&
+      state.mode !== "menu" &&
+      state.mode !== "collection" &&
+      topRightActions &&
+      !topRightActions.hidden;
+    const actionReserve = hasTopActions
+      ? Math.max(98, Math.ceil((topRightActions.offsetWidth || 0) / scale) + 10)
+      : 0;
     return {
       hud,
       rowTopY,
@@ -5851,62 +6449,64 @@
     const row = hudRowMetrics();
     const hud = row.hud;
     const rowTopY = row.rowTopY;
-    const actionReserve = state.mode !== "menu" && state.mode !== "collection" ? 78 : 0;
-
-    const statsW = hud.portrait ? Math.min(266, Math.max(206, Math.floor(hud.span * 0.64))) : 296;
+    const actionReserve = row.actionReserve;
     const statsH = row.statsH;
-    const leftGap = hud.portrait ? 8 : 10;
-    const leftInfoX = hud.left;
-    const statsX = hud.right - statsW - actionReserve;
-    const leftInfoW = Math.max(220, statsX - leftInfoX - leftGap);
-    const statsY = rowTopY;
-    const leftInfoY = rowTopY;
-    roundRect(leftInfoX, leftInfoY, leftInfoW, statsH, 14);
-    const leftPanel = ctx.createLinearGradient(leftInfoX, leftInfoY, leftInfoX, leftInfoY + statsH);
-    leftPanel.addColorStop(0, "rgba(15, 30, 45, 0.9)");
-    leftPanel.addColorStop(1, "rgba(10, 20, 31, 0.92)");
-    ctx.fillStyle = leftPanel;
-    ctx.fill();
+    const rowX = hud.left;
+    const rowW = Math.max(220, hud.span - actionReserve);
+    const rowY = rowTopY;
+    const rowCenterY = rowY + statsH * 0.5;
 
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#dbeaf7";
-    setFont(hud.portrait ? 13 : 15, 700, false);
-    ctx.fillText(
-      `Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`,
-      leftInfoX + 8,
-      leftInfoY + Math.floor(statsH * 0.57)
-    );
+    const floorText = `Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`;
+    const rightStats = `Streak ${run.player.streak}  Guards ${run.player.bustGuardsLeft}`;
+    const chipIconSize = hud.portrait ? 34 : 40;
+    const chipFontSize = hud.portrait ? 15 : 17;
+    ctx.save();
+    ctx.textBaseline = "middle";
+    const chipsText = fitText(String(run.player.gold), Math.max(42, Math.floor(rowW * 0.16)));
+    setFont(chipFontSize, 700, false);
+    const chipTextW = ctx.measureText(chipsText).width;
+    const chipBlockW = chipIconSize + 2 + chipTextW;
 
-    roundRect(statsX, statsY, statsW, statsH, 14);
-    const panel = ctx.createLinearGradient(statsX, statsY, statsX, statsY + statsH);
-    panel.addColorStop(0, "rgba(15, 30, 45, 0.9)");
-    panel.addColorStop(1, "rgba(10, 20, 31, 0.92)");
-    ctx.fillStyle = panel;
-    ctx.fill();
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#f4d88d";
-    setFont(hud.portrait ? 18 : 21, 700, false);
-    const leftPad = hud.portrait ? 8 : 8;
-    const rightPad = 8;
-    const splitX = statsX + Math.max(hud.portrait ? 78 : 92, Math.floor(statsW * 0.33));
-    const chipsAreaW = Math.max(58, splitX - statsX - leftPad - 6);
-    const chipsText = fitText(String(run.player.gold), Math.max(42, chipsAreaW - 48));
-    drawChipAmount(statsX + leftPad, statsY + Math.floor(statsH * 0.56), chipsText, {
-      iconSize: 40,
-      gap: 2,
+    const leftChipX = rowX;
+    drawChipAmount(leftChipX, rowCenterY, chipsText, {
+      iconSize: chipIconSize,
+      gap: 1.5,
       textColor: "#f6e6a6",
       iconColor: "#f2ca86",
-      fontSize: 17,
+      fontSize: chipFontSize,
       baseline: "middle",
       align: "left",
     });
 
-    ctx.fillStyle = "#b7ddff";
-    setFont(hud.portrait ? 13 : 15, 700, false);
-    const stackX = splitX + rightPad;
-    const statLineY = statsY + Math.floor(statsH * 0.57);
-    ctx.fillText(`Streak ${run.player.streak}   Guards ${run.player.bustGuardsLeft}`, stackX, statLineY);
+    const statsX = leftChipX + chipBlockW + 14;
+    if (hud.portrait) {
+      const columnW = Math.max(120, rowW - chipBlockW - 18);
+      const columnX = statsX;
+      const lineOneY = rowY + Math.max(12, Math.round(statsH * 0.34));
+      const lineTwoY = rowY + Math.max(28, Math.round(statsH * 0.76));
+
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#dbeaf7";
+      setFont(13, 700, false);
+      ctx.fillText(fitText(floorText, columnW), columnX, lineOneY);
+
+      ctx.fillStyle = "#b7ddff";
+      setFont(13, 700, false);
+      ctx.fillText(fitText(rightStats, columnW), columnX, lineTwoY);
+    } else {
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#b7ddff";
+      setFont(15, 700, false);
+      ctx.fillText(rightStats, statsX, rowCenterY);
+
+      const floorCenterX = (hud.left + hud.right) * 0.5;
+      const floorMaxW = 360;
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#dbeaf7";
+      setFont(15, 700, false);
+      ctx.fillText(fitText(floorText, floorMaxW), floorCenterX, rowCenterY);
+    }
+    ctx.restore();
   }
 
   function carouselDelta(index, selected, length) {
@@ -6234,36 +6834,82 @@
     setFont(portrait ? 34 : 40, 700, true);
     ctx.fillText("Black Market", WIDTH * 0.5, layout.panelY + 48);
 
-    const pillY = layout.panelY + 104;
-    const chipPillW = 210;
-    const hpPillW = 190;
-    roundRect(layout.centerX - chipPillW - 12, pillY, chipPillW, 34, 12);
+    ctx.fillStyle = "#9fc2dc";
+    setFont(portrait ? 12 : 13, 600, false);
+    ctx.fillText("One purchase per market. Choose carefully.", WIDTH * 0.5, layout.panelY + (portrait ? 70 : 76));
+
+    const pillY = layout.panelY + (portrait ? 92 : 98);
+    const pillH = 36;
+    const pillGap = portrait ? 8 : 14;
+    const pillPadX = portrait ? 14 : 16;
+    let chipPillW = 220;
+    let hpPillW = 198;
+    let chipPillX = layout.centerX - pillGap * 0.5 - chipPillW;
+    let hpPillX = layout.centerX + pillGap * 0.5;
+    let chipPillY = pillY;
+    let hpPillY = pillY;
+    if (portrait) {
+      chipPillW = Math.max(148, layout.panelW - pillPadX * 2);
+      hpPillW = chipPillW;
+      chipPillX = layout.panelX + pillPadX;
+      hpPillX = chipPillX;
+      hpPillY = chipPillY + pillH + pillGap;
+    } else {
+      const maxRowW = Math.max(300, layout.panelW - pillPadX * 2);
+      const desiredW = chipPillW + hpPillW + pillGap;
+      const scale = Math.min(1, maxRowW / desiredW);
+      chipPillW = Math.round(chipPillW * scale);
+      hpPillW = Math.round(hpPillW * scale);
+      const rowW = chipPillW + hpPillW + pillGap;
+      chipPillX = layout.centerX - rowW * 0.5;
+      hpPillX = chipPillX + chipPillW + pillGap;
+    }
+
+    roundRect(chipPillX, chipPillY, chipPillW, pillH, 12);
     ctx.fillStyle = "rgba(14, 30, 46, 0.9)";
     ctx.fill();
     ctx.strokeStyle = "rgba(168, 206, 234, 0.34)";
     ctx.lineWidth = 1.1;
     ctx.stroke();
-    drawChipAmount(layout.centerX - chipPillW * 0.5 - 12, pillY + 17, String(run.player.gold), {
-      iconSize: 40,
-      gap: 2,
+    drawChipAmount(chipPillX + chipPillW * 0.5, chipPillY + pillH * 0.5 + 1, String(run.player.gold), {
+      iconSize: portrait ? 26 : 30,
+      gap: 4,
       textColor: "#f6e6a6",
       iconColor: "#f2ca86",
-      fontSize: 17,
-      baseline: "top",
-      align: "left",
+      fontSize: portrait ? 16 : 17,
+      baseline: "middle",
+      align: "center",
     });
 
-    roundRect(layout.centerX + 12, pillY, hpPillW, 34, 12);
+    roundRect(hpPillX, hpPillY, hpPillW, pillH, 12);
     ctx.fillStyle = "rgba(14, 30, 46, 0.9)";
     ctx.fill();
     ctx.strokeStyle = "rgba(168, 206, 234, 0.34)";
     ctx.lineWidth = 1.1;
     ctx.stroke();
     ctx.fillStyle = "#bff2ce";
-    setFont(17, 700, false);
-    ctx.fillText(`HP ${run.player.hp}/${run.player.maxHp}`, layout.centerX + hpPillW * 0.5 + 12, pillY + 23);
+    setFont(portrait ? 15 : 17, 700, false);
+    ctx.fillText(`HP ${run.player.hp}/${run.player.maxHp}`, hpPillX + hpPillW * 0.5, hpPillY + 24);
 
-    roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
+    const statusY = Math.max(chipPillY, hpPillY) + pillH + (portrait ? 14 : 18);
+    if (run.shopPurchaseMade) {
+      ctx.fillStyle = "#f2cf91";
+      setFont(portrait ? 12 : 13, 600, false);
+      ctx.fillText("Purchase complete. Leave market.", layout.centerX, statusY);
+    }
+
+    const viewportTop = Math.max(layout.viewportY, statusY + (run.shopPurchaseMade ? (portrait ? 12 : 14) : 0) + (portrait ? 14 : 16));
+    const viewportBottom = layout.panelY + layout.panelH - (portrait ? 52 : 58);
+    const viewportH = Math.max(portrait ? 156 : 186, viewportBottom - viewportTop);
+    const shopLayout = {
+      ...layout,
+      viewportY: viewportTop,
+      viewportH,
+      centerY: viewportTop + viewportH * 0.5,
+      arrowY: viewportTop + viewportH * 0.5,
+    };
+
+    roundRect(shopLayout.viewportX, shopLayout.viewportY, shopLayout.viewportW, shopLayout.viewportH, 20);
     ctx.fillStyle = "rgba(8, 18, 29, 0.76)";
     ctx.fill();
     ctx.strokeStyle = "rgba(138, 182, 213, 0.25)";
@@ -6271,16 +6917,18 @@
     ctx.stroke();
 
     ctx.save();
-    roundRect(layout.viewportX, layout.viewportY, layout.viewportW, layout.viewportH, 20);
+    roundRect(shopLayout.viewportX, shopLayout.viewportY, shopLayout.viewportW, shopLayout.viewportH, 20);
     ctx.clip();
 
-    const renderCards = buildCarouselCards(state.shopStock, selected, dragSteps, layout);
+    const renderCards = buildCarouselCards(state.shopStock, selected, dragSteps, shopLayout);
+    const cardUi = [];
     renderCards.forEach((card) => {
       const item = card.payload;
       const radius = Math.max(12, Math.floor(18 * (card.w / layout.mainW)));
       const purchaseLocked = Boolean(run.shopPurchaseMade);
       const affordable = run.player.gold >= item.cost;
       const buyEnabled = !purchaseLocked && !item.sold && affordable;
+      const buyLabel = item.sold ? "SOLD" : purchaseLocked ? "LOCKED" : buyEnabled ? "BUY" : "NEED CHIPS";
       ctx.save();
       if (card.selected) {
         ctx.shadowColor = "rgba(6, 12, 19, 0.84)";
@@ -6306,39 +6954,79 @@
         ctx.stroke();
       }
 
+      const badgeW = card.selected ? (portrait ? 92 : 104) : portrait ? 74 : 84;
+      const badgeH = portrait ? 23 : 24;
+      const badgeX = card.x + 12;
+      const badgeY = card.y + 12;
+      roundRect(badgeX, badgeY, badgeW, badgeH, 9);
+      ctx.fillStyle = item.type === "relic" ? "rgba(48, 76, 106, 0.92)" : "rgba(57, 83, 66, 0.92)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(176, 214, 241, 0.34)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = "#dbeafb";
+      setFont(portrait ? 11 : 12, 700, false);
+      ctx.fillText(item.type === "relic" ? "RELIC" : "SERVICE", badgeX + badgeW * 0.5, badgeY + 16);
+
       ctx.fillStyle = item.sold ? "#8f9aa7" : "#f4e1aa";
-      setFont(card.selected ? (portrait ? 28 : 33) : portrait ? 20 : 24, 700, true);
-      ctx.fillText(shopItemName(item), card.x + card.w * 0.5, card.y + (card.selected ? 60 : 48));
+      setFont(card.selected ? (portrait ? 24 : 30) : portrait ? 18 : 22, 700, true);
+      ctx.fillText(shopItemName(item), card.x + card.w * 0.5, card.y + (card.selected ? 70 : 62));
+
+      const btnW = Math.min(
+        card.w - (portrait ? 22 : 26),
+        card.selected ? card.w - (portrait ? 20 : 24) : card.w - (portrait ? 38 : 48)
+      );
+      const btnH = card.selected ? (portrait ? 38 : 46) : portrait ? 34 : 38;
+      const btnX = card.x + (card.w - btnW) * 0.5;
+      const btnY = card.y + card.h - btnH - (portrait ? 12 : 14);
+      const costPillW = card.selected ? (portrait ? 136 : 154) : portrait ? 122 : 132;
+      const costPillH = portrait ? 24 : 30;
+      const costPillX = card.x + (card.w - costPillW) * 0.5;
+      const costPillY = btnY - (portrait ? 8 : 10) - costPillH;
 
       ctx.fillStyle = item.sold ? "#78818d" : "#d4e6f4";
       if (card.selected) {
-        setFont(portrait ? 15 : 18, 600, false);
+        setFont(portrait ? 14 : 16, 600, false);
         const descMaxWidth = card.w - (portrait ? 56 : 64);
-        const descMaxLines = portrait ? 2 : 3;
-        const descLineHeight = portrait ? 18 : 22;
-        const descStartY = card.y + (portrait ? 100 : 112);
-        const descLines = wrappedLines(shopItemDescription(item), descMaxWidth);
-        const clipped = descLines.slice(0, descMaxLines);
-        if (descLines.length > descMaxLines && clipped.length > 0) {
-          const last = clipped.length - 1;
-          clipped[last] = fitText(`${clipped[last]}...`, descMaxWidth);
+        const descLineHeight = portrait ? 14 : 18;
+        const descStartY = card.y + (portrait ? 90 : 116);
+        const descBottomY = costPillY - (portrait ? 10 : 12);
+        const maxByHeight = Math.floor((descBottomY - descStartY) / descLineHeight) + 1;
+        const descMaxLines = Math.max(0, Math.min(portrait ? 3 : 4, maxByHeight));
+        if (descMaxLines > 0) {
+          const descLines = wrappedLines(shopItemDescription(item), descMaxWidth);
+          const clipped = descLines.slice(0, descMaxLines);
+          if (descLines.length > descMaxLines && clipped.length > 0) {
+            const last = clipped.length - 1;
+            clipped[last] = fitText(`${clipped[last]}...`, descMaxWidth);
+          }
+          clipped.forEach((line, idx) => {
+            ctx.fillText(line, card.x + card.w * 0.5, descStartY + idx * descLineHeight);
+          });
         }
-        clipped.forEach((line, idx) => {
-          ctx.fillText(line, card.x + card.w * 0.5, descStartY + idx * descLineHeight);
-        });
       } else {
-        setFont(portrait ? 13 : 15, 600, false);
-        ctx.fillText(item.sold ? "Sold out" : "Tap to select", card.x + card.w * 0.5, card.y + (portrait ? card.h - 68 : card.h - 86));
+        setFont(portrait ? 12 : 14, 600, false);
+        const preview = fitText(shopItemDescription(item), card.w - 48);
+        const previewY = Math.min(card.y + (portrait ? card.h - 94 : card.h - 108), costPillY - (portrait ? 10 : 14));
+        ctx.fillText(preview, card.x + card.w * 0.5, previewY);
       }
 
-      ctx.fillStyle = item.sold ? "#9ca5af" : "#ffd58f";
-      setFont(card.selected ? (portrait ? 22 : 24) : portrait ? 18 : 20, 700, false);
-      ctx.fillText(`${item.cost} chips`, card.x + card.w * 0.5, card.y + card.h - 66);
+      roundRect(costPillX, costPillY, costPillW, costPillH, 10);
+      ctx.fillStyle = "rgba(15, 35, 52, 0.92)";
+      ctx.fill();
+      ctx.strokeStyle = "rgba(170, 204, 230, 0.32)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      drawChipAmount(costPillX + costPillW * 0.5, costPillY + costPillH * 0.5, String(item.cost), {
+        iconSize: portrait ? 18 : 20,
+        gap: 4,
+        textColor: "#f6e6a6",
+        iconColor: "#f2ca86",
+        fontSize: portrait ? 14 : 15,
+        baseline: "middle",
+        align: "center",
+      });
 
-      const btnW = Math.min(card.w - (portrait ? 24 : 28), card.selected ? (portrait ? 174 : 188) : portrait ? 154 : 164);
-      const btnH = card.selected ? (portrait ? 34 : 36) : portrait ? 30 : 32;
-      const btnX = card.x + (card.w - btnW) * 0.5;
-      const btnY = card.y + card.h - btnH - (portrait ? 14 : 20);
       roundRect(btnX, btnY, btnW, btnH, 11);
       if (item.sold) {
         ctx.fillStyle = "rgba(86, 98, 111, 0.92)";
@@ -6355,31 +7043,79 @@
       ctx.stroke();
 
       ctx.fillStyle = "#ffffff";
-      setFont(card.selected ? (portrait ? 16 : 18) : portrait ? 14 : 16, 700, false);
-      const buyLabel = item.sold ? "Sold" : purchaseLocked ? "Locked" : buyEnabled ? "⛒ Buy" : "Need Chips";
-      ctx.fillText(buyLabel, card.x + card.w * 0.5, btnY + btnH - 11);
+      setFont(card.selected ? (portrait ? 16 : 18) : portrait ? 14 : 15, 700, false);
+      const labelY = btnY + btnH * 0.5 + 1;
+      const canShowBuyIcon =
+        buyLabel === "BUY" &&
+        buyIconImage.complete &&
+        buyIconImage.naturalWidth > 0 &&
+        buyIconImage.naturalHeight > 0;
+      if (canShowBuyIcon) {
+        const iconSize = portrait ? 18 : 20;
+        const iconGap = 8;
+        const labelW = ctx.measureText(buyLabel).width;
+        const groupW = iconSize + iconGap + labelW;
+        const groupX = btnX + (btnW - groupW) * 0.5;
+        ctx.save();
+        const oldFilter = ctx.filter;
+        ctx.filter = "grayscale(1) brightness(0) invert(1)";
+        ctx.drawImage(buyIconImage, groupX, labelY - iconSize * 0.5, iconSize, iconSize);
+        ctx.filter = oldFilter;
+        ctx.restore();
+        ctx.textAlign = "left";
+        ctx.fillText(buyLabel, groupX + iconSize + iconGap, labelY);
+        ctx.textAlign = "center";
+      } else {
+        ctx.fillText(buyLabel, card.x + card.w * 0.5, labelY);
+      }
+
+      cardUi.push({
+        index: card.idx,
+        selected: card.selected,
+        x: card.x,
+        y: card.y,
+        w: card.w,
+        h: card.h,
+        buyEnabled,
+        buyButton: {
+          x: btnX,
+          y: btnY,
+          w: btnW,
+          h: btnH,
+        },
+      });
 
       ctx.restore();
     });
 
     const edgeFadeW = Math.min(120, layout.viewportW * 0.16);
     const edgeFadeAlpha = state.compactControls ? 0.28 : 0.34;
-    const leftFade = ctx.createLinearGradient(layout.viewportX, 0, layout.viewportX + edgeFadeW, 0);
+    const leftFade = ctx.createLinearGradient(shopLayout.viewportX, 0, shopLayout.viewportX + edgeFadeW, 0);
     leftFade.addColorStop(0, `rgba(8, 18, 29, ${edgeFadeAlpha})`);
     leftFade.addColorStop(1, "rgba(8, 18, 29, 0)");
     ctx.fillStyle = leftFade;
-    ctx.fillRect(layout.viewportX, layout.viewportY, edgeFadeW, layout.viewportH);
+    ctx.fillRect(shopLayout.viewportX, shopLayout.viewportY, edgeFadeW, shopLayout.viewportH);
 
-    const rightFade = ctx.createLinearGradient(layout.viewportX + layout.viewportW - edgeFadeW, 0, layout.viewportX + layout.viewportW, 0);
+    const rightFade = ctx.createLinearGradient(
+      shopLayout.viewportX + shopLayout.viewportW - edgeFadeW,
+      0,
+      shopLayout.viewportX + shopLayout.viewportW,
+      0
+    );
     rightFade.addColorStop(0, "rgba(8, 18, 29, 0)");
     rightFade.addColorStop(1, `rgba(8, 18, 29, ${edgeFadeAlpha})`);
     ctx.fillStyle = rightFade;
-    ctx.fillRect(layout.viewportX + layout.viewportW - edgeFadeW, layout.viewportY, edgeFadeW, layout.viewportH);
+    ctx.fillRect(
+      shopLayout.viewportX + shopLayout.viewportW - edgeFadeW,
+      shopLayout.viewportY,
+      edgeFadeW,
+      shopLayout.viewportH
+    );
     ctx.restore();
 
     const canScroll = state.shopStock.length > 1;
-    drawRewardCarouselArrow(layout.leftArrowX, layout.arrowY, layout.arrowRadius, "◀", canScroll);
-    drawRewardCarouselArrow(layout.rightArrowX, layout.arrowY, layout.arrowRadius, "▶", canScroll);
+    drawRewardCarouselArrow(shopLayout.leftArrowX, shopLayout.arrowY, shopLayout.arrowRadius, "◀", canScroll);
+    drawRewardCarouselArrow(shopLayout.rightArrowX, shopLayout.arrowY, shopLayout.arrowRadius, "▶", canScroll);
 
     const indicatorY = layout.indicatorY;
     const dotGap = 22;
@@ -6394,26 +7130,12 @@
     }
 
     state.shopUi = {
-      cards: renderCards.map((card) => ({
-        index: card.idx,
-        selected: card.selected,
-        x: card.x,
-        y: card.y,
-        w: card.w,
-        h: card.h,
-        buyEnabled: Boolean(state.run && !state.run.shopPurchaseMade && !card.payload.sold && state.run.player.gold >= card.payload.cost),
-        buyButton: {
-          x: card.x + (card.w - Math.min(card.w - 28, card.selected ? 188 : 164)) * 0.5,
-          y: card.y + card.h - (card.selected ? 36 : 32) - 20,
-          w: Math.min(card.w - 28, card.selected ? 188 : 164),
-          h: card.selected ? 36 : 32,
-        },
-      })),
+      cards: cardUi,
       leftArrow: canScroll
-        ? { x: layout.leftArrowX, y: layout.arrowY, r: layout.arrowRadius }
+        ? { x: shopLayout.leftArrowX, y: shopLayout.arrowY, r: shopLayout.arrowRadius }
         : null,
       rightArrow: canScroll
-        ? { x: layout.rightArrowX, y: layout.arrowY, r: layout.arrowRadius }
+        ? { x: shopLayout.rightArrowX, y: shopLayout.arrowY, r: shopLayout.arrowRadius }
         : null,
     };
   }
@@ -7220,6 +7942,9 @@
       return ["enter(back)", "space(back)", "a(back)"];
     }
     if (state.mode === "playing") {
+      if (isEncounterIntroActive()) {
+        return state.encounter?.intro?.ready ? ["enter(let's-go)", "space(let's-go)", "tap(let's-go)"] : ["observe(intro)"];
+      }
       if (canAdvanceDeal()) {
         return ["enter(deal)", "tap(deal)"];
       }
@@ -7307,6 +8032,9 @@
             splitHandsTotal: Math.max(1, nonNegInt(encounter.splitHandsTotal, 1)),
             splitHandsResolved: Math.max(0, nonNegInt(encounter.splitHandsResolved, 0)),
             dealerResolved: Boolean(encounter.dealerResolved),
+            introActive: Boolean(encounter.intro?.active),
+            introReady: Boolean(encounter.intro?.ready),
+            introText: encounter.intro?.dialogue || "",
           }
         : null,
       rewards:
@@ -7518,6 +8246,44 @@
     requestAnimationFrame(gameLoop);
   }
 
+  function bindTopbarTooltip(button) {
+    if (!button) {
+      return;
+    }
+    button.addEventListener("pointerenter", (event) => {
+      if (event.pointerType === "touch") {
+        return;
+      }
+      showTopbarTooltip(button, button.dataset.uiTooltip || "");
+    });
+    button.addEventListener("pointermove", (event) => {
+      if (event.pointerType === "touch") {
+        return;
+      }
+      if (topbarTooltipAnchor === button && topbarTooltip && !topbarTooltip.hidden) {
+        positionTopbarTooltip(button);
+      }
+    });
+    button.addEventListener("pointerleave", () => {
+      if (topbarTooltipAnchor === button) {
+        hideTopbarTooltip();
+      }
+    });
+    button.addEventListener("focus", () => {
+      showTopbarTooltip(button, button.dataset.uiTooltip || "");
+    });
+    button.addEventListener("blur", () => {
+      if (topbarTooltipAnchor === button) {
+        hideTopbarTooltip();
+      }
+    });
+    button.addEventListener("pointerdown", () => {
+      if (topbarTooltipAnchor === button) {
+        hideTopbarTooltip();
+      }
+    });
+  }
+
   if (mobileButtons) {
     Object.entries(mobileButtons).forEach(([action, button]) => {
       if (!button) {
@@ -7531,6 +8297,7 @@
   }
 
   if (logsToggle) {
+    bindTopbarTooltip(logsToggle);
     logsToggle.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       unlockAudio();
@@ -7539,9 +8306,19 @@
   }
 
   if (achievementsToggle) {
+    bindTopbarTooltip(achievementsToggle);
     achievementsToggle.addEventListener("pointerdown", (event) => {
       event.preventDefault();
       unlockAudio();
+      if (state.run && state.mode !== "menu" && state.mode !== "collection") {
+        closeLogsModal();
+        closePassiveModal();
+        hidePassiveTooltip();
+        playUiSfx("confirm");
+        saveRunSnapshot();
+        state.mode = "menu";
+        return;
+      }
       if (state.mode === "menu") {
         openCollection(0);
       }
@@ -7637,6 +8414,15 @@
   document.addEventListener("pointerdown", (event) => {
     if (passiveTooltip && !passiveTooltip.hidden && passiveRail && !passiveRail.contains(event.target)) {
       hidePassiveTooltip();
+    }
+    if (
+      topbarTooltip &&
+      !topbarTooltip.hidden &&
+      topbarTooltipAnchor &&
+      event.target !== topbarTooltipAnchor &&
+      !topbarTooltipAnchor.contains(event.target)
+    ) {
+      hideTopbarTooltip();
     }
   });
 

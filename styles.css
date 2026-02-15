@@ -77,6 +77,12 @@ body.compact-controls.mobile-ui-active {
   padding-bottom: calc(170px + env(safe-area-inset-bottom));
 }
 
+body.mobile-ui-active:not(.menu-screen) {
+  padding-bottom: 0;
+  place-items: start center;
+  align-content: start;
+}
+
 body.menu-screen.mobile-ui-active,
 body.menu-screen.compact-controls.mobile-ui-active {
   padding: 0;
@@ -343,8 +349,8 @@ body.compact-controls.menu-ui-scale-xl #menu-home-title {
 
 #achievements-toggle,
 #logs-toggle {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   border: 0;
   border-radius: 12px;
   color: #15263a;
@@ -361,11 +367,11 @@ body.compact-controls.menu-ui-scale-xl #menu-home-title {
   background:
     linear-gradient(180deg, rgba(116, 141, 167, 0.95) 0%, rgba(71, 94, 118, 0.95) 100%);
   background-image:
-    url("public/images/icons/achievements.png"),
+    url("public/images/icons/home.png"),
     linear-gradient(180deg, rgba(116, 141, 167, 0.95) 0%, rgba(71, 94, 118, 0.95) 100%);
   background-repeat: no-repeat, no-repeat;
   background-position: center, center;
-  background-size: 18px 18px, 100% 100%;
+  background-size: 22px 22px, 100% 100%;
   filter: brightness(0.98);
 }
 
@@ -817,6 +823,21 @@ body.menu-screen #top-right-actions {
   margin-bottom: 3px;
 }
 
+#topbar-tooltip {
+  position: fixed;
+  max-width: min(260px, calc(100vw - 20px));
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(169, 208, 236, 0.35);
+  background: rgba(9, 22, 34, 0.96);
+  color: #d8e9f8;
+  font-size: 12px;
+  line-height: 1.3;
+  z-index: 93;
+  pointer-events: none;
+  white-space: normal;
+}
+
 #mobile-controls {
   position: fixed;
   left: 8px;
@@ -876,6 +897,7 @@ body.menu-screen #top-right-actions {
   transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
   position: relative;
   overflow: hidden;
+  min-width: 0;
 }
 
 #mobile-controls button .mobile-control-icon {
@@ -894,6 +916,9 @@ body.menu-screen #top-right-actions {
   font-weight: 700;
   line-height: 1.1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 #mobile-controls button .mobile-control-shortcut {
@@ -924,8 +949,8 @@ body.menu-screen #top-right-actions {
 }
 
 #mobile-controls.single-action-only button[data-mobile-action="confirm"] {
-  flex-basis: min(420px, 62%);
-  max-width: min(420px, 62%);
+  flex-basis: 100%;
+  max-width: 100%;
 }
 
 #mobile-controls button.control-attention-pop {
@@ -948,8 +973,9 @@ body.compact-controls #mobile-controls button {
   border-radius: 14px;
   padding: 9px 10px;
   column-gap: 8px;
-  flex-basis: clamp(152px, 31%, 320px);
-  max-width: 320px;
+  flex: 1 1 calc(50% - 12px);
+  max-width: none;
+  min-width: 0;
 }
 
 body.compact-controls #mobile-controls {
@@ -980,8 +1006,8 @@ body.compact-controls #mobile-controls.reward-claim-only button[data-mobile-acti
 }
 
 body.compact-controls #mobile-controls.single-action-only button[data-mobile-action="confirm"] {
-  flex-basis: min(540px, 78%);
-  max-width: min(540px, 78%);
+  flex-basis: 100%;
+  max-width: 100%;
 }
 
 @keyframes control-pop-in {
@@ -1065,18 +1091,18 @@ body.compact-controls #mobile-controls.single-action-only button[data-mobile-act
   }
 
   #logs-toggle {
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
   }
 
   #achievements-toggle {
-    width: 54px;
-    height: 54px;
-    background-size: 16px 16px, 100% 100%;
+    width: 36px;
+    height: 36px;
+    background-size: 22px 22px, 100% 100%;
   }
 
   #logs-toggle {
-    background-size: 16px 16px, 100% 100%;
+    background-size: 18px 18px, 100% 100%;
   }
 
   body.menu-screen #top-right-actions {

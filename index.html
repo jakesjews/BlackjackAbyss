@@ -11,7 +11,13 @@
       href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Sora:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="styles.css?v=menufix6" />
+    <script>
+      window.__ASSET_BUST = String(Date.now());
+    </script>
+    <link id="app-stylesheet" rel="stylesheet" />
+    <script>
+      document.getElementById("app-stylesheet").href = `styles.css?v=${window.__ASSET_BUST}`;
+    </script>
   </head>
   <body>
     <div id="game-shell">
@@ -26,8 +32,8 @@
       <button id="menu-achievements" type="button">Collections</button>
     </div>
     <div id="top-right-actions" hidden>
-      <button id="achievements-toggle" type="button" aria-label="Open collections" hidden></button>
       <button id="logs-toggle" type="button" aria-label="Open run log" hidden></button>
+      <button id="achievements-toggle" type="button" aria-label="Return to menu" hidden></button>
     </div>
     <div id="logs-modal" hidden>
       <div id="logs-modal-panel" role="dialog" aria-modal="true" aria-label="Run log">
@@ -60,6 +66,7 @@
     </div>
     <div id="passive-rail" aria-label="Passive relics"></div>
     <div id="passive-tooltip" hidden></div>
+    <div id="topbar-tooltip" hidden></div>
     <div id="mobile-controls" aria-label="Game controls">
       <button type="button" data-mobile-action="left">Left</button>
       <button type="button" data-mobile-action="hit">Hit</button>
@@ -68,6 +75,10 @@
       <button type="button" data-mobile-action="right">Right</button>
       <button type="button" data-mobile-action="confirm">Confirm</button>
     </div>
-    <script src="game.js?v=menufix6"></script>
+    <script>
+      const appScript = document.createElement("script");
+      appScript.src = `game.js?v=${window.__ASSET_BUST}`;
+      document.body.appendChild(appScript);
+    </script>
   </body>
 </html>
