@@ -15,6 +15,14 @@
   const logsModal = document.getElementById("logs-modal");
   const logsClose = document.getElementById("logs-close");
   const logsFeed = document.getElementById("logs-feed");
+  const collectionModal = document.getElementById("collection-modal");
+  const collectionClose = document.getElementById("collection-close");
+  const collectionStats = document.getElementById("collection-stats");
+  const collectionList = document.getElementById("collection-list");
+  const passiveModal = document.getElementById("passive-modal");
+  const passiveModalClose = document.getElementById("passive-modal-close");
+  const passiveModalStats = document.getElementById("passive-modal-stats");
+  const passiveModalList = document.getElementById("passive-modal-list");
   const passiveRail = document.getElementById("passive-rail");
   const passiveTooltip = document.getElementById("passive-tooltip");
   const mobileButtons = mobileControls
@@ -35,6 +43,8 @@
   const HEIGHT = 720;
   const MENU_FRAME_DISPLAY_WIDTH = 464;
   const MENU_FRAME_DISPLAY_HEIGHT = 698;
+  const MENU_DESKTOP_SCALE_BOOST = 1.25;
+  const MENU_SCALE_CLASSES = ["menu-ui-scale-sm", "menu-ui-scale-md", "menu-ui-scale-lg", "menu-ui-scale-xl"];
   const MAX_SPLIT_HANDS = 4;
   const CARD_W = 88;
   const CARD_H = 124;
@@ -50,9 +60,29 @@
     speed: 3 + Math.random() * 12,
     alpha: 0.05 + Math.random() * 0.11,
   }));
+  const MENU_MOTES = Array.from({ length: 39 }, () => ({
+    x: Math.random() * WIDTH,
+    y: Math.random() * HEIGHT,
+    radius: 0.675 + Math.random() * 1.65,
+    vx: -24 + Math.random() * 48,
+    vy: -34 - Math.random() * 136,
+    alpha: 0.2 + Math.random() * 0.4,
+    twinkle: 1.1 + Math.random() * 2.4,
+    phase: Math.random() * Math.PI * 2,
+    warm: true,
+    heat: Math.random(),
+    drift: 0.8 + Math.random() * 1.6,
+    swirl: 0.6 + Math.random() * 1.8,
+    speedScale: 0.7 + Math.random() * 1.65,
+    spin: -2.4 + Math.random() * 4.8,
+    shape: Math.floor(Math.random() * 3),
+  }));
   const MENU_ART_SOURCES = ["public/images/splash_art.png", "/images/splash_art.png"];
   const menuArtImage = new window.Image();
   menuArtImage.decoding = "async";
+  const chipIconImage = new window.Image();
+  chipIconImage.decoding = "async";
+  chipIconImage.src = "public/images/icons/chips.png";
   async function resolveMenuArtSource() {
     for (const src of MENU_ART_SOURCES) {
       try {
@@ -1167,10 +1197,14 @@
     collectionUi: null,
     collectionPage: 0,
     pendingTransition: null,
+    menuSparks: [],
     logsFeedSignature: "",
+    collectionDomSignature: "",
     passiveRailSignature: "",
+    passiveModalSignature: "",
     passiveTooltipTimer: 0,
     worldTime: 0,
+    menuArtRect: null,
     viewport: {
       width: WIDTH,
       height: HEIGHT,
@@ -1178,6 +1212,7 @@
       cropWorldX: 0,
       portraitZoomed: false,
     },
+    menuDesktopScale: 1,
     uiMobileSignature: "",
     uiMobileViewportSignature: "",
   };
@@ -1876,6 +1911,77 @@
     logsFeed.scrollTop = logsFeed.scrollHeight;
   }
 
+  function isCollectionModalOpen() {
+    return Boolean(collectionModal && !collectionModal.hidden);
+  }
+
+  function renderCollectionModal(force = false) {
+    if (!collectionList || !collectionStats) {
+      return;
+    }
+    const entries = collectionEntries();
+    const unlockedCount = entries.filter((entry) => entry.unlocked).length;
+    const foundCount = entries.filter((entry) => entry.copies > 0).length;
+    const totalCopies = entries.reduce((acc, entry) => acc + entry.copies, 0);
+    const signature = entries.map((entry) => `${entry.relic.id}:${entry.unlocked ? 1 : 0}:${entry.copies}`).join("|");
+    if (!force && signature === state.collectionDomSignature) {
+      return;
+    }
+    state.collectionDomSignature = signature;
+
+    collectionStats.textContent = `Unlocked ${unlockedCount}/${entries.length} | Found ${foundCount}/${entries.length} | Copies ${totalCopies}`;
+    collectionList.textContent = "";
+
+    const fragment = document.createDocumentFragment();
+    entries.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = `collection-row${entry.unlocked ? "" : " locked"}`;
+
+      const thumb = document.createElement("div");
+      thumb.className = "collection-thumb";
+      if (entry.unlocked) {
+        const thumbUrl = passiveThumbUrl(entry.relic);
+        if (thumbUrl) {
+          thumb.style.backgroundImage = `url("${thumbUrl}")`;
+        }
+      } else {
+        thumb.style.opacity = "0.55";
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "collection-meta";
+      const top = document.createElement("div");
+      top.className = "row-top";
+      const rarity = document.createElement("span");
+      rarity.className = "collection-rarity";
+      rarity.textContent = entry.rarityLabel.toUpperCase();
+      const name = document.createElement("div");
+      name.className = "collection-name";
+      name.textContent = entry.unlocked ? entry.relic.name : "LOCKED";
+      top.appendChild(rarity);
+      top.appendChild(name);
+
+      const desc = document.createElement("div");
+      desc.className = "collection-desc";
+      desc.textContent = entry.unlocked ? passiveDescription(entry.relic.description) : entry.unlockText;
+      meta.appendChild(top);
+      meta.appendChild(desc);
+
+      const owned = document.createElement("div");
+      owned.className = "collection-owned";
+      if (entry.copies <= 0) {
+        owned.classList.add("none");
+      }
+      owned.textContent = entry.copies > 0 ? `OWNED ${entry.copies > 99 ? "99+" : entry.copies}` : "NONE";
+
+      row.appendChild(thumb);
+      row.appendChild(meta);
+      row.appendChild(owned);
+      fragment.appendChild(row);
+    });
+    collectionList.appendChild(fragment);
+  }
+
   function isLogsModalOpen() {
     return Boolean(logsModal && !logsModal.hidden);
   }
@@ -2028,6 +2134,111 @@
     state.passiveTooltipTimer = 0;
   }
 
+  function passiveStacksForRun(run = state.run) {
+    if (!run || !run.player || !run.player.relics) {
+      return [];
+    }
+    return Object.entries(run.player.relics || {})
+      .map(([id, count]) => ({
+        relic: RELIC_BY_ID.get(id),
+        count: nonNegInt(count, 0),
+      }))
+      .filter((entry) => entry.relic && entry.count > 0)
+      .sort((a, b) => {
+        const countDelta = b.count - a.count;
+        if (countDelta !== 0) {
+          return countDelta;
+        }
+        return a.relic.name.localeCompare(b.relic.name);
+      });
+  }
+
+  function isPassiveModalOpen() {
+    return Boolean(passiveModal && !passiveModal.hidden);
+  }
+
+  function renderPassiveModal(force = false) {
+    if (!passiveModalList || !passiveModalStats) {
+      return;
+    }
+    const stacks = passiveStacksForRun();
+    const totalPassives = stacks.reduce((acc, entry) => acc + entry.count, 0);
+    const signature = stacks.map((entry) => `${entry.relic.id}:${entry.count}`).join("|");
+    if (!force && signature === state.passiveModalSignature) {
+      return;
+    }
+    state.passiveModalSignature = signature;
+    passiveModalStats.textContent = `Total passives ${totalPassives} | Unique types ${stacks.length}`;
+    passiveModalList.textContent = "";
+
+    if (!stacks.length) {
+      const empty = document.createElement("div");
+      empty.className = "log-empty";
+      empty.textContent = "No passives yet.";
+      passiveModalList.appendChild(empty);
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    stacks.forEach((entry) => {
+      const row = document.createElement("div");
+      row.className = "collection-row";
+
+      const thumb = document.createElement("div");
+      thumb.className = "collection-thumb";
+      const thumbUrl = passiveThumbUrl(entry.relic);
+      if (thumbUrl) {
+        thumb.style.backgroundImage = `url("${thumbUrl}")`;
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "collection-meta";
+      const top = document.createElement("div");
+      top.className = "row-top";
+      const rarity = document.createElement("span");
+      rarity.className = "collection-rarity";
+      rarity.textContent = relicRarityMeta(entry.relic).label.toUpperCase();
+      const name = document.createElement("div");
+      name.className = "collection-name";
+      name.textContent = entry.relic.name;
+      top.appendChild(rarity);
+      top.appendChild(name);
+
+      const desc = document.createElement("div");
+      desc.className = "collection-desc";
+      desc.textContent = passiveDescription(entry.relic.description);
+      meta.appendChild(top);
+      meta.appendChild(desc);
+
+      const owned = document.createElement("div");
+      owned.className = "collection-owned";
+      owned.textContent = `STACK ${entry.count > 99 ? "99+" : entry.count}`;
+
+      row.appendChild(thumb);
+      row.appendChild(meta);
+      row.appendChild(owned);
+      fragment.appendChild(row);
+    });
+
+    passiveModalList.appendChild(fragment);
+  }
+
+  function openPassiveModal() {
+    if (!passiveModal || !state.run) {
+      return;
+    }
+    hidePassiveTooltip();
+    passiveModal.hidden = false;
+    renderPassiveModal(true);
+  }
+
+  function closePassiveModal() {
+    if (!passiveModal) {
+      return;
+    }
+    passiveModal.hidden = true;
+  }
+
   function syncPassiveRail() {
     if (!passiveRail) {
       return;
@@ -2039,13 +2250,7 @@
       return;
     }
 
-    const relicStacks = Object.entries(state.run.player.relics || {})
-      .map(([id, count]) => ({
-        relic: RELIC_BY_ID.get(id),
-        count: nonNegInt(count, 0),
-      }))
-      .filter((entry) => entry.relic && entry.count > 0)
-      .sort((a, b) => a.relic.name.localeCompare(b.relic.name));
+    const relicStacks = passiveStacksForRun();
 
     const signature = relicStacks.map((entry) => `${entry.relic.id}:${entry.count}`).join("|");
     if (signature === state.passiveRailSignature) {
@@ -2056,6 +2261,41 @@
     hidePassiveTooltip();
 
     if (!relicStacks.length) {
+      return;
+    }
+
+    const totalPassives = relicStacks.reduce((acc, entry) => acc + entry.count, 0);
+    if (totalPassives >= 9) {
+      const summary = document.createElement("button");
+      summary.type = "button";
+      summary.className = "passive-card passive-stack-summary";
+      summary.setAttribute("aria-label", `Open passives (${totalPassives})`);
+
+      const fan = document.createElement("span");
+      fan.className = "stack-fan";
+      relicStacks.slice(0, 4).forEach((entry, idx) => {
+        const card = document.createElement("span");
+        card.className = "fan-card";
+        const thumbUrl = passiveThumbUrl(entry.relic);
+        if (thumbUrl) {
+          card.style.backgroundImage = `url("${thumbUrl}")`;
+        }
+        card.style.left = `${8 + idx * 4}px`;
+        card.style.top = `${5 + idx * 6}px`;
+        fan.appendChild(card);
+      });
+      summary.appendChild(fan);
+
+      const stack = document.createElement("span");
+      stack.className = "stack";
+      stack.textContent = totalPassives > 99 ? "99+" : String(totalPassives);
+      summary.appendChild(stack);
+
+      summary.addEventListener("click", (event) => {
+        openPassiveModal();
+        event.preventDefault();
+      });
+      passiveRail.appendChild(summary);
       return;
     }
 
@@ -2110,11 +2350,52 @@
     passiveRail.appendChild(fragment);
   }
 
+  function alignTopRightActionsToHudRow() {
+    if (!topRightActions || topRightActions.hidden || state.mode === "menu" || state.mode === "collection" || !state.run) {
+      if (topRightActions) {
+        topRightActions.style.left = "";
+        topRightActions.style.right = "";
+        topRightActions.style.top = "";
+      }
+      return;
+    }
+
+    const rect = canvas.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
+
+    const hud = hudMetrics();
+    const portrait = hud.portrait;
+    const rowTopY = portrait ? 20 : 18;
+    const statsH = portrait ? 58 : 62;
+    const actionReserve = 78;
+    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+    const scale = Math.max(0.0001, state.viewport?.scale || rect.width / WIDTH || 1);
+    const worldCenterX = hud.right - actionReserve * 0.5;
+    const worldCenterY = rowTopY + statsH * 0.5;
+    const screenCenterX = rect.left + (worldCenterX - cropX) * scale;
+    const screenCenterY = rect.top + worldCenterY * scale;
+    const actionW = Math.max(42, topRightActions.offsetWidth || 58);
+    const actionH = Math.max(42, topRightActions.offsetHeight || 58);
+
+    topRightActions.style.left = `${Math.round(screenCenterX - actionW * 0.5)}px`;
+    topRightActions.style.right = "auto";
+    topRightActions.style.top = `${Math.round(screenCenterY - actionH * 0.5)}px`;
+  }
+
   function syncOverlayUi() {
     const runActive = Boolean(state.run);
     const menuActive = state.mode === "menu";
+    const collectionActive = state.mode === "collection";
     if (menuHome) {
       menuHome.hidden = !menuActive;
+    }
+    if (collectionModal) {
+      collectionModal.hidden = !collectionActive;
+      if (collectionActive) {
+        renderCollectionModal();
+      }
     }
     if (menuResume) {
       menuResume.disabled = !hasSavedRun();
@@ -2133,6 +2414,18 @@
     if ((!runActive || state.mode === "menu" || state.mode === "collection" || (logsToggle && logsToggle.hidden)) && isLogsModalOpen()) {
       closeLogsModal();
     }
+    if ((!runActive || state.mode === "menu" || state.mode === "collection") && isPassiveModalOpen()) {
+      closePassiveModal();
+    }
+    if (!collectionActive) {
+      state.collectionDomSignature = "";
+    }
+    if (isPassiveModalOpen()) {
+      renderPassiveModal();
+    } else {
+      state.passiveModalSignature = "";
+    }
+    alignTopRightActionsToHudRow();
     if (isLogsModalOpen()) {
       renderLogsFeed();
     }
@@ -2610,7 +2903,7 @@
   function handCardPosition(handType, index, count) {
     const metrics = handLayout(count);
     const portraitOffset = state.viewport?.portraitZoomed ? 72 : 0;
-    const baseY = handType === "dealer" ? 190 + portraitOffset : 430 + portraitOffset;
+    const baseY = handType === "dealer" ? 190 + portraitOffset : 486 + portraitOffset;
     const row = Math.floor(index / metrics.cardsPerRow);
     const rowCount = Math.max(1, Math.ceil(count / metrics.cardsPerRow));
     const rowStartIndex = row * metrics.cardsPerRow;
@@ -3258,14 +3551,7 @@
 
     encounter.phase = "resolve";
     encounter.nextDealPrompted = false;
-    let resolveDelay = state.compactControls ? 2.35 : 2.1;
-    if (encounter.splitUsed) {
-      resolveDelay += 0.16;
-    }
-    if (encounter.critTriggered || outcome === "blackjack" || outcome === "dealer_blackjack") {
-      resolveDelay += 0.28;
-    }
-    encounter.resolveTimer = resolveDelay;
+    encounter.resolveTimer = 0;
     saveRunSnapshot();
   }
 
@@ -3896,7 +4182,7 @@
     state.uiMobileSignature = mobileSignature;
     state.uiMobileViewportSignature = viewportSignature;
 
-    const showMobileControls = state.mobileActive && state.mode !== "menu";
+    const showMobileControls = state.mobileActive && state.mode !== "menu" && state.mode !== "collection";
     mobileControls.classList.toggle("active", showMobileControls);
     document.body.classList.toggle("mobile-ui-active", state.mobileActive);
     document.body.classList.toggle("mobile-portrait-ui", state.mobilePortrait);
@@ -3925,7 +4211,7 @@
       Object.values(mobileButtons).forEach(clearMobileButtonAttention);
       setMobileButton(mobileButtons.left, "Resume", false, false);
       setMobileButton(mobileButtons.confirm, "New Run", false, false);
-      setMobileButton(mobileButtons.right, "Achievements", false, false);
+      setMobileButton(mobileButtons.right, "Collections", false, false);
       setMobileButton(mobileButtons.hit, "Hit", false, false);
       setMobileButton(mobileButtons.stand, "Stand", false, false);
       setMobileButton(mobileButtons.double, "Double", false, false);
@@ -3933,17 +4219,6 @@
     }
 
     if (state.mode === "collection") {
-      Object.values(mobileButtons).forEach(clearMobileButtonAttention);
-      const total = collectionEntries().length;
-      const { cols, rows } = collectionPageLayout();
-      const perPage = cols * rows;
-      const pages = Math.max(1, Math.ceil(total / Math.max(1, perPage)));
-      setMobileButton(mobileButtons.left, "Prev", state.collectionPage > 0, true);
-      setMobileButton(mobileButtons.right, "Next", state.collectionPage < pages - 1, true);
-      setMobileButton(mobileButtons.confirm, "Back", true, true);
-      setMobileButton(mobileButtons.hit, "Hit", false, false);
-      setMobileButton(mobileButtons.stand, "Stand", false, false);
-      setMobileButton(mobileButtons.double, "Double", false, false);
       return;
     }
 
@@ -4018,7 +4293,7 @@
   }
 
   function handleMobileAction(action) {
-    if (isLogsModalOpen()) {
+    if (isLogsModalOpen() || isPassiveModalOpen()) {
       return;
     }
     unlockAudio();
@@ -4027,8 +4302,6 @@
         if (hasSavedRun() && resumeSavedRun()) {
           saveRunSnapshot();
         }
-      } else if (state.mode === "collection") {
-        state.collectionPage = Math.max(0, state.collectionPage - 1);
       } else if (state.mode === "reward") {
         moveSelection(-1, state.rewardOptions.length);
       } else if (state.mode === "shop") {
@@ -4040,12 +4313,6 @@
     if (action === "right") {
       if (state.mode === "menu") {
         openCollection(0);
-      } else if (state.mode === "collection") {
-        const total = collectionEntries().length;
-        const { cols, rows } = collectionPageLayout();
-        const perPage = Math.max(1, cols * rows);
-        const pages = Math.max(1, Math.ceil(total / perPage));
-        state.collectionPage = Math.min(pages - 1, state.collectionPage + 1);
       } else if (state.mode === "reward") {
         moveSelection(1, state.rewardOptions.length);
       } else if (state.mode === "shop") {
@@ -4220,15 +4487,11 @@
   }
 
   function onCanvasPointerDown(event) {
-    if (isLogsModalOpen()) {
+    if (isLogsModalOpen() || isPassiveModalOpen()) {
       return;
     }
     unlockAudio();
     if (state.mode === "collection") {
-      const point = canvasPointToWorld(event.clientX, event.clientY);
-      if (point) {
-        handleCollectionPointerTap(point.x, point.y);
-      }
       event.preventDefault();
       return;
     }
@@ -4425,6 +4688,18 @@
       return;
     }
 
+    if (event.key === "Escape" && isPassiveModalOpen()) {
+      event.preventDefault();
+      closePassiveModal();
+      return;
+    }
+
+    if (event.key === "Escape" && state.mode === "collection") {
+      event.preventDefault();
+      state.mode = "menu";
+      return;
+    }
+
     const key = normalizeKey(event.key);
     if (!key) {
       return;
@@ -4433,7 +4708,7 @@
     event.preventDefault();
     unlockAudio();
 
-    if (isLogsModalOpen()) {
+    if (isLogsModalOpen() || isPassiveModalOpen()) {
       return;
     }
 
@@ -4456,15 +4731,7 @@
     }
 
     if (state.mode === "collection") {
-      const total = collectionEntries().length;
-      const { cols, rows } = collectionPageLayout();
-      const perPage = Math.max(1, cols * rows);
-      const pages = Math.max(1, Math.ceil(total / perPage));
-      if (key === "left") {
-        state.collectionPage = Math.max(0, state.collectionPage - 1);
-      } else if (key === "right") {
-        state.collectionPage = Math.min(pages - 1, state.collectionPage + 1);
-      } else if (key === "enter" || key === "space" || key === "a" || key === "r") {
+      if (key === "enter" || key === "space" || key === "a" || key === "r") {
         state.mode = "menu";
       }
       return;
@@ -4526,6 +4793,42 @@
       }
     }
 
+    if (state.mode === "menu") {
+      for (const mote of MENU_MOTES) {
+        const speedScale = mote.speedScale || 1;
+        const turbulence = Math.sin(state.worldTime * (1.6 + mote.swirl) + mote.phase) * (18 * mote.drift * speedScale);
+        const flutter = Math.cos(state.worldTime * (2.3 + mote.swirl * 0.7) + mote.phase * 0.7) * (8 * mote.drift * speedScale);
+        mote.x += (mote.vx * speedScale + turbulence) * dt;
+        mote.y += (mote.vy * speedScale + flutter) * dt;
+        if (mote.x < -48) {
+          mote.x = WIDTH + 48;
+        } else if (mote.x > WIDTH + 48) {
+          mote.x = -48;
+        }
+        if (mote.y < -48) {
+          mote.y = HEIGHT + 48;
+        } else if (mote.y > HEIGHT + 48) {
+          mote.y = -48;
+        }
+      }
+
+      if (Math.random() < dt * 1.8) {
+        const dir = Math.random() > 0.5 ? 1 : -1;
+        const life = 1.2 + Math.random() * 1.25;
+        state.menuSparks.push({
+          x: dir > 0 ? -24 : WIDTH + 24,
+          y: HEIGHT * (0.54 + Math.random() * 0.42),
+          vx: dir * (68 + Math.random() * 126),
+          vy: -38 - Math.random() * 42,
+          life,
+          maxLife: life,
+          size: 0.9 + Math.random() * 1.35,
+        });
+      }
+    } else {
+      state.menuSparks = [];
+    }
+
     state.floatingTexts = state.floatingTexts.filter((f) => {
       f.life -= dt;
       f.y -= f.vy * dt;
@@ -4543,6 +4846,15 @@
       spark.y += spark.vy * dt;
       spark.vx *= Math.max(0, 1 - dt * 3.5);
       spark.vy += 180 * dt;
+      return spark.life > 0;
+    });
+
+    state.menuSparks = state.menuSparks.filter((spark) => {
+      spark.life -= dt;
+      spark.x += spark.vx * dt;
+      spark.y += spark.vy * dt;
+      spark.vx *= Math.max(0, 1 - dt * 0.85);
+      spark.vy -= 7 * dt;
       return spark.life > 0;
     });
 
@@ -4690,10 +5002,77 @@
     ctx.fillStyle = sheen;
     ctx.fill();
 
-    ctx.fillStyle = "rgba(14, 23, 34, 0.9)";
+    const labelX = x + 8;
+    const labelY = y + h - 8;
+    const fillW = Math.max(0, (w - 4) * clamped);
     setFont(15, 600, false);
     ctx.textAlign = "left";
-    ctx.fillText(label, x + 8, y + h - 8);
+    // Base text on lighter fill section.
+    ctx.fillStyle = "rgba(10, 16, 24, 0.92)";
+    ctx.fillText(label, labelX, labelY);
+    // Repaint text as white only where it sits over the darker unfilled section.
+    const darkStartX = x + 2 + fillW;
+    if (darkStartX < x + w) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(darkStartX, y, x + w - darkStartX, h);
+      ctx.clip();
+      ctx.fillStyle = "rgba(242, 247, 255, 0.98)";
+      ctx.fillText(label, labelX, labelY);
+      ctx.restore();
+    }
+  }
+
+  function drawChipAmount(x, y, amountText, opts = {}) {
+    const iconSize = Math.max(14, Number(opts.iconSize) || 18);
+    const gap = Number.isFinite(opts.gap) ? opts.gap : 6;
+    const textColor = opts.textColor || "#ffffff";
+    const iconColor = opts.iconColor || "#ffffff";
+    const fontSize = Math.max(12, Number(opts.fontSize) || 18);
+    const baseline = opts.baseline || "middle";
+    const align = opts.align || "left";
+    const value = String(amountText || "0");
+
+    ctx.save();
+    ctx.textAlign = align;
+    ctx.textBaseline = baseline;
+    setFont(fontSize, 700, false);
+
+    const textW = ctx.measureText(value).width;
+    const totalW = iconSize + gap + textW;
+    let startX = x;
+    if (align === "center") {
+      startX = x - totalW * 0.5;
+    } else if (align === "right") {
+      startX = x - totalW;
+    }
+    const iconY = y - iconSize * 0.5;
+
+    if (chipIconImage.complete && chipIconImage.naturalWidth > 0 && chipIconImage.naturalHeight > 0) {
+      ctx.save();
+      const oldFilter = ctx.filter;
+      // Preserve icon detail while tinting toward primary gold without overlay artifacts.
+      if ((iconColor || "").toLowerCase() === "#f2ca86") {
+        ctx.filter =
+          "brightness(0) saturate(100%) invert(88%) sepia(29%) saturate(1119%) hue-rotate(343deg) brightness(99%) contrast(91%)";
+      } else if ((iconColor || "").toLowerCase() === "#ffffff") {
+        ctx.filter = "grayscale(1) brightness(0) invert(1)";
+      } else {
+        ctx.filter = "grayscale(1) brightness(0) invert(1)";
+      }
+      ctx.drawImage(chipIconImage, startX, iconY, iconSize, iconSize);
+      ctx.filter = oldFilter;
+      ctx.restore();
+    } else {
+      ctx.fillStyle = iconColor;
+      ctx.beginPath();
+      ctx.arc(startX + iconSize * 0.5, iconY + iconSize * 0.5, iconSize * 0.42, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = textColor;
+    ctx.fillText(value, startX + iconSize + gap, y);
+    ctx.restore();
   }
 
   function drawBackground() {
@@ -4823,11 +5202,11 @@
     return rankValue(encounter.dealerHand[0].rank);
   }
 
-  function drawHand(hand, type, hideSecond) {
+  function drawHand(hand, type, hideSecond, yOffset = 0) {
     const total = hand.length;
     for (let i = 0; i < total; i += 1) {
       const pos = handCardPosition(type, i, total);
-      const animated = animatedCardPosition(hand[i], pos.x, pos.y);
+      const animated = animatedCardPosition(hand[i], pos.x, pos.y + yOffset);
       ctx.save();
       ctx.globalAlpha = animated.alpha;
       drawCard(animated.x, animated.y, hand[i], hideSecond && i === 1, pos.w, pos.h);
@@ -4835,7 +5214,7 @@
     }
   }
 
-  function handBounds(handType, count) {
+  function handBounds(handType, count, yOffset = 0) {
     const safeCount = Math.max(1, count);
     let minX = Number.POSITIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
@@ -4844,9 +5223,9 @@
     for (let i = 0; i < safeCount; i += 1) {
       const pos = handCardPosition(handType, i, safeCount);
       minX = Math.min(minX, pos.x);
-      minY = Math.min(minY, pos.y);
+      minY = Math.min(minY, pos.y + yOffset);
       maxX = Math.max(maxX, pos.x + pos.w);
-      maxY = Math.max(maxY, pos.y + pos.h);
+      maxY = Math.max(maxY, pos.y + pos.h + yOffset);
     }
     return {
       x: minX,
@@ -4889,8 +5268,8 @@
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
     const intensity = enemyAvatarIntensity(enemy);
     const accent = enemyAvatarAccent(enemy.type);
-    const panelW = portrait ? 90 : 186;
-    const panelH = portrait ? 106 : 228;
+    const panelW = portrait ? 45 : 93;
+    const panelH = portrait ? 53 : 114;
     const defaultX = portrait ? cropX + 24 : WIDTH - cropX - panelW - 44;
     const defaultY = portrait ? 78 : 94;
     const anchorGap = portrait ? 8 : 14;
@@ -4949,6 +5328,70 @@
     ctx.restore();
   }
 
+  function drawPlayerAvatarPanel(portrait, anchor = null) {
+    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
+    const panelW = portrait ? 45 : 93;
+    const panelH = portrait ? 53 : 114;
+    const defaultX = portrait ? cropX + 24 : cropX + 44;
+    const defaultY = portrait ? HEIGHT - panelH - 154 : HEIGHT - panelH - 138;
+    const anchorGap = portrait ? 8 : 14;
+    const panelX = anchor ? anchor.x - panelW - anchorGap : defaultX;
+    const centerAlignedY = anchor ? anchor.y + anchor.h * 0.5 - panelH * 0.5 : defaultY;
+    const minY = portrait ? 300 : 360;
+    const maxY = HEIGHT - panelH - 18;
+    const panelY = clampNumber(centerAlignedY, minY, maxY, defaultY);
+    const radius = portrait ? 12 : 20;
+
+    roundRect(panelX, panelY, panelW, panelH, radius);
+    const panelGradient = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelH);
+    panelGradient.addColorStop(0, "rgba(17, 40, 61, 0.95)");
+    panelGradient.addColorStop(1, "rgba(10, 23, 36, 0.95)");
+    ctx.fillStyle = panelGradient;
+    ctx.fill();
+    ctx.strokeStyle = "rgba(154, 198, 232, 0.34)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    const inset = portrait ? 5 : 8;
+    const innerX = panelX + inset;
+    const innerY = panelY + inset;
+    const innerW = panelW - inset * 2;
+    const innerH = panelH - inset * 2;
+
+    ctx.save();
+    roundRect(innerX, innerY, innerW, innerH, Math.max(10, radius - 4));
+    ctx.clip();
+    const bg = ctx.createLinearGradient(innerX, innerY, innerX, innerY + innerH);
+    bg.addColorStop(0, "rgba(18, 38, 56, 0.9)");
+    bg.addColorStop(1, "rgba(11, 24, 37, 0.95)");
+    ctx.fillStyle = bg;
+    ctx.fillRect(innerX, innerY, innerW, innerH);
+
+    // Default silhouette placeholder for the player frame.
+    const cx = innerX + innerW * 0.5;
+    const headR = Math.max(4, innerW * 0.16);
+    const headY = innerY + innerH * 0.34;
+    ctx.fillStyle = "rgba(210, 228, 242, 0.7)";
+    ctx.beginPath();
+    ctx.arc(cx, headY, headR, 0, Math.PI * 2);
+    ctx.fill();
+
+    const torsoTop = headY + headR * 0.9;
+    const torsoW = innerW * 0.58;
+    const torsoH = innerH * 0.42;
+    roundRect(cx - torsoW * 0.5, torsoTop, torsoW, torsoH, torsoW * 0.22);
+    ctx.fillStyle = "rgba(188, 210, 228, 0.62)";
+    ctx.fill();
+
+    const gloss = ctx.createLinearGradient(innerX, innerY, innerX, innerY + innerH);
+    gloss.addColorStop(0, "rgba(255, 255, 255, 0.1)");
+    gloss.addColorStop(0.52, "rgba(255, 255, 255, 0.02)");
+    gloss.addColorStop(1, "rgba(0, 0, 0, 0.2)");
+    ctx.fillStyle = gloss;
+    ctx.fillRect(innerX, innerY, innerW, innerH);
+    ctx.restore();
+  }
+
   function drawEncounter() {
     if (!state.encounter || !state.run) {
       return;
@@ -4973,21 +5416,29 @@
     setFont(17, 600, false);
     ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, enemyTitleX, enemyTitleY + 26);
 
-    drawHand(encounter.dealerHand, "dealer", encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player");
-    drawHand(encounter.playerHand, "player", false);
-
     const playerTotal = encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total;
     const dealerTotal = visibleDealerTotal(encounter);
     const dealerCount = Math.max(1, encounter.dealerHand.length);
     const playerCount = Math.max(1, encounter.playerHand.length);
-    const dealerBox = handBounds("dealer", dealerCount);
-    const playerBox = handBounds("player", playerCount);
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
     const visibleW = WIDTH - cropX * 2;
-    const fixedBarW = Math.max(240, Math.min(portrait ? 340 : 360, visibleW - 126));
+    const fixedBarW = Math.max(120, Math.round(Math.max(240, Math.min(portrait ? 340 : 360, visibleW - 126)) * 0.5));
     const barH = 24;
     const handLabelGap = 24;
     const handLabelClearance = 14;
+    const playerBarGap = portrait ? 8 : 10;
+    const splitExtra = encounter.splitUsed ? 20 : 0;
+
+    const basePlayerBox = handBounds("player", playerCount, 0);
+    const playerGroupBottomBase = basePlayerBox.y + basePlayerBox.h + playerBarGap + barH + handLabelGap + splitExtra;
+    const playerGroupBottomTarget = HEIGHT - (portrait ? 16 : 14);
+    const playerYOffset = playerGroupBottomTarget - playerGroupBottomBase;
+
+    drawHand(encounter.dealerHand, "dealer", encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player", 0);
+    drawHand(encounter.playerHand, "player", false, playerYOffset);
+
+    const dealerBox = handBounds("dealer", dealerCount, 0);
+    const playerBox = handBounds("player", playerCount, playerYOffset);
 
     const dealerBarTopMin = enemyTitleY + 36;
     const dealerBarY = Math.max(
@@ -5007,7 +5458,7 @@
       barH,
       enemy.maxHp > 0 ? enemy.hp / enemy.maxHp : 0,
       "#ef8a73",
-      `Enemy HP ${enemy.hp}/${enemy.maxHp}`
+      `HP ${enemy.hp} / ${enemy.maxHp}`
     );
     ctx.textAlign = "center";
     ctx.fillStyle = "#d7e8f8";
@@ -5019,7 +5470,13 @@
       dealerHandLabelY
     );
 
-    const playerBarY = Math.min(HEIGHT - 70, playerBox.y + playerBox.h + (portrait ? 8 : 10));
+    const playerBarY = playerBox.y + playerBox.h + playerBarGap;
+    drawPlayerAvatarPanel(portrait, {
+      x: playerBox.centerX - fixedBarW * 0.5,
+      y: playerBarY,
+      w: fixedBarW,
+      h: barH,
+    });
     drawHealthBar(
       playerBox.centerX - fixedBarW * 0.5,
       playerBarY,
@@ -5027,12 +5484,12 @@
       barH,
       state.run.player.maxHp > 0 ? state.run.player.hp / state.run.player.maxHp : 0,
       "#6fd5a8",
-      `HP ${state.run.player.hp}/${state.run.player.maxHp}`
+      `HP ${state.run.player.hp} / ${state.run.player.maxHp}`
     );
     ctx.textAlign = "center";
     ctx.fillStyle = "#d7e8f8";
     setFont(17, 700, false);
-    const playerLabelY = Math.min(HEIGHT - 8, playerBarY + barH + handLabelGap);
+    const playerLabelY = playerBarY + barH + handLabelGap;
     ctx.fillText(`Hand ${playerTotal}`, playerBox.centerX, playerLabelY);
     if (encounter.splitUsed) {
       const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, activeSplitHandCount(encounter)));
@@ -5112,45 +5569,57 @@
 
     const run = state.run;
     const hud = hudMetrics();
-    const topY = hud.portrait ? 34 : 38;
-    const actionReserve = state.mode !== "menu" && state.mode !== "collection" ? 102 : 0;
+    const rowTopY = hud.portrait ? 20 : 18;
+    const actionReserve = state.mode !== "menu" && state.mode !== "collection" ? 78 : 0;
+
+    const statsW = hud.portrait ? Math.min(272, Math.max(214, Math.floor(hud.span * 0.66))) : 304;
+    const statsH = hud.portrait ? 58 : 62;
+    const leftGap = hud.portrait ? 10 : 12;
+    const leftInfoX = hud.left;
+    const statsX = hud.right - statsW - actionReserve;
+    const leftInfoW = Math.max(220, statsX - leftInfoX - leftGap);
+    const statsY = rowTopY;
+    const leftInfoY = rowTopY;
+    roundRect(leftInfoX, leftInfoY, leftInfoW, statsH, 14);
+    const leftPanel = ctx.createLinearGradient(leftInfoX, leftInfoY, leftInfoX, leftInfoY + statsH);
+    leftPanel.addColorStop(0, "rgba(15, 30, 45, 0.9)");
+    leftPanel.addColorStop(1, "rgba(10, 20, 31, 0.92)");
+    ctx.fillStyle = leftPanel;
+    ctx.fill();
+
     ctx.textAlign = "left";
     ctx.fillStyle = "#dbeaf7";
     setFont(hud.portrait ? 20 : 22, 700, true);
-    ctx.fillText(`Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`, hud.left + 2, topY);
+    ctx.fillText(
+      `Floor ${run.floor}/${run.maxFloor}  Room ${run.room}/${run.roomsPerFloor}`,
+      leftInfoX + 12,
+      leftInfoY + Math.floor(statsH * 0.57)
+    );
 
-    const statsW = hud.portrait ? Math.min(272, Math.max(214, Math.floor(hud.span * 0.66))) : 304;
-    const statsH = hud.portrait ? 58 : 66;
-    const statsX = hud.right - statsW - actionReserve;
-    const statsY = topY + (hud.portrait ? 14 : 12);
     roundRect(statsX, statsY, statsW, statsH, 14);
     const panel = ctx.createLinearGradient(statsX, statsY, statsX, statsY + statsH);
     panel.addColorStop(0, "rgba(15, 30, 45, 0.9)");
     panel.addColorStop(1, "rgba(10, 20, 31, 0.92)");
     ctx.fillStyle = panel;
     ctx.fill();
-    ctx.strokeStyle = "rgba(168, 206, 234, 0.28)";
-    ctx.lineWidth = 1.2;
-    ctx.stroke();
 
     ctx.textAlign = "left";
     ctx.fillStyle = "#f4d88d";
-    setFont(hud.portrait ? 18 : 22, 700, false);
+    setFont(hud.portrait ? 18 : 21, 700, false);
     const leftPad = hud.portrait ? 10 : 10;
     const rightPad = 12;
     const splitX = statsX + Math.max(hud.portrait ? 78 : 92, Math.floor(statsW * 0.33));
-    const dividerY = statsY + 10;
-    const dividerH = statsH - 20;
     const chipsAreaW = Math.max(58, splitX - statsX - leftPad - 6);
-    const chipsText = fitText(`◍ ${run.player.gold}`, chipsAreaW);
-    ctx.fillText(chipsText, statsX + leftPad, statsY + Math.floor(statsH * 0.56));
-
-    ctx.strokeStyle = "rgba(168, 206, 234, 0.24)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(splitX, dividerY);
-    ctx.lineTo(splitX, dividerY + dividerH);
-    ctx.stroke();
+    const chipsText = fitText(String(run.player.gold), Math.max(42, chipsAreaW - 48));
+    drawChipAmount(statsX + leftPad, statsY + Math.floor(statsH * 0.56), chipsText, {
+      iconSize: 40,
+      gap: 2,
+      textColor: "#f6e6a6",
+      iconColor: "#f2ca86",
+      fontSize: 17,
+      baseline: "middle",
+      align: "left",
+    });
 
     ctx.fillStyle = "#b7ddff";
     setFont(hud.portrait ? 13 : 15, 700, false);
@@ -5495,9 +5964,15 @@
     ctx.strokeStyle = "rgba(168, 206, 234, 0.34)";
     ctx.lineWidth = 1.1;
     ctx.stroke();
-    ctx.fillStyle = "#f6e6a6";
-    setFont(17, 700, false);
-    ctx.fillText(`◍ ${run.player.gold}`, layout.centerX - chipPillW * 0.5 - 12, pillY + 23);
+    drawChipAmount(layout.centerX - chipPillW * 0.5 - 12, pillY + 17, String(run.player.gold), {
+      iconSize: 40,
+      gap: 2,
+      textColor: "#f6e6a6",
+      iconColor: "#f2ca86",
+      fontSize: 17,
+      baseline: "top",
+      align: "left",
+    });
 
     roundRect(layout.centerX + 12, pillY, hpPillW, 34, 12);
     ctx.fillStyle = "rgba(14, 30, 46, 0.9)";
@@ -5758,13 +6233,55 @@
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-      const artDrawn = drawImageCover(menuArtImage, 0, 0, WIDTH, HEIGHT, 0.5, 0.5);
-      const darken = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-      darken.addColorStop(0, artDrawn ? "rgba(5, 10, 18, 0.38)" : "rgba(5, 10, 18, 0.2)");
-      darken.addColorStop(0.55, "rgba(5, 10, 18, 0.7)");
-      darken.addColorStop(1, "rgba(5, 10, 18, 0.9)");
-      ctx.fillStyle = darken;
+      const compactViewportW = Math.floor(
+        window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || WIDTH
+      );
+      const tabletCompact = compactViewportW >= 700;
+      // On phone sizes, use a full-canvas backdrop image. On tablet sizes, keep only the framed image.
+      if (!tabletCompact) {
+        drawImageCover(menuArtImage, 0, 0, WIDTH, HEIGHT, 0.5, 0.48);
+      }
+      const backdropDarken = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+      backdropDarken.addColorStop(0, "rgba(5, 10, 18, 0.08)");
+      backdropDarken.addColorStop(0.375, "rgba(5, 10, 18, 0.16)");
+      backdropDarken.addColorStop(0.615, "rgba(5, 10, 18, 0.5)");
+      backdropDarken.addColorStop(1, "rgba(5, 10, 18, 0.72)");
+      ctx.fillStyle = backdropDarken;
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+      const imageW = Number(menuArtImage?.naturalWidth);
+      const imageH = Number(menuArtImage?.naturalHeight);
+      const imageAspect = Number.isFinite(imageW) && Number.isFinite(imageH) && imageW > 0 && imageH > 0 ? imageW / imageH : 2 / 3;
+      const maxW = WIDTH;
+      const maxH = HEIGHT;
+      let frameW = Math.min(maxW, maxH * imageAspect);
+      let frameH = frameW / imageAspect;
+      if (frameH > maxH) {
+        frameH = maxH;
+        frameW = frameH * imageAspect;
+      }
+      const frameX = Math.floor((WIDTH - frameW) * 0.5);
+      const frameY = Math.floor((HEIGHT - frameH) * 0.5);
+      const frameRadius = 24;
+      state.menuArtRect = { x: frameX, y: frameY, w: frameW, h: frameH, radius: frameRadius };
+
+      ctx.save();
+      roundRect(frameX, frameY, frameW, frameH, frameRadius);
+      ctx.clip();
+      const artDrawn = drawImageContain(menuArtImage, frameX, frameY, frameW, frameH, 0.5, 0.5);
+      const frameDarken = ctx.createLinearGradient(0, frameY, 0, frameY + frameH);
+      frameDarken.addColorStop(0, artDrawn ? "rgba(5, 10, 18, 0.07)" : "rgba(5, 10, 18, 0.04)");
+      frameDarken.addColorStop(0.375, "rgba(5, 10, 18, 0.15)");
+      frameDarken.addColorStop(0.615, "rgba(5, 10, 18, 0.44)");
+      frameDarken.addColorStop(1, "rgba(5, 10, 18, 0.78)");
+      ctx.fillStyle = frameDarken;
+      ctx.fillRect(frameX, frameY, frameW, frameH);
+      ctx.restore();
+
+      ctx.strokeStyle = "rgba(190, 223, 246, 0.34)";
+      ctx.lineWidth = 1.5;
+      roundRect(frameX, frameY, frameW, frameH, frameRadius);
+      ctx.stroke();
       return;
     }
 
@@ -5775,8 +6292,9 @@
           const viewH = Math.max(1, Number(state.viewport?.height) || HEIGHT);
           const scaleX = viewW / WIDTH;
           const scaleY = viewH / HEIGHT;
-          const frameDisplayH = MENU_FRAME_DISPLAY_HEIGHT;
-          const frameDisplayW = MENU_FRAME_DISPLAY_WIDTH;
+          const desktopScale = Math.max(0.82, Number(state.menuDesktopScale) || 1);
+          const frameDisplayH = MENU_FRAME_DISPLAY_HEIGHT * desktopScale;
+          const frameDisplayW = MENU_FRAME_DISPLAY_WIDTH * desktopScale;
           const frameH = frameDisplayH / Math.max(0.001, scaleY);
           const frameW = frameDisplayW / Math.max(0.001, scaleX);
           return {
@@ -5787,6 +6305,7 @@
             radius: 24,
           };
         })();
+    state.menuArtRect = { x: art.x, y: art.y, w: art.w, h: art.h, radius: art.radius };
 
     const bg = ctx.createLinearGradient(0, 0, 0, HEIGHT);
     bg.addColorStop(0, "#081420");
@@ -5830,6 +6349,86 @@
     ctx.restore();
   }
 
+  function drawMenuParticles() {
+    if (state.mode !== "menu") {
+      return;
+    }
+
+    ctx.save();
+    const clip = state.menuArtRect;
+    if (clip && Number.isFinite(clip.w) && Number.isFinite(clip.h) && clip.w > 0 && clip.h > 0) {
+      if (clip.radius > 0) {
+        roundRect(clip.x, clip.y, clip.w, clip.h, clip.radius);
+        ctx.clip();
+      } else {
+        ctx.beginPath();
+        ctx.rect(clip.x, clip.y, clip.w, clip.h);
+        ctx.clip();
+      }
+    }
+    for (const mote of MENU_MOTES) {
+      const pulse = Math.sin(state.worldTime * mote.twinkle + mote.phase) * 0.5 + 0.5;
+      const alpha = mote.alpha * (0.44 + pulse * 0.56);
+      const emberRadius = mote.radius * (0.9 + pulse * 0.4);
+      const glow = ctx.createRadialGradient(mote.x, mote.y, 0, mote.x, mote.y, emberRadius * 3.8);
+      const warmMix = 0.3 + mote.heat * 0.7;
+      glow.addColorStop(0, `rgba(255, ${Math.floor(210 + 32 * warmMix)}, ${Math.floor(136 + 36 * warmMix)}, ${Math.min(0.95, alpha * 1.25)})`);
+      glow.addColorStop(0.5, `rgba(255, ${Math.floor(128 + 46 * warmMix)}, 76, ${Math.min(0.72, alpha * 0.78)})`);
+      glow.addColorStop(1, "rgba(255, 88, 38, 0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(mote.x, mote.y, emberRadius * 2.45, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.save();
+      ctx.translate(mote.x, mote.y);
+      ctx.rotate(state.worldTime * mote.spin + mote.phase);
+      ctx.fillStyle = `rgba(255, ${Math.floor(202 + 45 * warmMix)}, ${Math.floor(132 + 38 * warmMix)}, ${Math.min(0.95, alpha)})`;
+      ctx.beginPath();
+      if (mote.shape === 0) {
+        // Ember shard (diamond)
+        ctx.moveTo(0, -emberRadius * 1.25);
+        ctx.lineTo(emberRadius * 0.92, 0);
+        ctx.lineTo(0, emberRadius * 1.25);
+        ctx.lineTo(-emberRadius * 0.92, 0);
+      } else if (mote.shape === 1) {
+        // Triangular ember fleck
+        ctx.moveTo(0, -emberRadius * 1.3);
+        ctx.lineTo(emberRadius * 1.05, emberRadius * 0.82);
+        ctx.lineTo(-emberRadius * 0.92, emberRadius * 0.74);
+      } else {
+        // Slanted quad ember
+        ctx.moveTo(-emberRadius * 0.95, -emberRadius * 0.4);
+        ctx.lineTo(emberRadius * 0.72, -emberRadius * 0.92);
+        ctx.lineTo(emberRadius * 1.05, emberRadius * 0.42);
+        ctx.lineTo(-emberRadius * 0.6, emberRadius * 0.94);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    for (const spark of state.menuSparks) {
+      const alpha = Math.max(0, Math.min(1, spark.life / spark.maxLife));
+      const trail = ctx.createLinearGradient(spark.x, spark.y, spark.x - spark.vx * 0.1, spark.y - spark.vy * 0.1);
+      trail.addColorStop(0, `rgba(255, 236, 186, ${alpha * 0.95})`);
+      trail.addColorStop(0.5, `rgba(255, 144, 82, ${alpha * 0.62})`);
+      trail.addColorStop(1, "rgba(255, 86, 40, 0)");
+      ctx.strokeStyle = trail;
+      ctx.lineWidth = spark.size;
+      ctx.beginPath();
+      ctx.moveTo(spark.x, spark.y);
+      ctx.lineTo(spark.x - spark.vx * 0.1, spark.y - spark.vy * 0.1);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(spark.x, spark.y, Math.max(0.9, spark.size * 0.44), 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 244, 204, ${alpha * 0.9})`;
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   function drawCollectionScreen() {
     const entries = collectionEntries();
     const { cols, rows } = collectionPageLayout();
@@ -5866,7 +6465,7 @@
     ctx.textAlign = "center";
     ctx.fillStyle = "#f3d193";
     setFont(portrait ? 36 : 42, 700, true);
-    ctx.fillText("Achievements", WIDTH * 0.5, panelY + 50);
+    ctx.fillText("Collections", WIDTH * 0.5, panelY + 50);
 
     ctx.fillStyle = "#bed8ec";
     setFont(portrait ? 14 : 16, 600, false);
@@ -6251,8 +6850,8 @@
 
     if (state.mode === "menu" || state.mode === "collection") {
       drawMenu();
-      if (state.mode === "collection") {
-        drawCollectionScreen();
+      if (state.mode === "menu") {
+        drawMenuParticles();
       }
       drawEffects();
       ctx.restore();
@@ -6284,11 +6883,11 @@
   function availableActions() {
     if (state.mode === "menu") {
       return hasSavedRun()
-        ? ["enter(start)", "r(resume)", "a(achievements)"]
-        : ["enter(start)", "a(achievements)"];
+        ? ["enter(start)", "r(resume)", "a(collections)"]
+        : ["enter(start)", "a(collections)"];
     }
     if (state.mode === "collection") {
-      return ["left(prev page)", "right(next page)", "enter(back)", "space(back)", "a(back)"];
+      return ["enter(back)", "space(back)", "a(back)"];
     }
     if (state.mode === "playing") {
       if (canAdvanceDeal()) {
@@ -6402,22 +7001,10 @@
         state.mode === "collection"
           ? (() => {
               const entries = collectionEntries();
-              const { cols, rows } = collectionPageLayout();
-              const perPage = Math.max(1, cols * rows);
-              const pages = Math.max(1, Math.ceil(entries.length / perPage));
-              const page = Math.min(pages - 1, Math.max(0, state.collectionPage));
-              const start = page * perPage;
               return {
-                page,
-                pages,
                 totalRelics: entries.length,
-                items: entries.slice(start, start + perPage).map((entry) => ({
-                  id: entry.relic.id,
-                  name: entry.relic.name,
-                  rarity: entry.rarity,
-                  unlocked: entry.unlocked,
-                  copies: entry.copies,
-                })),
+                unlockedRelics: entries.filter((entry) => entry.unlocked).length,
+                discoveredRelics: entries.filter((entry) => entry.copies > 0).length,
               };
             })()
           : null,
@@ -6460,8 +7047,50 @@
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
     const menuScreen = state.mode === "menu";
+    MENU_SCALE_CLASSES.forEach((cls) => document.body.classList.remove(cls));
+    if (!menuScreen || !state.compactControls) {
+      document.body.style.removeProperty("--menu-mobile-ui-scale");
+    }
     if (menuScreen) {
-      const menuScale = Math.max(viewportWidth / WIDTH, viewportHeight / HEIGHT);
+      if (state.compactControls) {
+        const baseMenuW = 360;
+        const baseMenuH = 380;
+        const padX = 20;
+        const padY = 18;
+        const scaleX = Math.max(0.64, (viewportWidth - padX * 2) / baseMenuW);
+        const scaleY = Math.max(0.64, (viewportHeight - padY * 2) / baseMenuH);
+        const mobileScale = Math.min(1, scaleX, scaleY);
+        document.body.style.setProperty("--menu-mobile-ui-scale", mobileScale.toFixed(4));
+      }
+
+      let uiScale = 1;
+      let scaleClass = "menu-ui-scale-lg";
+      if (state.compactControls) {
+        uiScale = 1;
+        scaleClass = "menu-ui-scale-md";
+      } else if (viewportWidth >= 1820) {
+        uiScale = 1.18;
+        scaleClass = "menu-ui-scale-xl";
+      } else if (viewportWidth >= 1560) {
+        uiScale = 1.08;
+        scaleClass = "menu-ui-scale-lg";
+      } else if (viewportWidth >= 1320) {
+        uiScale = 1;
+        scaleClass = "menu-ui-scale-md";
+      } else {
+        uiScale = 0.9;
+        scaleClass = "menu-ui-scale-sm";
+      }
+      if (!state.compactControls) {
+        uiScale *= MENU_DESKTOP_SCALE_BOOST;
+      }
+      document.body.classList.add(scaleClass);
+      state.menuDesktopScale = uiScale;
+
+      const menuScale =
+        state.compactControls
+          ? Math.max(viewportWidth / WIDTH, viewportHeight / HEIGHT)
+          : Math.max(viewportWidth / WIDTH, viewportHeight / HEIGHT) * uiScale;
       const canvasDisplayWidth = Math.round(WIDTH * menuScale);
       const canvasDisplayHeight = Math.round(HEIGHT * menuScale);
       const canvasLeft = Math.floor((viewportWidth - canvasDisplayWidth) * 0.5);
@@ -6483,17 +7112,27 @@
       };
       return;
     }
+    state.menuDesktopScale = 1;
 
-    const reservedHeight =
-      !menuScreen && state.mobileActive && mobileControls ? mobileControls.offsetHeight + (state.compactControls ? 8 : 12) : 0;
-    const availableHeight = Math.max(
-      120,
-      viewportHeight - reservedHeight - (state.compactControls ? 6 : 0) - 2
-    );
+    let availableHeight = 0;
+    if (!menuScreen && state.mobileActive && mobileControls && mobileControls.classList.contains("active")) {
+      const controlsRect = mobileControls.getBoundingClientRect();
+      const controlsTop = Math.floor(controlsRect.top);
+      // Fill canvas area exactly to the controls container.
+      availableHeight = Math.max(120, controlsTop - 2);
+    } else {
+      const reservedHeight =
+        !menuScreen && state.mobileActive && mobileControls ? mobileControls.offsetHeight + (state.compactControls ? 8 : 12) : 0;
+      availableHeight = Math.max(
+        120,
+        viewportHeight - reservedHeight - (state.compactControls ? 6 : 0) - 2
+      );
+    }
     const availableWidth = Math.max(1, viewportWidth - 2);
     const portraitZoomed = state.mobilePortrait;
 
-    if (portraitZoomed) {
+    if (state.mobileActive) {
+      // On mobile during gameplay, always fill the available height up to controls.
       const shellW = availableWidth;
       const shellH = availableHeight;
       const scale = shellH / HEIGHT;
@@ -6515,7 +7154,7 @@
         height: shellH,
         scale,
         cropWorldX,
-        portraitZoomed: true,
+        portraitZoomed,
       };
       return;
     }
@@ -6622,6 +7261,45 @@
     logsModal.addEventListener("pointerdown", (event) => {
       if (event.target === logsModal) {
         closeLogsModal();
+      }
+    });
+  }
+
+  if (passiveModalClose) {
+    passiveModalClose.addEventListener("click", (event) => {
+      event.preventDefault();
+      closePassiveModal();
+    });
+  }
+
+  if (passiveModal) {
+    passiveModal.addEventListener("pointerdown", (event) => {
+      if (event.target === passiveModal) {
+        closePassiveModal();
+      }
+    });
+  }
+
+  if (collectionClose) {
+    collectionClose.addEventListener("click", (event) => {
+      event.preventDefault();
+      unlockAudio();
+      playUiSfx("confirm");
+      if (state.mode === "collection") {
+        state.mode = "menu";
+      }
+    });
+  }
+
+  if (collectionModal) {
+    collectionModal.addEventListener("pointerdown", (event) => {
+      if (event.target !== collectionModal) {
+        return;
+      }
+      unlockAudio();
+      playUiSfx("confirm");
+      if (state.mode === "collection") {
+        state.mode = "menu";
       }
     });
   }
