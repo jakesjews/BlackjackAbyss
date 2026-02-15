@@ -25,6 +25,9 @@
   const passiveModalList = document.getElementById("passive-modal-list");
   const passiveRail = document.getElementById("passive-rail");
   const passiveTooltip = document.getElementById("passive-tooltip");
+  if (passiveRail && gameShell && passiveRail.parentElement !== gameShell) {
+    gameShell.appendChild(passiveRail);
+  }
   const mobileButtons = mobileControls
     ? {
         left: mobileControls.querySelector('[data-mobile-action="left"]'),
@@ -78,6 +81,12 @@
     shape: Math.floor(Math.random() * 3),
   }));
   const MENU_ART_SOURCES = ["public/images/splash_art.png", "/images/splash_art.png"];
+  const GRUNT_SOURCES = [
+    "public/audio/soundbites/grunt.wav",
+    "/audio/soundbites/grunt.wav",
+    "public/audio/soundbites/grunt.ogg",
+    "/audio/soundbites/grunt.ogg",
+  ];
   const menuArtImage = new window.Image();
   menuArtImage.decoding = "async";
   const chipIconImage = new window.Image();
@@ -1169,6 +1178,7 @@
     floatingTexts: [],
     cardBursts: [],
     sparkParticles: [],
+    handTackles: [],
     flashOverlays: [],
     screenShakeTime: 0,
     screenShakeDuration: 0,
@@ -1184,6 +1194,8 @@
       masterGain: null,
       musicGain: null,
       sfxGain: null,
+      gruntElement: null,
+      gruntSourceIndex: 0,
       stepTimer: MUSIC_STEP_SECONDS,
       stepIndex: 0,
       lastMusicMode: "menu",
@@ -1199,6 +1211,7 @@
     pendingTransition: null,
     menuSparks: [],
     handMessageAnchor: null,
+    combatLayout: null,
     logsFeedSignature: "",
     collectionDomSignature: "",
     passiveRailSignature: "",
@@ -1583,11 +1596,13 @@
     state.floatingTexts = [];
     state.cardBursts = [];
     state.sparkParticles = [];
+    state.handTackles = [];
     state.flashOverlays = [];
     state.screenShakeTime = 0;
     state.screenShakeDuration = 0;
     state.screenShakePower = 0;
     state.pendingTransition = null;
+    state.combatLayout = null;
     state.autosaveTimer = 0;
     if (state.run && Array.isArray(state.run.log)) {
       state.run.log = [];
@@ -2281,8 +2296,8 @@
         if (thumbUrl) {
           card.style.backgroundImage = `url("${thumbUrl}")`;
         }
-        card.style.left = `${8 + idx * 4}px`;
-        card.style.top = `${5 + idx * 6}px`;
+        card.style.left = `${8 + idx * 12}px`;
+        card.style.top = `${6 + Math.abs(1.5 - idx) * 2}px`;
         fan.appendChild(card);
       });
       summary.appendChild(fan);
@@ -2367,21 +2382,47 @@
     }
 
     const row = hudRowMetrics();
-    const hud = row.hud;
     const statsH = row.statsH;
-    const actionReserve = row.actionReserve;
-    const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
-    const scale = Math.max(0.0001, state.viewport?.scale || rect.width / WIDTH || 1);
-    const worldLeftX = hud.right - actionReserve;
+    const scale = Math.max(0.0001, state.viewport?.scale || 1);
     const worldCenterY = row.rowTopY + statsH * 0.5;
-    const screenLeftX = rect.left + (worldLeftX - cropX) * scale;
     const screenCenterY = rect.top + worldCenterY * scale;
     const actionW = Math.max(42, topRightActions.offsetWidth || 48);
     const actionH = Math.max(42, topRightActions.offsetHeight || 58);
+    const rightInset = 8;
+    const safePad = 6;
+    const targetLeft = rect.right - actionW - rightInset;
+    const clampedLeft = clampNumber(targetLeft, safePad, Math.max(safePad, window.innerWidth - actionW - safePad), targetLeft);
+    const targetTop = screenCenterY - actionH * 0.5;
+    const clampedTop = clampNumber(targetTop, safePad, Math.max(safePad, window.innerHeight - actionH - safePad), targetTop);
 
-    topRightActions.style.left = `${Math.round(screenLeftX)}px`;
+    topRightActions.style.left = `${Math.round(clampedLeft)}px`;
     topRightActions.style.right = "auto";
-    topRightActions.style.top = `${Math.round(screenCenterY - actionH * 0.5)}px`;
+    topRightActions.style.top = `${Math.round(clampedTop)}px`;
+  }
+
+  function alignPassiveRailToCombatLayout() {
+    if (!passiveRail) {
+      return;
+    }
+    if (
+      !state.run ||
+      state.mode === "menu" ||
+      state.mode === "collection" ||
+      state.mode === "reward" ||
+      state.mode === "shop" ||
+      !state.combatLayout ||
+      !state.combatLayout.playerPassiveAnchor
+    ) {
+      passiveRail.style.left = "";
+      passiveRail.style.top = "";
+      passiveRail.style.transform = "";
+      return;
+    }
+    const railH = Math.max(0, passiveRail.offsetHeight || 0);
+    const anchor = state.combatLayout.playerPassiveAnchor;
+    passiveRail.style.left = `${Math.round(anchor.x)}px`;
+    passiveRail.style.top = `${Math.round(anchor.yBottom - railH)}px`;
+    passiveRail.style.transform = "";
   }
 
   function syncOverlayUi() {
@@ -2425,7 +2466,6 @@
     } else {
       state.passiveModalSignature = "";
     }
-    alignTopRightActionsToHudRow();
     if (isLogsModalOpen()) {
       renderLogsFeed();
     }
@@ -2653,6 +2693,39 @@
     }
   }
 
+  function ensureGruntElement() {
+    if (state.audio.gruntElement) {
+      return state.audio.gruntElement;
+    }
+    const clip = new Audio();
+    clip.preload = "auto";
+    clip.src = GRUNT_SOURCES[state.audio.gruntSourceIndex] || GRUNT_SOURCES[0];
+    clip.addEventListener("error", () => {
+      if (state.audio.gruntSourceIndex < GRUNT_SOURCES.length - 1) {
+        state.audio.gruntSourceIndex += 1;
+        clip.src = GRUNT_SOURCES[state.audio.gruntSourceIndex];
+      }
+    });
+    state.audio.gruntElement = clip;
+    return clip;
+  }
+
+  function playGruntSfx() {
+    if (!canPlayAudio()) {
+      return;
+    }
+    const clip = ensureGruntElement();
+    if (!clip) {
+      return;
+    }
+    clip.currentTime = 0;
+    clip.volume = 0.72;
+    const playPromise = clip.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {});
+    }
+  }
+
   function updateMusic(dt) {
     if (!canPlayAudio()) {
       return;
@@ -2804,13 +2877,96 @@
     });
   }
 
+  function triggerImpactBurstAt(x, y, amount, color) {
+    const clampedAmount = Math.max(1, Number(amount) || 1);
+    spawnSparkBurst(x, y, color, 10 + Math.min(30, Math.floor(clampedAmount * 1.4)), 140 + clampedAmount * 9);
+    spawnSparkBurst(x, y, "#f7e8bf", 8 + Math.min(14, Math.floor(clampedAmount * 0.6)), 120 + clampedAmount * 7);
+    state.cardBursts.push({
+      x,
+      y,
+      color,
+      life: 0.34,
+      maxLife: 0.34,
+    });
+    triggerScreenShake(Math.min(18, 4 + clampedAmount * 0.72), 0.16 + Math.min(0.2, clampedAmount * 0.012));
+    triggerFlash(color, Math.min(0.2, 0.035 + clampedAmount * 0.004), 0.14);
+  }
+
   function triggerImpactBurst(side, amount, color) {
     const clampedAmount = Math.max(1, Number(amount) || 1);
     const x = side === "enemy" ? WIDTH * 0.73 : WIDTH * 0.27;
     const y = side === "enemy" ? 108 : 576;
-    spawnSparkBurst(x, y, color, 8 + Math.min(26, Math.floor(clampedAmount * 1.2)), 120 + clampedAmount * 8);
-    triggerScreenShake(Math.min(16, 3 + clampedAmount * 0.66), 0.14 + Math.min(0.16, clampedAmount * 0.01));
-    triggerFlash(color, Math.min(0.16, 0.03 + clampedAmount * 0.004), 0.12);
+    triggerImpactBurstAt(x, y, clampedAmount, color);
+  }
+
+  function handTackleTargets(winner) {
+    if (!state.encounter) {
+      return null;
+    }
+    const side = winner === "enemy" ? "dealer" : "player";
+    const loserSide = winner === "enemy" ? "player" : "enemy";
+    const layout = state.combatLayout || null;
+    const box =
+      side === "dealer"
+        ? layout?.dealerBox || handBounds("dealer", Math.max(1, state.encounter.dealerHand.length))
+        : layout?.playerBox || handBounds("player", Math.max(1, state.encounter.playerHand.length));
+    if (!box) {
+      return null;
+    }
+    const targetPortrait = loserSide === "enemy" ? layout?.enemyPortrait : layout?.playerPortrait;
+    const targetX = targetPortrait ? targetPortrait.centerX : winner === "enemy" ? WIDTH * 0.28 : WIDTH * 0.72;
+    const targetY = targetPortrait ? targetPortrait.centerY : winner === "enemy" ? HEIGHT * 0.82 : 114;
+    return {
+      fromX: box.centerX,
+      fromY: box.centerY,
+      toX: targetX,
+      toY: targetY,
+    };
+  }
+
+  function triggerHandTackle(winner, amount) {
+    if (!state.encounter) {
+      return;
+    }
+    const points = handTackleTargets(winner);
+    if (!points) {
+      return;
+    }
+    const layout = state.combatLayout || null;
+    const sourceRects = winner === "enemy" ? layout?.dealerCards : layout?.playerCards;
+    const sourceHand = winner === "enemy" ? state.encounter.dealerHand : state.encounter.playerHand;
+    const count = Math.min(4, sourceHand.length);
+    if (count <= 0) {
+      return;
+    }
+    const projectiles = [];
+    for (let i = 0; i < count; i += 1) {
+      const card = sourceHand[i];
+      const rect = sourceRects && sourceRects[i] ? sourceRects[i] : null;
+      const fallbackX = points.fromX + (i - (count - 1) * 0.5) * 24;
+      const fallbackY = points.fromY + Math.abs(i - (count - 1) * 0.5) * 6;
+      projectiles.push({
+        card: { ...card },
+        fromX: rect ? rect.x + rect.w * 0.5 : fallbackX,
+        fromY: rect ? rect.y + rect.h * 0.5 : fallbackY,
+        w: rect ? rect.w : CARD_W * 0.72,
+        h: rect ? rect.h : CARD_H * 0.72,
+      });
+    }
+    state.handTackles.push({
+      projectiles,
+      winner,
+      fromX: points.fromX,
+      fromY: points.fromY,
+      toX: points.toX,
+      toY: points.toY,
+      elapsed: 0,
+      duration: 0.56,
+      impactAt: 0.72,
+      impacted: false,
+      amount: Math.max(1, Number(amount) || 1),
+      color: winner === "enemy" ? "#ff8eaf" : "#f6d06e",
+    });
   }
 
   function startDefeatTransition(target) {
@@ -3001,6 +3157,8 @@
     encounter.bustGuardTriggered = false;
     encounter.critTriggered = false;
     encounter.lastPlayerAction = "none";
+    state.handTackles = [];
+    state.handMessageAnchor = null;
 
     dealCard(encounter, "player");
     dealCard(encounter, "dealer");
@@ -3024,6 +3182,9 @@
 
     state.mode = "playing";
     state.encounter = createEncounter(state.run);
+    state.handTackles = [];
+    state.combatLayout = null;
+    state.handMessageAnchor = null;
     state.run.player.hp = clampNumber(state.run.player.hp, 0, state.run.player.maxHp, state.run.player.maxHp);
     state.pendingTransition = null;
     state.run.player.bustGuardsLeft = state.run.player.stats.bustGuardPerEncounter;
@@ -3061,11 +3222,13 @@
     state.floatingTexts = [];
     state.cardBursts = [];
     state.sparkParticles = [];
+    state.handTackles = [];
     state.flashOverlays = [];
     state.screenShakeTime = 0;
     state.screenShakeDuration = 0;
     state.screenShakePower = 0;
     state.pendingTransition = null;
+    state.combatLayout = null;
     state.logsFeedSignature = "";
     state.passiveRailSignature = "";
     hidePassiveTooltip();
@@ -3091,7 +3254,8 @@
       Boolean(state.encounter) &&
       state.encounter.phase === "resolve" &&
       !state.pendingTransition &&
-      state.encounter.resolveTimer <= 0
+      state.encounter.resolveTimer <= 0 &&
+      state.handTackles.length === 0
     );
   }
 
@@ -3452,6 +3616,7 @@
         spawnFloatText(`-${outgoing}`, WIDTH * 0.72, 108, "#ff916e");
       }
       triggerImpactBurst("enemy", outgoing, outcome === "blackjack" ? "#f8d37b" : "#ff916e");
+      triggerHandTackle("player", outgoing);
     }
 
     if (incoming > 0) {
@@ -3460,6 +3625,7 @@
       run.player.streak = 0;
       spawnFloatText(`-${incoming}`, WIDTH * 0.26, 576, "#ff86aa");
       triggerImpactBurst("player", incoming, "#ff86aa");
+      triggerHandTackle("enemy", incoming);
     } else if (outgoing > 0) {
       run.player.streak += 1;
       run.maxStreak = Math.max(run.maxStreak || 0, run.player.streak);
@@ -4225,7 +4391,7 @@
 
     if (state.mode === "playing") {
       if (canAdvance) {
-        setMobileButton(mobileButtons.confirm, "New Deal", true, true);
+        setMobileButton(mobileButtons.confirm, "Deal", true, true);
         setMobileButton(mobileButtons.left, "Left", false, false);
         setMobileButton(mobileButtons.right, "Right", false, false);
         setMobileButton(mobileButtons.hit, "Hit", false, false);
@@ -4850,6 +5016,23 @@
       return spark.life > 0;
     });
 
+    state.handTackles = state.handTackles.filter((tackle) => {
+      tackle.elapsed += dt;
+      const progress = Math.max(0, Math.min(1, tackle.elapsed / Math.max(0.01, tackle.duration)));
+      const travel = Math.max(0, Math.min(1, progress / Math.max(0.01, tackle.impactAt)));
+      const eased = easeOutCubic(travel);
+      const currentX = lerp(tackle.fromX, tackle.toX, eased);
+      const currentY = lerp(tackle.fromY, tackle.toY, eased) - Math.sin(travel * Math.PI) * 42 * (1 - travel * 0.35);
+      if (!tackle.impacted && progress >= tackle.impactAt) {
+        tackle.impacted = true;
+        triggerImpactBurstAt(tackle.toX, tackle.toY, tackle.amount + 2, tackle.color);
+        playGruntSfx();
+      } else if (!tackle.impacted && Math.random() < dt * 24) {
+        spawnSparkBurst(currentX, currentY, tackle.color, 2, 68);
+      }
+      return progress < 1;
+    });
+
     state.menuSparks = state.menuSparks.filter((spark) => {
       spark.life -= dt;
       spark.x += spark.vx * dt;
@@ -4949,7 +5132,7 @@
       if (state.encounter.resolveTimer > 0) {
         state.encounter.resolveTimer = Math.max(0, state.encounter.resolveTimer - dt);
       }
-      if (state.encounter.resolveTimer <= 0 && !state.encounter.nextDealPrompted) {
+      if (state.encounter.resolveTimer <= 0 && state.handTackles.length === 0 && !state.encounter.nextDealPrompted) {
         state.encounter.nextDealPrompted = true;
       }
     }
@@ -5205,6 +5388,7 @@
 
   function drawHand(hand, type, hideSecond, yOffset = 0) {
     const total = hand.length;
+    const renderedCards = [];
     for (let i = 0; i < total; i += 1) {
       const pos = handCardPosition(type, i, total);
       const animated = animatedCardPosition(hand[i], pos.x, pos.y + yOffset);
@@ -5212,7 +5396,16 @@
       ctx.globalAlpha = animated.alpha;
       drawCard(animated.x, animated.y, hand[i], hideSecond && i === 1, pos.w, pos.h);
       ctx.restore();
+      renderedCards.push({
+        x: animated.x,
+        y: animated.y,
+        w: pos.w,
+        h: pos.h,
+        hidden: Boolean(hideSecond && i === 1),
+        card: hand[i],
+      });
     }
+    return renderedCards;
   }
 
   function handBounds(handType, count, yOffset = 0) {
@@ -5259,7 +5452,7 @@
 
   function drawEnemyAvatarPanel(enemy, portrait, anchor = null, position = null) {
     if (!enemy) {
-      return;
+      return null;
     }
     const avatar = enemyAvatarImage(enemy);
     if (!avatar) {
@@ -5269,8 +5462,8 @@
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
     const intensity = enemyAvatarIntensity(enemy);
     const accent = enemyAvatarAccent(enemy.type);
-    const panelW = portrait ? 45 : 93;
-    const panelH = portrait ? 53 : 114;
+    const panelW = portrait ? 68 : 140;
+    const panelH = portrait ? 80 : 171;
     const defaultX = portrait ? cropX + 24 : WIDTH - cropX - panelW - 44;
     const defaultY = portrait ? 78 : 94;
     const anchorGap = portrait ? 8 : 14;
@@ -5278,7 +5471,7 @@
     const centerAlignedY =
       position && Number.isFinite(position.y) ? position.y : anchor ? anchor.y + anchor.h * 0.5 - panelH * 0.5 : defaultY;
     const minY = portrait ? 72 : 46;
-    const maxY = portrait ? 246 : 248;
+    const maxY = portrait ? 224 : 212;
     const panelY = clampNumber(centerAlignedY, minY, maxY, defaultY);
     const radius = portrait ? 12 : 20;
     const pulse = 0.28 + (Math.sin(state.worldTime * (2.2 + intensity * 0.65)) * 0.5 + 0.5) * 0.26;
@@ -5328,6 +5521,14 @@
     ctx.globalAlpha = 0.42 + pulse * 0.24;
     ctx.stroke();
     ctx.restore();
+    return {
+      x: panelX,
+      y: panelY,
+      w: panelW,
+      h: panelH,
+      centerX: panelX + panelW * 0.5,
+      centerY: panelY + panelH * 0.5,
+    };
   }
 
   function drawPlayerAvatarPanel(portrait, anchor = null, position = null) {
@@ -5393,11 +5594,20 @@
     ctx.fillStyle = gloss;
     ctx.fillRect(innerX, innerY, innerW, innerH);
     ctx.restore();
+    return {
+      x: panelX,
+      y: panelY,
+      w: panelW,
+      h: panelH,
+      centerX: panelX + panelW * 0.5,
+      centerY: panelY + panelH * 0.5,
+    };
   }
 
   function drawEncounter() {
     if (!state.encounter || !state.run) {
       state.handMessageAnchor = null;
+      state.combatLayout = null;
       return;
     }
 
@@ -5416,19 +5626,23 @@
     const handLabelGap = 24;
     const handLabelClearance = 14;
     const splitExtra = encounter.splitUsed ? 20 : 0;
-    const avatarW = portrait ? 45 : 93;
-    const avatarH = portrait ? 53 : 114;
+    const enemyAvatarW = portrait ? 68 : 140;
+    const enemyAvatarH = portrait ? 80 : 171;
+    const playerAvatarW = portrait ? 45 : 93;
+    const playerAvatarH = portrait ? 53 : 114;
     const groupGap = portrait ? 8 : 12;
     const groupPad = portrait ? 18 : 24;
     const colW = fixedBarW;
     const enemyGroupY = portrait ? 96 : 102;
-    const enemyAvatarX = WIDTH - cropX - groupPad - avatarW;
+    const enemyAvatarX = WIDTH - cropX - groupPad - enemyAvatarW;
     const enemyColX = enemyAvatarX - groupGap - colW;
-    const playerGroupY = HEIGHT - avatarH - (portrait ? 16 : 20);
+    const playerGroupY = HEIGHT - playerAvatarH - (portrait ? 16 : 20);
     const playerAvatarX = cropX + groupPad;
-    const playerColX = playerAvatarX + avatarW + groupGap;
+    const playerColX = playerAvatarX + playerAvatarW + groupGap;
     const groupNameY = portrait ? 17 : 19;
     const groupBarY = portrait ? 24 : 28;
+    const enemyTypeGap = portrait ? 15 : 18;
+    const enemyBarGap = portrait ? 14 : 16;
 
     const baseDealerBox = handBounds("dealer", dealerCount, 0);
     const basePlayerBox = handBounds("player", playerCount, 0);
@@ -5443,13 +5657,13 @@
     const dealerYOffset = dealerTargetY - baseDealerBox.y;
     const playerYOffset = playerTargetY - basePlayerBox.y;
 
-    drawHand(
+    const dealerCards = drawHand(
       encounter.dealerHand,
       "dealer",
       encounter.hideDealerHole && state.mode === "playing" && encounter.phase === "player",
       dealerYOffset
     );
-    drawHand(encounter.playerHand, "player", false, playerYOffset);
+    const playerCards = drawHand(encounter.playerHand, "player", false, playerYOffset);
 
     const dealerBox = handBounds("dealer", dealerCount, dealerYOffset);
     const playerBox = handBounds("player", playerCount, playerYOffset);
@@ -5464,18 +5678,20 @@
     };
 
     const dealerBarX = enemyColX;
-    const dealerBarY = enemyGroupY + groupBarY;
-    drawEnemyAvatarPanel(enemy, portrait, null, {
+    const enemyNameY = enemyGroupY + groupNameY;
+    const enemyTypeY = enemyNameY + enemyTypeGap;
+    const dealerBarY = enemyTypeY + enemyBarGap;
+    const enemyPortrait = drawEnemyAvatarPanel(enemy, portrait, null, {
       x: enemyAvatarX,
       y: enemyGroupY,
     });
     ctx.textAlign = "left";
     ctx.fillStyle = enemy.color;
     setFont(portrait ? 18 : 22, 700, true);
-    ctx.fillText(enemy.name, enemyColX, enemyGroupY + groupNameY);
+    ctx.fillText(enemy.name, enemyColX, enemyNameY);
     ctx.fillStyle = "#9fc2dc";
     setFont(portrait ? 11 : 13, 600, false);
-    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, enemyColX, enemyGroupY + groupNameY + (portrait ? 13 : 16));
+    ctx.fillText(`${enemy.type.toUpperCase()} ENCOUNTER`, enemyColX, enemyTypeY);
     drawHealthBar(
       dealerBarX,
       dealerBarY,
@@ -5497,7 +5713,7 @@
 
     const playerBarX = playerColX;
     const playerBarY = playerGroupY + groupBarY;
-    drawPlayerAvatarPanel(portrait, null, {
+    const playerPortrait = drawPlayerAvatarPanel(portrait, null, {
       x: playerAvatarX,
       y: playerGroupY,
     });
@@ -5526,6 +5742,28 @@
       setFont(14, 600, false);
       ctx.fillText(`Split hand ${splitIndex}/${splitTotal}`, playerBox.centerX, playerLabelY + 20);
     }
+    state.combatLayout = {
+      dealerBox: { ...dealerBox },
+      playerBox: { ...playerBox },
+      dealerBar: { x: dealerBarX, y: dealerBarY, w: fixedBarW, h: barH },
+      playerBar: { x: playerBarX, y: playerBarY, w: fixedBarW, h: barH },
+      dealerCards: dealerCards.map((card) => ({ ...card })),
+      playerCards: playerCards.map((card) => ({ ...card })),
+      enemyPortrait: enemyPortrait ? { ...enemyPortrait } : null,
+      playerPortrait: playerPortrait ? { ...playerPortrait } : null,
+      playerPassiveAnchor:
+        playerPortrait
+          ? (() => {
+              const scale = Math.max(0.0001, state.viewport?.scale || 1);
+              const canvasLeft = Number.parseFloat(canvas.style.left) || 0;
+              const canvasTop = Number.parseFloat(canvas.style.top) || 0;
+              return {
+                x: canvasLeft + (playerPortrait.x + playerPortrait.w + 8) * scale,
+                yBottom: canvasTop + (playerPortrait.y + playerPortrait.h) * scale,
+              };
+            })()
+          : null,
+    };
 
     if (encounter.phase === "resolve" && encounter.resultText) {
       const tone = encounter.resultTone || "neutral";
@@ -6729,6 +6967,45 @@
       ctx.fill();
     }
 
+    for (const tackle of state.handTackles) {
+      const progress = Math.max(0, Math.min(1, tackle.elapsed / Math.max(0.01, tackle.duration)));
+      const travel = Math.max(0, Math.min(1, progress / Math.max(0.01, tackle.impactAt)));
+      const eased = easeOutCubic(travel);
+      const centerX = lerp(tackle.fromX, tackle.toX, eased);
+      const centerY = lerp(tackle.fromY, tackle.toY, eased) - Math.sin(travel * Math.PI) * 42 * (1 - travel * 0.35);
+      const alpha = Math.max(0.14, 1 - Math.max(0, (progress - tackle.impactAt) / Math.max(0.01, 1 - tackle.impactAt)) * 0.92);
+      const settle = Math.max(0, Math.min(1, (progress - tackle.impactAt) / Math.max(0.01, 1 - tackle.impactAt)));
+      const tilt = (1 - eased) * (tackle.winner === "enemy" ? -0.24 : 0.24);
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = applyAlpha(tackle.color, 0.26);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(tackle.fromX, tackle.fromY);
+      ctx.lineTo(centerX, centerY);
+      ctx.stroke();
+      ctx.restore();
+
+      const n = tackle.projectiles.length;
+      for (let i = 0; i < n; i += 1) {
+        const projectile = tackle.projectiles[i];
+        const spread = i - (n - 1) * 0.5;
+        const targetX = tackle.toX + spread * 14;
+        const targetY = tackle.toY + Math.abs(spread) * 2;
+        const cardX = lerp(projectile.fromX, targetX, eased);
+        const cardY = lerp(projectile.fromY, targetY, eased) - Math.sin(travel * Math.PI) * (28 + Math.abs(spread) * 5) * (1 - travel * 0.42);
+        const cardW = projectile.w * (1 - settle * 0.16);
+        const cardH = projectile.h * (1 - settle * 0.16);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(cardX, cardY);
+        ctx.rotate(tilt + spread * 0.08 + Math.sin(progress * 16 + i * 0.9) * 0.018 * (1 - eased));
+        drawCard(-cardW * 0.5, -cardH * 0.5, projectile.card, false, cardW, cardH);
+        ctx.restore();
+      }
+    }
+
     ctx.textAlign = "center";
     for (const f of state.floatingTexts) {
       const alpha = Math.max(0, Math.min(1, f.life / f.maxLife));
@@ -6902,6 +7179,8 @@
       if (state.mode === "menu") {
         drawMenuParticles();
       }
+      alignTopRightActionsToHudRow();
+      alignPassiveRailToCombatLayout();
       drawEffects();
       ctx.restore();
       drawFlashOverlays();
@@ -6913,6 +7192,8 @@
     if (state.encounter) {
       drawEncounter();
     }
+    alignTopRightActionsToHudRow();
+    alignPassiveRailToCombatLayout();
 
     if (state.mode === "reward") {
       drawRewardScreen();
@@ -6940,7 +7221,7 @@
     }
     if (state.mode === "playing") {
       if (canAdvanceDeal()) {
-        return ["enter(new deal)", "tap(new deal)"];
+        return ["enter(deal)", "tap(deal)"];
       }
       if (!canPlayerAct()) {
         return ["observe(result)"];

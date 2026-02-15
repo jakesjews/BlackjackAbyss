@@ -716,13 +716,14 @@ body.menu-screen #top-right-actions {
 }
 
 #passive-rail {
-  position: fixed;
+  position: absolute;
   left: 8px;
   top: max(68px, env(safe-area-inset-top) + 56px);
   z-index: 82;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 4px;
   pointer-events: auto;
 }
 
@@ -732,8 +733,8 @@ body.menu-screen #top-right-actions {
 
 .passive-card {
   position: relative;
-  width: 56px;
-  height: 72px;
+  width: 46px;
+  height: 60px;
   border-radius: 12px;
   border: 1px solid rgba(169, 208, 236, 0.32);
   background:
@@ -746,25 +747,27 @@ body.menu-screen #top-right-actions {
 
 .passive-card .thumb {
   position: absolute;
-  inset: 4px 4px 16px;
+  inset: 8px 5px 8px;
   border-radius: 9px;
   background-size: cover;
   background-position: center;
   box-shadow: inset 0 0 0 1px rgba(214, 236, 252, 0.22);
+  transform: scale(0.75);
+  transform-origin: top center;
 }
 
 .passive-card .stack {
   position: absolute;
-  right: 4px;
-  bottom: 4px;
-  min-width: 20px;
-  height: 18px;
+  right: 3px;
+  bottom: 3px;
+  min-width: 18px;
+  height: 16px;
   border-radius: 9px;
   padding: 0 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 700;
   color: #ffffff;
   background: rgba(12, 25, 38, 0.9);
@@ -772,8 +775,8 @@ body.menu-screen #top-right-actions {
 }
 
 .passive-stack-summary {
-  width: 64px;
-  height: 82px;
+  width: 76px;
+  height: 60px;
 }
 
 .passive-stack-summary .stack-fan {
@@ -783,8 +786,8 @@ body.menu-screen #top-right-actions {
 
 .passive-stack-summary .fan-card {
   position: absolute;
-  width: 44px;
-  height: 58px;
+  width: 36px;
+  height: 48px;
   border-radius: 8px;
   border: 1px solid rgba(173, 212, 238, 0.24);
   background-size: cover;
@@ -1084,7 +1087,7 @@ body.compact-controls #mobile-controls.single-action-only button[data-mobile-act
   #passive-rail {
     left: 6px;
     top: max(62px, env(safe-area-inset-top) + 52px);
-    gap: 6px;
+    gap: 4px;
   }
 
   body.compact-controls #passive-rail {
@@ -1093,8 +1096,8 @@ body.compact-controls #mobile-controls.single-action-only button[data-mobile-act
   }
 
   .passive-card {
-    width: 48px;
-    height: 62px;
+    width: 42px;
+    height: 56px;
   }
 }
 
