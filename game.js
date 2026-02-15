@@ -6461,17 +6461,23 @@
     );
     const menuScreen = state.mode === "menu";
     if (menuScreen) {
-      gameShell.style.width = `${WIDTH}px`;
-      gameShell.style.height = `${HEIGHT}px`;
-      canvas.style.width = `${WIDTH}px`;
-      canvas.style.height = `${HEIGHT}px`;
-      canvas.style.left = "0px";
-      canvas.style.top = "0px";
+      const menuScale = Math.max(viewportWidth / WIDTH, viewportHeight / HEIGHT);
+      const canvasDisplayWidth = Math.round(WIDTH * menuScale);
+      const canvasDisplayHeight = Math.round(HEIGHT * menuScale);
+      const canvasLeft = Math.floor((viewportWidth - canvasDisplayWidth) * 0.5);
+      const canvasTop = Math.floor((viewportHeight - canvasDisplayHeight) * 0.5);
+
+      gameShell.style.width = `${viewportWidth}px`;
+      gameShell.style.height = `${viewportHeight}px`;
+      canvas.style.width = `${canvasDisplayWidth}px`;
+      canvas.style.height = `${canvasDisplayHeight}px`;
+      canvas.style.left = `${canvasLeft}px`;
+      canvas.style.top = `${canvasTop}px`;
 
       state.viewport = {
-        width: WIDTH,
-        height: HEIGHT,
-        scale: 1,
+        width: canvasDisplayWidth,
+        height: canvasDisplayHeight,
+        scale: menuScale,
         cropWorldX: 0,
         portraitZoomed: false,
       };
