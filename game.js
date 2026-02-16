@@ -82,21 +82,31 @@
     spin: -2.4 + Math.random() * 4.8,
     shape: Math.floor(Math.random() * 3),
   }));
-  const MENU_ART_SOURCES = ["public/images/splash_art.png", "/images/splash_art.png"];
+  const MENU_ART_SOURCES = ["/images/splash_art.png", "public/images/splash_art.png"];
   const GRUNT_SOURCES = [
-    "public/audio/soundbites/grunt.wav",
     "/audio/soundbites/grunt.wav",
-    "public/audio/soundbites/grunt.ogg",
+    "public/audio/soundbites/grunt.wav",
     "/audio/soundbites/grunt.ogg",
+    "public/audio/soundbites/grunt.ogg",
   ];
   const menuArtImage = new window.Image();
   menuArtImage.decoding = "async";
   const chipIconImage = new window.Image();
   chipIconImage.decoding = "async";
-  chipIconImage.src = "public/images/icons/chips.png";
+  chipIconImage.src = "/images/icons/chips.png";
+  chipIconImage.onerror = () => {
+    if (!chipIconImage.src.includes("public/images/icons/chips.png")) {
+      chipIconImage.src = "public/images/icons/chips.png";
+    }
+  };
   const buyIconImage = new window.Image();
   buyIconImage.decoding = "async";
-  buyIconImage.src = "public/images/icons/buy.png";
+  buyIconImage.src = "/images/icons/buy.png";
+  buyIconImage.onerror = () => {
+    if (!buyIconImage.src.includes("public/images/icons/buy.png")) {
+      buyIconImage.src = "public/images/icons/buy.png";
+    }
+  };
   async function resolveMenuArtSource() {
     for (const src of MENU_ART_SOURCES) {
       try {
@@ -112,7 +122,7 @@
     menuArtImage.src = MENU_ART_SOURCES[0];
   }
   resolveMenuArtSource();
-  const ENEMY_AVATAR_SOURCE_ROOTS = ["public/images/avatars", "/images/avatars"];
+  const ENEMY_AVATAR_SOURCE_ROOTS = ["/images/avatars", "public/images/avatars"];
   const enemyAvatarCache = new Map();
 
   function sanitizeEnemyAvatarKey(name) {
@@ -215,7 +225,7 @@
     [3, 7, 10],
     [5, 8, 12],
   ];
-  const ACTION_ICON_BASE = "public/images/icons";
+  const ACTION_ICON_BASE = "/images/icons";
   const ACTION_ICON_FILES = Object.freeze({
     achievements: `${ACTION_ICON_BASE}/achievements.png`,
     chips: `${ACTION_ICON_BASE}/chips.png`,

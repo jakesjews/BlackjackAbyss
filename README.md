@@ -1,6 +1,6 @@
 # Blackjack Abyss
 
-Roguelike blackjack combat game built in plain HTML/CSS/JS on a single canvas.
+Roguelike blackjack combat game with a modular runtime and Phaser 3 host.
 
 ## Features
 
@@ -9,6 +9,7 @@ Roguelike blackjack combat game built in plain HTML/CSS/JS on a single canvas.
 - Relics and shop items with passive effects.
 - Run persistence in browser localStorage (resume supported).
 - Always-on action button tray (desktop includes keyboard shortcut hints on each button).
+- Phaser 3 host runtime added for incremental migration to a maintained game engine.
 
 ## Quick Start
 
@@ -18,7 +19,7 @@ Roguelike blackjack combat game built in plain HTML/CSS/JS on a single canvas.
 npm install
 ```
 
-2. Run the local static server:
+2. Run the local dev server:
 
 ```bash
 npm run start
@@ -33,6 +34,7 @@ npm run start
 ### Keyboard
 
 - `Enter`: start new run / confirm
+- `Enter`: next deal (when result lock is active)
 - `R`: resume saved run (from menu)
 - `A`: hit
 - `B`: stand
@@ -61,9 +63,19 @@ Storage keys:
 
 ## Project Files
 
-- `index.html` - page shell and canvas container
-- `styles.css` - global styles + bottom action controls
-- `game.js` - game logic, rendering, input, persistence
+- `index.html` - page shell and UI overlays
+- `styles.css` - global styles + responsive controls
+- `src/main.js` - module entrypoint
+- `src/engine/phaser-host.js` - offscreen Phaser 3 host runtime (non-disruptive bridge)
+- `game.js` - current gameplay implementation (legacy module loaded by `src/main.js`)
 - `test-actions.json` - short Playwright action burst
 - `test-actions-long.json` - longer Playwright scenario
 
+## Build / Deploy
+
+```bash
+npm run build
+```
+
+- Vite outputs static assets to `dist/`.
+- Vercel uses `vercel.json` (`framework: vite`, output `dist`).

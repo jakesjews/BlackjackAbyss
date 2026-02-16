@@ -1,13 +1,15 @@
 {
   "name": "codex",
   "version": "1.0.0",
-  "description": "",
+  "description": "Blackjack Abyss - roguelike blackjack deck duel",
   "main": "game.js",
   "scripts": {
-    "start": "http-server . -p 4173 -c-1",
-    "serve": "npm run start",
-    "vercel-build": "node scripts/vercel-build.js",
-    "build": "npm run vercel-build",
+    "dev": "vite --host --port 4173 --strictPort",
+    "start": "npm run dev",
+    "serve": "npm run dev",
+    "build": "vite build",
+    "preview": "vite preview --host --port 4173 --strictPort",
+    "vercel-build": "npm run build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -15,9 +17,11 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "phaser": "^3.90.0",
     "playwright": "^1.58.2"
   },
   "devDependencies": {
-    "http-server": "^14.1.1"
+    "http-server": "^14.1.1",
+    "vite": "^7.1.5"
   }
 }

@@ -11,13 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Sora:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <script>
-      window.__ASSET_BUST = String(Date.now());
-    </script>
-    <link id="app-stylesheet" rel="stylesheet" />
-    <script>
-      document.getElementById("app-stylesheet").href = `styles.css?v=${window.__ASSET_BUST}`;
-    </script>
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div id="game-shell">
@@ -75,10 +69,6 @@
       <button type="button" data-mobile-action="right">Right</button>
       <button type="button" data-mobile-action="confirm">Confirm</button>
     </div>
-    <script>
-      const appScript = document.createElement("script");
-      appScript.src = `game.js?v=${window.__ASSET_BUST}`;
-      document.body.appendChild(appScript);
-    </script>
+    <script type="module" src="/src/main.js"></script>
   </body>
 </html>
