@@ -367,7 +367,7 @@ body.compact-controls.menu-ui-scale-xl #menu-home-title {
   background:
     linear-gradient(180deg, rgba(116, 141, 167, 0.95) 0%, rgba(71, 94, 118, 0.95) 100%);
   background-image:
-    url("public/images/icons/home.png"),
+    url("/images/icons/home.png"),
     linear-gradient(180deg, rgba(116, 141, 167, 0.95) 0%, rgba(71, 94, 118, 0.95) 100%);
   background-repeat: no-repeat, no-repeat;
   background-position: center, center;
@@ -379,7 +379,7 @@ body.compact-controls.menu-ui-scale-xl #menu-home-title {
   background:
     linear-gradient(180deg, rgba(116, 141, 167, 0.95) 0%, rgba(71, 94, 118, 0.95) 100%);
   background-image:
-    url("public/images/icons/log.png"),
+    url("/images/icons/log.png"),
     linear-gradient(180deg, rgba(116, 141, 167, 0.95) 0%, rgba(71, 94, 118, 0.95) 100%);
   background-repeat: no-repeat, no-repeat;
   background-position: center, center;
