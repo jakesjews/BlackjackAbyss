@@ -1,8 +1,9 @@
 (() => {
   "use strict";
 
+  const phaserBridge = window.__ABYSS_PHASER_BRIDGE__ || null;
   const gameShell = document.getElementById("game-shell");
-  const canvas = document.getElementById("game-canvas");
+  const canvas = phaserBridge?.getCanvas?.() || document.getElementById("game-canvas");
   const ctx = canvas.getContext("2d");
   const menuHome = document.getElementById("menu-home");
   const menuNewRun = document.getElementById("menu-new-run");
@@ -8235,12 +8236,37 @@
     };
   }
 
+  function tickFrame(dt) {
+    update(dt);
+    render();
+  }
+
   let lastFrame = performance.now();
   function gameLoop(now) {
     const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000));
     lastFrame = now;
-    update(dt);
+    tickFrame(dt);
+    requestAnimationFrame(gameLoop);
+  }
+
+  function startRuntimeLoop() {
+    resizeCanvas();
     render();
+    if (phaserBridge && typeof phaserBridge.setStepHandler === "function") {
+      let priorTime = performance.now();
+      phaserBridge.setStepHandler((dtSeconds, timeMs) => {
+        let dt = dtSeconds;
+        if (!Number.isFinite(dt) || dt < 0) {
+          const now = Number.isFinite(timeMs) ? timeMs : performance.now();
+          dt = Math.max(0, (now - priorTime) / 1000);
+          priorTime = now;
+        } else if (Number.isFinite(timeMs)) {
+          priorTime = timeMs;
+        }
+        tickFrame(Math.min(0.05, Math.max(0, dt)));
+      });
+      return;
+    }
     requestAnimationFrame(gameLoop);
   }
 
@@ -8460,7 +8486,5 @@
   window.render_game_to_text = renderGameToText;
   window.advanceTime = advanceTime;
 
-  resizeCanvas();
-  render();
-  requestAnimationFrame(gameLoop);
+  startRuntimeLoop();
 })();

@@ -2,7 +2,7 @@ import Phaser from "phaser";
 
 const BASE_WIDTH = 1280;
 const BASE_HEIGHT = 720;
-const HOST_ROOT_ID = "phaser-runtime-root";
+let stepHandler = null;
 
 class HostScene extends Phaser.Scene {
   constructor() {
@@ -10,71 +10,79 @@ class HostScene extends Phaser.Scene {
   }
 
   create() {
-    // Scene placeholder for incremental migration from legacy runtime.
+    this.cameras.main.setBackgroundColor("rgba(0,0,0,0)");
+  }
+
+  update(time, delta) {
+    if (typeof stepHandler === "function") {
+      stepHandler(Math.max(0, delta) / 1000, time);
+    }
   }
 }
 
 export function createPhaserHost() {
-  if (window.__ABYSS_PHASER_GAME__) {
-    return window.__ABYSS_PHASER_GAME__;
+  if (window.__ABYSS_PHASER_READY_PROMISE__) {
+    return window.__ABYSS_PHASER_READY_PROMISE__;
   }
 
-  let hostRoot = document.getElementById(HOST_ROOT_ID);
-  if (!hostRoot) {
-    hostRoot = document.createElement("div");
-    hostRoot.id = HOST_ROOT_ID;
-    Object.assign(hostRoot.style, {
-      position: "fixed",
-      left: "-10000px",
-      top: "-10000px",
-      width: "1px",
-      height: "1px",
-      overflow: "hidden",
-      opacity: "0",
-      pointerEvents: "none",
-      zIndex: "-1",
-    });
-    document.body.appendChild(hostRoot);
+  const shell = document.getElementById("game-shell");
+  if (!shell) {
+    throw new Error("Phaser host requires #game-shell");
   }
 
-  const game = new Phaser.Game({
-    // Run Phaser offscreen while legacy renderer remains active during migration.
-    type: Phaser.CANVAS,
-    parent: hostRoot,
-    width: BASE_WIDTH,
-    height: BASE_HEIGHT,
-    scene: [HostScene],
-    transparent: true,
-    backgroundColor: "#000000",
-    render: {
-      antialias: true,
-      clearBeforeRender: true,
-      pixelArt: false,
-      transparent: true,
-      premultipliedAlpha: false,
-    },
-    scale: {
-      mode: Phaser.Scale.NONE,
+  const readyPromise = new Promise((resolve) => {
+    const bridge = {
+      setStepHandler(handler) {
+        stepHandler = typeof handler === "function" ? handler : null;
+      },
+      getCanvas() {
+        return window.__ABYSS_PHASER_GAME__?.canvas || null;
+      },
+    };
+
+    const game = new Phaser.Game({
+      type: Phaser.CANVAS,
+      parent: shell,
       width: BASE_WIDTH,
       height: BASE_HEIGHT,
-      autoRound: false,
-    },
-    fps: {
-      target: 60,
-      forceSetTimeOut: false,
-      smoothStep: true,
-    },
-    audio: {
-      noAudio: true,
-    },
-    input: {
-      keyboard: false,
-      mouse: false,
-      touch: false,
-      gamepad: false,
-    },
+      scene: [HostScene],
+      transparent: true,
+      backgroundColor: "#000000",
+      render: {
+        antialias: true,
+        clearBeforeRender: false,
+        pixelArt: false,
+        transparent: true,
+        premultipliedAlpha: false,
+      },
+      scale: {
+        mode: Phaser.Scale.NONE,
+        width: BASE_WIDTH,
+        height: BASE_HEIGHT,
+        autoRound: false,
+      },
+      fps: {
+        target: 60,
+        forceSetTimeOut: false,
+        smoothStep: true,
+      },
+      callbacks: {
+        postBoot: (bootedGame) => {
+          const canvas = bootedGame.canvas;
+          if (canvas) {
+            canvas.id = "game-canvas";
+            canvas.setAttribute("aria-label", "Blackjack Abyss game");
+          }
+          window.__ABYSS_PHASER_GAME__ = bootedGame;
+          window.__ABYSS_PHASER_BRIDGE__ = bridge;
+          resolve(bridge);
+        },
+      },
+    });
+
+    window.__ABYSS_PHASER_GAME__ = game;
   });
 
-  window.__ABYSS_PHASER_GAME__ = game;
-  return game;
+  window.__ABYSS_PHASER_READY_PROMISE__ = readyPromise;
+  return readyPromise;
 }
