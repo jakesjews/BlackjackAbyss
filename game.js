@@ -82,31 +82,19 @@
     spin: -2.4 + Math.random() * 4.8,
     shape: Math.floor(Math.random() * 3),
   }));
-  const MENU_ART_SOURCES = ["/images/splash_art.png", "public/images/splash_art.png"];
+  const MENU_ART_SOURCES = ["/images/splash_art.png"];
   const GRUNT_SOURCES = [
     "/audio/soundbites/grunt.wav",
-    "public/audio/soundbites/grunt.wav",
     "/audio/soundbites/grunt.ogg",
-    "public/audio/soundbites/grunt.ogg",
   ];
   const menuArtImage = new window.Image();
   menuArtImage.decoding = "async";
   const chipIconImage = new window.Image();
   chipIconImage.decoding = "async";
   chipIconImage.src = "/images/icons/chips.png";
-  chipIconImage.onerror = () => {
-    if (!chipIconImage.src.includes("public/images/icons/chips.png")) {
-      chipIconImage.src = "public/images/icons/chips.png";
-    }
-  };
   const buyIconImage = new window.Image();
   buyIconImage.decoding = "async";
   buyIconImage.src = "/images/icons/buy.png";
-  buyIconImage.onerror = () => {
-    if (!buyIconImage.src.includes("public/images/icons/buy.png")) {
-      buyIconImage.src = "public/images/icons/buy.png";
-    }
-  };
   async function resolveMenuArtSource() {
     for (const src of MENU_ART_SOURCES) {
       try {
@@ -122,7 +110,7 @@
     menuArtImage.src = MENU_ART_SOURCES[0];
   }
   resolveMenuArtSource();
-  const ENEMY_AVATAR_SOURCE_ROOTS = ["/images/avatars", "public/images/avatars"];
+  const ENEMY_AVATAR_SOURCE_ROOTS = ["/images/avatars"];
   const enemyAvatarCache = new Map();
 
   function sanitizeEnemyAvatarKey(name) {
