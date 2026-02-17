@@ -1182,59 +1182,59 @@
   ]);
   const DEALER_DIALOGUE_VERBATIM_SET = new Set(DEALER_DIALOGUE_VERBATIM);
   const DEALER_DIALOGUE_EXTRA = Object.freeze([
-    "I only deal two things: cards and emotional damage.",
-    "I was born to shuffle and ruin your weekend.",
-    "My poker face got banned in seven countries.",
-    "Don't panic, that smell is just your odds burning.",
-    "I don't chase luck. Luck asks me for tips.",
-    "The deck is cold, and so is my soul.",
-    "I never fold. I just let other people collapse.",
-    "This smile is sponsored by your future regret.",
-    "You're about to discover what a bad hand feels like.",
-    "If confidence were chips, you'd still be broke.",
-    "I came here to chew gum and count cards, and I'm all out of gum.",
-    "The house edge is just my personality disorder.",
-    "You bring hope, I bring math.",
-    "My strategy is simple: make you question your life choices.",
-    "I'd wish you luck, but I already spent it.",
-    "You can't spell slaughter without laughter. Watch me.",
-    "I run this table like a crime scene.",
-    "You blink, I bank.",
-    "This hand has your name on the toe tag.",
-    "I drink tears neat. No ice.",
+    "I only deal two things: cards and busts.",
+    "Welcome to Blackjack: where hope hits and dies.",
+    "I count to 21 better than you count blessings.",
+    "You can hit, stand, or panic. I recommend panic.",
+    "This shoe has your bust written all over it.",
+    "Split the pair, split your destiny.",
+    "Double down? Double regret.",
+    "I don't fold, I just watch players bust.",
+    "If confidence were chips, you'd still be short-stacked.",
+    "I came to deal cards and break 20s.",
+    "The house edge is my love language.",
+    "You bring vibes, I bring dealer math.",
+    "Your 16 is cute. My 10 showing is cuter.",
+    "Stand on 12. I dare you.",
+    "Hit again. I love repeat customers.",
+    "You blink, I flip a face card.",
+    "This hand has your bust on speed dial.",
+    "Insurance? I sell disappointment by the ounce.",
+    "Every ace you draw is pre-taxed by fate.",
+    "The only thing softer than your total is that excuse.",
   ]);
   const ENCOUNTER_INTRO_OPENERS = Object.freeze({
     normal: [
-      "You walked into my lane, now play it clean.",
-      "I deal fast and I punish slow hands.",
-      "This table eats nerves for breakfast.",
-      "Keep your pulse steady if you want out alive.",
+      "You walked into my lane, now play this blackjack clean.",
+      "I deal fast and punish slow hits.",
+      "This table eats busted nerves for breakfast.",
+      "Keep your pulse steady if you want out of this shoe alive.",
       ...DEALER_DIALOGUE_VERBATIM,
       ...DEALER_DIALOGUE_EXTRA,
     ],
     elite: [
-      "You've reached an elite table, and the stakes bite back.",
-      "I break hopeful runs for a living.",
+      "You've reached an elite blackjack table, and the stakes bite back.",
+      "I break hopeful runs one busted hand at a time.",
       "One mistake here and your chips turn to smoke.",
-      "You've climbed high enough to lose something real.",
-      "I collect win streaks and turn them into cautionary tales.",
-      "I don't count cards, I count casualties.",
-      "Your confidence looks expensive. Shame about the refund policy.",
-      "If pain had a dealer, you're looking at her.",
-      "You brought courage to a numbers fight.",
-      "I don't bluff. I invoice.",
+      "You've climbed high enough to lose to a cold shoe.",
+      "I collect win streaks and cash them as busts.",
+      "I don't count cards, I count broken doubles.",
+      "Your confidence looks expensive. This hand is cash only.",
+      "You brought courage to a hard-17 fight.",
+      "I don't bluff. I flip and collect.",
+      "Try a hero hit. I need a laugh.",
     ],
     boss: [
-      "So you finally reached the heart of the abyss.",
+      "So you finally reached the heart of blackjack abyss.",
       "Every deal ends in debt when I run the table.",
-      "This is where winning runs come to die.",
-      "The house is watching, and I never miss.",
-      "I am the reason the odds have nightmares.",
-      "You don't beat me, you survive me.",
-      "The last hero asked for mercy. I offered interest.",
-      "When I say all in, I mean your whole destiny.",
-      "I don't fear aces. I tax them.",
-      "This is less a card game and more an autopsy.",
+      "This is where winning runs come to bust.",
+      "The house is watching every hit and stand.",
+      "I am the reason the odds stay house-favored.",
+      "You don't beat me, you hope I bust first.",
+      "The last hero stood on 16. Briefly.",
+      "When I say all in, I mean all your chips.",
+      "I don't fear aces. I bury them in dealer 21s.",
+      "This isn't a duel, it's a final table sentence.",
     ],
   });
   const ENCOUNTER_INTRO_CLOSERS = Object.freeze({
@@ -2486,16 +2486,20 @@
     const relicStacks = passiveStacksForRun();
 
     const signature = relicStacks.map((entry) => `${entry.relic.id}:${entry.count}`).join("|");
+    if (!relicStacks.length) {
+      if (passiveRail.textContent.length > 0) {
+        passiveRail.textContent = "";
+        hidePassiveTooltip();
+      }
+      state.passiveRailSignature = "";
+      return;
+    }
     if (signature === state.passiveRailSignature) {
       return;
     }
     state.passiveRailSignature = signature;
     passiveRail.textContent = "";
     hidePassiveTooltip();
-
-    if (!relicStacks.length) {
-      return;
-    }
 
     const totalPassives = relicStacks.reduce((acc, entry) => acc + entry.count, 0);
     if (totalPassives >= 9) {
@@ -3578,6 +3582,10 @@
     state.combatLayout = null;
     state.logsFeedSignature = "";
     state.passiveRailSignature = "";
+    state.passiveModalSignature = "";
+    if (passiveRail) {
+      passiveRail.textContent = "";
+    }
     hidePassiveTooltip();
     closeLogsModal();
     clearSavedRun();
