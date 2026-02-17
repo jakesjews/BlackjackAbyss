@@ -1324,6 +1324,7 @@
     menuDesktopScale: 1,
     uiMobileSignature: "",
     uiMobileViewportSignature: "",
+    lastIntroDialogue: "",
   };
 
   function clampNumber(value, min, max, fallback) {
@@ -1969,12 +1970,29 @@
     const encounterType = enemy?.type === "boss" ? "boss" : enemy?.type === "elite" ? "elite" : "normal";
     const openers = ENCOUNTER_INTRO_OPENERS[encounterType] || ENCOUNTER_INTRO_OPENERS.normal;
     const closers = ENCOUNTER_INTRO_CLOSERS[encounterType] || ENCOUNTER_INTRO_CLOSERS.normal;
-    const seed = hashSeed(
-      `${enemy?.name || "dealer"}|${encounterType}|${state.run?.floor || 0}|${state.run?.room || 0}|${state.run?.totalHands || 0}`
-    );
-    const opener = openers[Math.max(0, seed % openers.length)] || openers[0] || "You made it to my table.";
-    const closer = closers[Math.max(0, (seed >>> 3) % closers.length)] || closers[0] || "Show me your hand.";
-    return `${opener} ${closer}`.replace(/\s+/g, " ").trim();
+    const fallbackOpener = "You made it to my table.";
+    const fallbackCloser = "Show me your hand.";
+    const pickRandom = (list, fallback) => {
+      if (!Array.isArray(list) || list.length === 0) {
+        return fallback;
+      }
+      return list[Math.floor(Math.random() * list.length)] || fallback;
+    };
+
+    let dialogue = `${pickRandom(openers, fallbackOpener)} ${pickRandom(closers, fallbackCloser)}`
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (dialogue === state.lastIntroDialogue && (openers.length > 1 || closers.length > 1)) {
+      for (let i = 0; i < 4 && dialogue === state.lastIntroDialogue; i += 1) {
+        dialogue = `${pickRandom(openers, fallbackOpener)} ${pickRandom(closers, fallbackCloser)}`
+          .replace(/\s+/g, " ")
+          .trim();
+      }
+    }
+
+    state.lastIntroDialogue = dialogue;
+    return dialogue;
   }
 
   function createEncounterIntroState(enemy, introLike = null) {
