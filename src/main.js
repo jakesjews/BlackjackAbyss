@@ -1,4 +1,4 @@
-import { createPhaserHost } from "./engine/phaser-host.js";
+import { createPhaserApp } from "./engine/app.js";
 
-await createPhaserHost();
+await createPhaserApp();
 await import("../game.js");

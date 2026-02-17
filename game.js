@@ -1327,6 +1327,34 @@
     lastIntroDialogue: "",
   };
 
+  function installModeBridge() {
+    let modeValue = typeof state.mode === "string" ? state.mode : "menu";
+    const reportMode = (mode) => {
+      if (phaserBridge && typeof phaserBridge.reportMode === "function") {
+        phaserBridge.reportMode(mode);
+      }
+    };
+
+    Object.defineProperty(state, "mode", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return modeValue;
+      },
+      set(nextMode) {
+        if (typeof nextMode !== "string" || nextMode.length === 0 || nextMode === modeValue) {
+          return;
+        }
+        modeValue = nextMode;
+        reportMode(modeValue);
+      },
+    });
+
+    reportMode(modeValue);
+  }
+
+  installModeBridge();
+
   function clampNumber(value, min, max, fallback) {
     const n = Number(value);
     if (!Number.isFinite(n)) {
@@ -2653,24 +2681,70 @@
     passiveRail.style.transform = "";
   }
 
+  function isExternalModeRendering(mode = state.mode) {
+    return (
+      Boolean(phaserBridge) &&
+      typeof phaserBridge.isExternalRendererActive === "function" &&
+      phaserBridge.isExternalRendererActive(mode)
+    );
+  }
+
+  function hideLegacyUiForExternalRenderer() {
+    if (menuHome) {
+      menuHome.hidden = true;
+    }
+    if (collectionModal) {
+      collectionModal.hidden = true;
+    }
+    if (topRightActions) {
+      topRightActions.hidden = true;
+      topRightActions.style.left = "";
+      topRightActions.style.right = "";
+      topRightActions.style.top = "";
+    }
+    if (achievementsToggle) {
+      achievementsToggle.hidden = true;
+    }
+    if (logsToggle) {
+      logsToggle.hidden = true;
+    }
+    if (mobileControls) {
+      mobileControls.classList.remove("active");
+      mobileControls.classList.remove("reward-claim-only");
+      mobileControls.classList.remove("single-action-only");
+    }
+    document.body.classList.remove("menu-screen");
+    hideTopbarTooltip();
+    hidePassiveTooltip();
+    if (isLogsModalOpen()) {
+      closeLogsModal();
+    }
+    if (isPassiveModalOpen()) {
+      closePassiveModal();
+    }
+  }
+
   function syncOverlayUi() {
+    const externalModeRendering = isExternalModeRendering();
     const runActive = Boolean(state.run);
     const menuActive = state.mode === "menu";
     const collectionActive = state.mode === "collection";
     if (menuHome) {
-      menuHome.hidden = !menuActive;
+      menuHome.hidden = externalModeRendering || !menuActive;
     }
     if (collectionModal) {
-      collectionModal.hidden = !collectionActive;
-      if (collectionActive) {
+      const useLegacyCollectionModal = collectionActive && !externalModeRendering;
+      collectionModal.hidden = !useLegacyCollectionModal;
+      if (useLegacyCollectionModal) {
         renderCollectionModal();
       }
     }
     if (menuResume) {
       menuResume.disabled = !hasSavedRun();
     }
-    const showHome = runActive && state.mode !== "menu" && state.mode !== "collection";
-    const showLogs = runActive && state.mode !== "menu" && state.mode !== "collection";
+    const showTopActions = state.mode !== "menu" && state.mode !== "collection" && (runActive || externalModeRendering);
+    const showHome = showTopActions;
+    const showLogs = showTopActions;
     if (topRightActions) {
       topRightActions.hidden = !(showHome || showLogs);
     }
@@ -4733,6 +4807,23 @@
       document.body.classList.remove("mobile-portrait-ui");
       document.body.classList.remove("compact-controls");
       document.body.classList.remove("menu-screen");
+      return;
+    }
+
+    if (isExternalModeRendering()) {
+      state.mobileActive = false;
+      state.compactControls = false;
+      state.mobilePortrait = false;
+      state.uiMobileSignature = "";
+      state.uiMobileViewportSignature = "";
+      mobileControls.classList.remove("active");
+      mobileControls.classList.remove("reward-claim-only");
+      mobileControls.classList.remove("single-action-only");
+      Object.values(mobileButtons).forEach(clearMobileButtonAttention);
+      document.body.classList.remove("mobile-ui-active");
+      document.body.classList.remove("mobile-portrait-ui");
+      document.body.classList.remove("compact-controls");
+      document.body.classList.toggle("menu-screen", state.mode === "menu" || state.mode === "collection");
       return;
     }
 
@@ -8044,6 +8135,11 @@
   function render() {
     updateMobileControls();
     syncOverlayUi();
+    if (isExternalModeRendering()) {
+      alignTopRightActionsToHudRow();
+      alignPassiveRailToCombatLayout();
+      return;
+    }
     const shake = currentShakeOffset();
     ctx.save();
     ctx.translate(shake.x, shake.y);
@@ -8464,6 +8560,456 @@
     });
   }
 
+  function registerPhaserMenuActions() {
+    if (!phaserBridge || typeof phaserBridge.setMenuActions !== "function") {
+      return;
+    }
+    phaserBridge.setMenuActions({
+      startRun: () => {
+        unlockAudio();
+        if (state.mode === "menu") {
+          startRun();
+        }
+      },
+      resumeRun: () => {
+        unlockAudio();
+        if (state.mode === "menu" && hasSavedRun()) {
+          if (resumeSavedRun()) {
+            saveRunSnapshot();
+          }
+        }
+      },
+      openCollection: () => {
+        unlockAudio();
+        if (state.mode === "menu") {
+          openCollection(0);
+        }
+      },
+      hasSavedRun: () => hasSavedRun(),
+    });
+  }
+
+  function buildPhaserRunSnapshot() {
+    if (state.mode !== "playing" || !state.run || !state.encounter) {
+      return null;
+    }
+    const run = state.run;
+    const encounter = state.encounter;
+    const introActive = isEncounterIntroActive(encounter);
+    const intro = encounter.intro || null;
+    const introDialogue = typeof intro?.dialogue === "string" ? intro.dialogue : "";
+    const visibleChars = Math.max(
+      0,
+      Math.min(
+        introDialogue.length,
+        Number.isFinite(intro?.visibleChars) ? Math.floor(intro.visibleChars) : introDialogue.length
+      )
+    );
+    const canAct = canPlayerAct();
+    const canDouble =
+      canAct &&
+      encounter.phase === "player" &&
+      encounter.playerHand.length === 2 &&
+      !encounter.doubleDown &&
+      !encounter.splitUsed;
+
+    return {
+      mode: state.mode,
+      run: {
+        floor: run.floor,
+        room: run.room,
+        roomsPerFloor: run.roomsPerFloor,
+        chips: run.player?.gold || 0,
+        streak: run.player?.streak || 0,
+        bustGuardsLeft: run.player?.bustGuardsLeft || 0,
+      },
+      player: {
+        hp: run.player?.hp || 0,
+        maxHp: run.player?.maxHp || 1,
+      },
+      enemy: {
+        name: encounter.enemy?.name || "Enemy",
+        hp: encounter.enemy?.hp || 0,
+        maxHp: encounter.enemy?.maxHp || 1,
+        color: encounter.enemy?.color || "#a3be8d",
+        type: encounter.enemy?.type || "normal",
+        avatarKey: encounter.enemy?.avatarKey || "",
+      },
+      phase: encounter.phase,
+      cards: {
+        player: encounter.playerHand.map((card) => ({
+          rank: card.rank,
+          suit: card.suit,
+          hidden: false,
+        })),
+        dealer: encounter.dealerHand.map((card, index) => ({
+          rank: card.rank,
+          suit: card.suit,
+          hidden: Boolean(encounter.hideDealerHole && index === 1),
+        })),
+      },
+      totals: {
+        player: encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total,
+        dealer: encounter.hideDealerHole && encounter.phase === "player" ? null : handTotal(encounter.dealerHand).total,
+      },
+      resultText: encounter.resultText || "",
+      resultTone: encounter.resultTone || "neutral",
+      announcement: state.announcement || "",
+      intro: {
+        active: introActive,
+        ready: Boolean(intro?.ready),
+        text: introDialogue.slice(0, visibleChars),
+        fullText: introDialogue,
+      },
+      status: {
+        canAct,
+        canHit: canAct,
+        canStand: canAct,
+        canSplit: canSplitCurrentHand(),
+        canDouble,
+        canDeal: canAdvanceDeal(),
+      },
+    };
+  }
+
+  function registerPhaserRunApi() {
+    if (!phaserBridge || typeof phaserBridge.setRunApi !== "function") {
+      return;
+    }
+    phaserBridge.setRunApi({
+      getSnapshot: () => buildPhaserRunSnapshot(),
+      hit: () => {
+        unlockAudio();
+        hitAction();
+      },
+      stand: () => {
+        unlockAudio();
+        standAction();
+      },
+      doubleDown: () => {
+        unlockAudio();
+        doubleAction();
+      },
+      split: () => {
+        unlockAudio();
+        splitAction();
+      },
+      deal: () => {
+        unlockAudio();
+        advanceToNextDeal();
+      },
+      confirmIntro: () => {
+        unlockAudio();
+        advanceEncounterIntro();
+      },
+    });
+  }
+
+  function buildPhaserRewardSnapshot() {
+    if (state.mode !== "reward") {
+      return null;
+    }
+    const run = state.run || null;
+    const options = state.rewardOptions.map((relic, index) => {
+      const rarity = relicRarityMeta(relic);
+      return {
+        id: relic.id,
+        name: relic.name,
+        description: passiveDescription(relic.description),
+        rarity: normalizeRelicRarity(relic.rarity),
+        rarityLabel: rarity.label,
+        color: relic.color || rarity.glow || "#c8d7a1",
+        selected: index === state.selectionIndex,
+      };
+    });
+
+    return {
+      mode: state.mode,
+      run: {
+        floor: run?.floor || 1,
+        room: run?.room || 1,
+        roomsPerFloor: run?.roomsPerFloor || 5,
+        chips: run?.player?.gold || 0,
+      },
+      options,
+      selectionIndex: state.selectionIndex,
+      canClaim: options.length > 0,
+    };
+  }
+
+  function registerPhaserRewardApi() {
+    if (!phaserBridge || typeof phaserBridge.setRewardApi !== "function") {
+      return;
+    }
+    phaserBridge.setRewardApi({
+      getSnapshot: () => buildPhaserRewardSnapshot(),
+      prev: () => {
+        if (state.mode === "reward") {
+          moveSelection(-1, state.rewardOptions.length);
+        }
+      },
+      next: () => {
+        if (state.mode === "reward") {
+          moveSelection(1, state.rewardOptions.length);
+        }
+      },
+      claim: () => {
+        claimReward();
+      },
+      selectIndex: (index) => {
+        if (state.mode !== "reward" || !state.rewardOptions.length) {
+          return;
+        }
+        const target = clampNumber(index, 0, state.rewardOptions.length - 1, state.selectionIndex);
+        if (target !== state.selectionIndex) {
+          state.selectionIndex = target;
+          playUiSfx("select");
+        }
+      },
+    });
+  }
+
+  function buildPhaserShopSnapshot() {
+    if (state.mode !== "shop") {
+      return null;
+    }
+    const run = state.run || null;
+    const purchaseLocked = Boolean(run?.shopPurchaseMade);
+    const items = state.shopStock.map((item, index) => {
+      const idBase = item.type === "relic" ? item.relic?.id || "relic" : item.id || "service";
+      const affordable = Boolean(run && run.player && run.player.gold >= item.cost);
+      const sold = Boolean(item.sold);
+      return {
+        id: `${idBase}-${index}`,
+        name: shopItemName(item),
+        description: shopItemDescription(item),
+        type: item.type === "relic" ? "RELIC" : "SERVICE",
+        cost: nonNegInt(item.cost, 0),
+        sold,
+        selected: index === state.selectionIndex,
+        canBuy: !purchaseLocked && !sold && affordable,
+      };
+    });
+
+    let canBuySelected = false;
+    if (run && state.shopStock.length > 0) {
+      const selectedIndex = clampNumber(state.selectionIndex, 0, state.shopStock.length - 1, 0);
+      const selectedItem = state.shopStock[selectedIndex];
+      canBuySelected = Boolean(
+        selectedItem &&
+          !selectedItem.sold &&
+          !purchaseLocked &&
+          Number(run.player?.gold || 0) >= Number(selectedItem.cost || 0)
+      );
+    }
+
+    return {
+      mode: state.mode,
+      run: {
+        floor: run?.floor || 1,
+        room: run?.room || 1,
+        roomsPerFloor: run?.roomsPerFloor || 5,
+        chips: run?.player?.gold || 0,
+        hp: run?.player?.hp || 0,
+        maxHp: run?.player?.maxHp || 1,
+        shopPurchaseMade: purchaseLocked,
+      },
+      items,
+      selectionIndex: state.selectionIndex,
+      canBuySelected,
+      canContinue: true,
+    };
+  }
+
+  function registerPhaserShopApi() {
+    if (!phaserBridge || typeof phaserBridge.setShopApi !== "function") {
+      return;
+    }
+    phaserBridge.setShopApi({
+      getSnapshot: () => buildPhaserShopSnapshot(),
+      prev: () => {
+        if (state.mode === "shop") {
+          moveSelection(-1, state.shopStock.length);
+        }
+      },
+      next: () => {
+        if (state.mode === "shop") {
+          moveSelection(1, state.shopStock.length);
+        }
+      },
+      buy: (index) => {
+        if (state.mode !== "shop") {
+          return;
+        }
+        unlockAudio();
+        if (Number.isFinite(Number(index))) {
+          buyShopItem(Number(index));
+        } else {
+          buyShopItem();
+        }
+      },
+      continueRun: () => {
+        if (state.mode !== "shop") {
+          return;
+        }
+        unlockAudio();
+        leaveShop();
+      },
+      selectIndex: (index) => {
+        if (state.mode !== "shop" || !state.shopStock.length) {
+          return;
+        }
+        const target = clampNumber(index, 0, state.shopStock.length - 1, state.selectionIndex);
+        if (target !== state.selectionIndex) {
+          state.selectionIndex = target;
+          playUiSfx("select");
+        }
+      },
+    });
+  }
+
+  function buildPhaserOverlaySnapshot() {
+    if (state.mode === "collection") {
+      const entries = collectionEntries();
+      const { cols, rows } = collectionPageLayout();
+      const perPage = Math.max(1, cols * rows);
+      const pageCount = Math.max(1, Math.ceil(entries.length / perPage));
+      const page = clampNumber(nonNegInt(state.collectionPage, 0), 0, pageCount - 1, 0);
+      const start = page * perPage;
+      const pageEntries = entries.slice(start, start + perPage).map((entry) => {
+        const rarityMeta = RELIC_RARITY_META[entry.rarity] || RELIC_RARITY_META.common;
+        return {
+          id: entry.relic.id,
+          rarityLabel: entry.rarityLabel,
+          rarityColor: rarityMeta.glow,
+          name: entry.unlocked ? entry.relic.name : "LOCKED",
+          description: entry.unlocked ? passiveDescription(entry.relic.description) : entry.unlockText,
+          unlocked: entry.unlocked,
+          copies: entry.copies,
+        };
+      });
+
+      const unlockedCount = entries.filter((entry) => entry.unlocked).length;
+      const foundCount = entries.filter((entry) => entry.copies > 0).length;
+      const totalCopies = entries.reduce((acc, entry) => acc + entry.copies, 0);
+
+      return {
+        mode: state.mode,
+        summary: `Unlocked ${unlockedCount}/${entries.length} | Found ${foundCount}/${entries.length} | Copies ${totalCopies}`,
+        page,
+        pageCount,
+        layout: { cols, rows },
+        pageEntries,
+        canPrev: page > 0,
+        canNext: page < pageCount - 1,
+      };
+    }
+
+    if (state.mode === "gameover" || state.mode === "victory") {
+      const title = state.mode === "gameover" ? "RUN LOST" : "HOUSE BROKEN";
+      const subtitle =
+        state.mode === "gameover"
+          ? "The House keeps your soul this time."
+          : "You shattered the final dealer.";
+      const prompt =
+        state.mode === "gameover"
+          ? "Press Enter to run it back."
+          : "Press Enter for another run.";
+
+      const run = state.run || null;
+      const stats = run
+        ? [
+            `Floor reached: ${run.floor}/${run.maxFloor}`,
+            `Enemies defeated: ${run.enemiesDefeated}`,
+            `Hands played: ${run.totalHands}`,
+            `Total damage dealt: ${run.player?.totalDamageDealt || 0}`,
+            `Total damage taken: ${run.player?.totalDamageTaken || 0}`,
+            `Chips banked: ${run.player?.gold || 0}`,
+          ]
+        : [];
+
+      return {
+        mode: state.mode,
+        title,
+        subtitle,
+        prompt,
+        stats,
+        canRestart: true,
+      };
+    }
+
+    return null;
+  }
+
+  function registerPhaserOverlayApi() {
+    if (!phaserBridge || typeof phaserBridge.setOverlayApi !== "function") {
+      return;
+    }
+
+    const collectionPages = () => {
+      const entries = collectionEntries();
+      const { cols, rows } = collectionPageLayout();
+      const perPage = Math.max(1, cols * rows);
+      return Math.max(1, Math.ceil(entries.length / perPage));
+    };
+
+    const goToMenu = () => {
+      if (state.mode !== "collection") {
+        return;
+      }
+      unlockAudio();
+      playUiSfx("confirm");
+      state.mode = "menu";
+    };
+
+    const restartRun = () => {
+      if (state.mode !== "gameover" && state.mode !== "victory") {
+        return;
+      }
+      unlockAudio();
+      startRun();
+    };
+
+    phaserBridge.setOverlayApi({
+      getSnapshot: () => buildPhaserOverlaySnapshot(),
+      prevPage: () => {
+        if (state.mode !== "collection") {
+          return;
+        }
+        const pageCount = collectionPages();
+        const next = clampNumber(state.collectionPage - 1, 0, pageCount - 1, state.collectionPage);
+        if (next !== state.collectionPage) {
+          state.collectionPage = next;
+          playUiSfx("select");
+        }
+      },
+      nextPage: () => {
+        if (state.mode !== "collection") {
+          return;
+        }
+        const pageCount = collectionPages();
+        const next = clampNumber(state.collectionPage + 1, 0, pageCount - 1, state.collectionPage);
+        if (next !== state.collectionPage) {
+          state.collectionPage = next;
+          playUiSfx("select");
+        }
+      },
+      backToMenu: () => {
+        goToMenu();
+      },
+      restart: () => {
+        restartRun();
+      },
+      confirm: () => {
+        if (state.mode === "collection") {
+          goToMenu();
+          return;
+        }
+        restartRun();
+      },
+    });
+  }
+
   if (mobileButtons) {
     Object.entries(mobileButtons).forEach(([action, button]) => {
       if (!button) {
@@ -8624,6 +9170,11 @@
 
   state.profile = loadProfile();
   state.savedRunSnapshot = loadSavedRunSnapshot();
+  registerPhaserMenuActions();
+  registerPhaserRunApi();
+  registerPhaserRewardApi();
+  registerPhaserShopApi();
+  registerPhaserOverlayApi();
 
   window.addEventListener("pointerdown", unlockAudio, { passive: true });
   window.addEventListener("touchstart", unlockAudio, { passive: true });

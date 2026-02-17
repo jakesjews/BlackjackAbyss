@@ -66,7 +66,8 @@ Storage keys:
 - `index.html` - page shell and UI overlays
 - `styles.css` - global styles + responsive controls
 - `src/main.js` - module entrypoint
-- `src/engine/phaser-host.js` - offscreen Phaser 3 host runtime (non-disruptive bridge)
+- `src/engine/app.js` - Phaser application bootstrap + runtime context
+- `src/engine/phaser-host.js` - compatibility re-export for existing host import paths
 - `game.js` - current gameplay implementation (legacy module loaded by `src/main.js`)
 - `test-actions.json` - short Playwright action burst
 - `test-actions-long.json` - longer Playwright scenario
