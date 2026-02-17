@@ -3809,7 +3809,9 @@
     }
 
     encounter.playerHand = seedHand.map((card) => ({ rank: card.rank, suit: card.suit }));
-    encounter.hideDealerHole = !encounter.dealerResolved;
+    encounter.dealerHand = [];
+    encounter.dealerResolved = false;
+    encounter.hideDealerHole = true;
     encounter.phase = "player";
     encounter.resultText = "";
     encounter.resultTone = "neutral";
@@ -3819,10 +3821,19 @@
     encounter.bustGuardTriggered = false;
     encounter.critTriggered = false;
     encounter.lastPlayerAction = "split";
+    dealCard(encounter, "dealer");
     dealCard(encounter, "player");
+    dealCard(encounter, "dealer");
 
     if (announcementText) {
       setAnnouncement(announcementText, announcementDuration);
+    }
+
+    const playerNatural = isBlackjack(encounter.playerHand);
+    const dealerNatural = isBlackjack(encounter.dealerHand);
+    if (playerNatural || dealerNatural) {
+      resolveDealerThenShowdown(true);
+      return true;
     }
 
     const total = handTotal(encounter.playerHand).total;
@@ -3877,7 +3888,7 @@
 
     playActionSfx("double");
     addLog("Hand split.");
-    addLog("Dealer hand stays locked across split hands.");
+    addLog("Each split hand gets a fresh dealer.");
     const splitIndex = nonNegInt(encounter.splitHandsResolved, 0) + 1;
     const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, 2));
     if (
