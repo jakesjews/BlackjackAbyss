@@ -4635,6 +4635,8 @@
       !state.encounter.doubleDown &&
       !state.encounter.splitUsed;
     const canSplit = state.mode === "playing" ? canSplitCurrentHand() : false;
+    const introActive = state.mode === "playing" ? isEncounterIntroActive() : false;
+    const introReady = introActive && Boolean(state.encounter?.intro?.ready);
     const viewportSignature = `${viewportWidth}x${viewportHeight}`;
     const mobileSignature = [
       state.mode,
@@ -4650,6 +4652,8 @@
       canAct ? 1 : 0,
       canDouble ? 1 : 0,
       canSplit ? 1 : 0,
+      introActive ? 1 : 0,
+      introReady ? 1 : 0,
       state.encounter ? state.encounter.phase : "",
       state.encounter ? state.encounter.playerHand.length : 0,
       state.encounter && state.encounter.doubleDown ? 1 : 0,
@@ -4702,6 +4706,27 @@
     }
 
     if (state.mode === "playing") {
+      if (introActive) {
+        Object.values(mobileButtons).forEach(clearMobileButtonAttention);
+        setMobileButton(mobileButtons.confirm, "Deal", introReady, true);
+        setMobileButton(mobileButtons.left, "Left", false, false);
+        setMobileButton(mobileButtons.right, "Right", false, false);
+        setMobileButton(mobileButtons.hit, "Hit", false, false);
+        setMobileButton(mobileButtons.stand, "Stand", false, false);
+        setMobileButton(mobileButtons.double, "Double", false, false);
+        mobileControls.classList.add("single-action-only");
+        if (mobileButtons.confirm) {
+          if (introReady) {
+            triggerMobileButtonAttention(
+              mobileButtons.confirm,
+              `introdeal-${state.run?.floor || 0}-${state.run?.room || 0}`
+            );
+          } else {
+            clearMobileButtonAttention(mobileButtons.confirm);
+          }
+        }
+        return;
+      }
       if (canAdvance) {
         setMobileButton(mobileButtons.confirm, "Deal", true, true);
         setMobileButton(mobileButtons.left, "Left", false, false);
@@ -8450,15 +8475,25 @@
     }
   });
 
-  canvas.addEventListener("pointerdown", onCanvasPointerDown);
-  canvas.addEventListener("pointermove", onCanvasPointerMove);
-  canvas.addEventListener("pointerup", onCanvasPointerUp);
-  canvas.addEventListener("pointercancel", onCanvasPointerCancel);
+  if (phaserBridge && typeof phaserBridge.setInputHandlers === "function") {
+    phaserBridge.setInputHandlers({
+      pointerDown: onCanvasPointerDown,
+      pointerMove: onCanvasPointerMove,
+      pointerUp: onCanvasPointerUp,
+      pointerCancel: onCanvasPointerCancel,
+      keyDown: onKeyDown,
+    });
+  } else {
+    canvas.addEventListener("pointerdown", onCanvasPointerDown);
+    canvas.addEventListener("pointermove", onCanvasPointerMove);
+    canvas.addEventListener("pointerup", onCanvasPointerUp);
+    canvas.addEventListener("pointercancel", onCanvasPointerCancel);
+    window.addEventListener("keydown", onKeyDown);
+  }
 
   state.profile = loadProfile();
   state.savedRunSnapshot = loadSavedRunSnapshot();
 
-  window.addEventListener("keydown", onKeyDown);
   window.addEventListener("pointerdown", unlockAudio, { passive: true });
   window.addEventListener("touchstart", unlockAudio, { passive: true });
   window.addEventListener("click", unlockAudio, { passive: true });
