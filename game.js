@@ -1180,6 +1180,7 @@
     "I'm gonna club you to death!",
     "You're in trouble, cuz I don't have a heart!",
   ]);
+  const DEALER_DIALOGUE_VERBATIM_SET = new Set(DEALER_DIALOGUE_VERBATIM);
   const DEALER_DIALOGUE_EXTRA = Object.freeze([
     "I only deal two things: cards and emotional damage.",
     "I was born to shuffle and ruin your weekend.",
@@ -1240,7 +1241,6 @@
     normal: [
       "Show me your best hand.",
       "Deal if you dare.",
-      "Let's see if you can hold your ground.",
       "Try not to fold under pressure.",
     ],
     elite: [
@@ -1979,15 +1979,20 @@
       return list[Math.floor(Math.random() * list.length)] || fallback;
     };
 
-    let dialogue = `${pickRandom(openers, fallbackOpener)} ${pickRandom(closers, fallbackCloser)}`
-      .replace(/\s+/g, " ")
-      .trim();
+    const composeDialogue = () => {
+      const opener = pickRandom(openers, fallbackOpener);
+      if (DEALER_DIALOGUE_VERBATIM_SET.has(opener)) {
+        return opener;
+      }
+      const closer = pickRandom(closers, fallbackCloser);
+      return `${opener} ${closer}`.replace(/\s+/g, " ").trim();
+    };
+
+    let dialogue = composeDialogue();
 
     if (dialogue === state.lastIntroDialogue && (openers.length > 1 || closers.length > 1)) {
       for (let i = 0; i < 4 && dialogue === state.lastIntroDialogue; i += 1) {
-        dialogue = `${pickRandom(openers, fallbackOpener)} ${pickRandom(closers, fallbackCloser)}`
-          .replace(/\s+/g, " ")
-          .trim();
+        dialogue = composeDialogue();
       }
     }
 
