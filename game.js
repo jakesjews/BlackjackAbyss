@@ -1165,24 +1165,75 @@
     "Abyss Banker": "abyss-banker",
     "Null Dealer": "null-dealer",
   };
+  const DEALER_DIALOGUE_VERBATIM = Object.freeze([
+    "Hey, whats the big deal? OH, it’s me!!",
+    "I got 21 problems, but winning this game ain’t one!",
+    "Hit me, if you dare!!",
+    "Oh you wont be able to stand me!",
+    "I dont know jack, but I DO know blackjack!!",
+    "If you're gonna beat me, you'll need an ace in the hole!",
+    "Now shove this ace up your hole!",
+    "I've got nothing up my sleeves. Stop looking at them!",
+    "I'm gonna split you in half!",
+    "You're the hero? Well, I'm the ante-hero!",
+    "I'm kind of a big deal.",
+    "I'm gonna club you to death!",
+    "You're in trouble, cuz I don't have a heart!",
+  ]);
+  const DEALER_DIALOGUE_EXTRA = Object.freeze([
+    "I only deal two things: cards and emotional damage.",
+    "I was born to shuffle and ruin your weekend.",
+    "My poker face got banned in seven countries.",
+    "Don't panic, that smell is just your odds burning.",
+    "I don't chase luck. Luck asks me for tips.",
+    "The deck is cold, and so is my soul.",
+    "I never fold. I just let other people collapse.",
+    "This smile is sponsored by your future regret.",
+    "You're about to discover what a bad hand feels like.",
+    "If confidence were chips, you'd still be broke.",
+    "I came here to chew gum and count cards, and I'm all out of gum.",
+    "The house edge is just my personality disorder.",
+    "You bring hope, I bring math.",
+    "My strategy is simple: make you question your life choices.",
+    "I'd wish you luck, but I already spent it.",
+    "You can't spell slaughter without laughter. Watch me.",
+    "I run this table like a crime scene.",
+    "You blink, I bank.",
+    "This hand has your name on the toe tag.",
+    "I drink tears neat. No ice.",
+  ]);
   const ENCOUNTER_INTRO_OPENERS = Object.freeze({
     normal: [
       "You walked into my lane, now play it clean.",
       "I deal fast and I punish slow hands.",
       "This table eats nerves for breakfast.",
       "Keep your pulse steady if you want out alive.",
+      ...DEALER_DIALOGUE_VERBATIM,
+      ...DEALER_DIALOGUE_EXTRA,
     ],
     elite: [
       "You've reached an elite table, and the stakes bite back.",
       "I break hopeful runs for a living.",
       "One mistake here and your chips turn to smoke.",
       "You've climbed high enough to lose something real.",
+      "I collect win streaks and turn them into cautionary tales.",
+      "I don't count cards, I count casualties.",
+      "Your confidence looks expensive. Shame about the refund policy.",
+      "If pain had a dealer, you're looking at her.",
+      "You brought courage to a numbers fight.",
+      "I don't bluff. I invoice.",
     ],
     boss: [
       "So you finally reached the heart of the abyss.",
       "Every deal ends in debt when I run the table.",
       "This is where winning runs come to die.",
       "The house is watching, and I never miss.",
+      "I am the reason the odds have nightmares.",
+      "You don't beat me, you survive me.",
+      "The last hero asked for mercy. I offered interest.",
+      "When I say all in, I mean your whole destiny.",
+      "I don't fear aces. I tax them.",
+      "This is less a card game and more an autopsy.",
     ],
   });
   const ENCOUNTER_INTRO_CLOSERS = Object.freeze({
@@ -1918,7 +1969,9 @@
     const encounterType = enemy?.type === "boss" ? "boss" : enemy?.type === "elite" ? "elite" : "normal";
     const openers = ENCOUNTER_INTRO_OPENERS[encounterType] || ENCOUNTER_INTRO_OPENERS.normal;
     const closers = ENCOUNTER_INTRO_CLOSERS[encounterType] || ENCOUNTER_INTRO_CLOSERS.normal;
-    const seed = hashSeed(`${enemy?.name || "dealer"}|${encounterType}`);
+    const seed = hashSeed(
+      `${enemy?.name || "dealer"}|${encounterType}|${state.run?.floor || 0}|${state.run?.room || 0}|${state.run?.totalHands || 0}`
+    );
     const opener = openers[Math.max(0, seed % openers.length)] || openers[0] || "You made it to my table.";
     const closer = closers[Math.max(0, (seed >>> 3) % closers.length)] || closers[0] || "Show me your hand.";
     return `${opener} ${closer}`.replace(/\s+/g, " ").trim();
@@ -3553,6 +3606,32 @@
     }
   }
 
+  function revealEncounterIntro(encounter = state.encounter) {
+    if (!isEncounterIntroActive(encounter) || !encounter?.intro) {
+      return false;
+    }
+    const intro = encounter.intro;
+    if (intro.ready) {
+      return false;
+    }
+    intro.visibleChars = (intro.dialogue || "").length;
+    intro.ready = true;
+    intro.typeTimer = 0;
+    saveRunSnapshot();
+    return true;
+  }
+
+  function advanceEncounterIntro(encounter = state.encounter) {
+    if (!isEncounterIntroActive(encounter)) {
+      return false;
+    }
+    if (revealEncounterIntro(encounter)) {
+      playUiSfx("select");
+      return true;
+    }
+    return confirmEncounterIntro();
+  }
+
   function confirmEncounterIntro() {
     if (!isEncounterIntroActive() || !state.encounter) {
       return false;
@@ -4708,7 +4787,7 @@
     if (state.mode === "playing") {
       if (introActive) {
         Object.values(mobileButtons).forEach(clearMobileButtonAttention);
-        setMobileButton(mobileButtons.confirm, "Deal", introReady, true);
+        setMobileButton(mobileButtons.confirm, introReady ? "Deal" : "Skip", true, true);
         setMobileButton(mobileButtons.left, "Left", false, false);
         setMobileButton(mobileButtons.right, "Right", false, false);
         setMobileButton(mobileButtons.hit, "Hit", false, false);
@@ -4850,7 +4929,7 @@
         state.mode = "menu";
       } else if (state.mode === "playing") {
         if (isEncounterIntroActive()) {
-          confirmEncounterIntro();
+          advanceEncounterIntro();
         } else if (canAdvanceDeal()) {
           advanceToNextDeal();
         } else {
@@ -5004,7 +5083,7 @@
       const point = canvasPointToWorld(event.clientX, event.clientY);
       const intro = state.encounter?.intro;
       if (point && intro?.confirmRect && pointInRect(point.x, point.y, intro.confirmRect)) {
-        confirmEncounterIntro();
+        advanceEncounterIntro();
       }
       event.preventDefault();
       return;
@@ -5254,7 +5333,7 @@
     if (state.mode === "playing") {
       if (isEncounterIntroActive()) {
         if (key === "enter" || key === "space") {
-          confirmEncounterIntro();
+          advanceEncounterIntro();
         }
         return;
       }
@@ -6075,7 +6154,10 @@
     const arena = combatArenaBounds();
     const cropX = Math.max(0, state.viewport?.cropWorldX || 0);
     const visibleW = Math.max(320, WIDTH - cropX * 2);
-    const panelW = portrait ? Math.max(330, Math.min(560, visibleW - 24)) : Math.max(620, Math.min(820, visibleW - 140));
+    const panelMaxW = Math.max(320, visibleW - 20);
+    const panelTargetW = portrait ? 560 : 760;
+    const panelMinW = portrait ? 330 : 460;
+    const panelW = Math.max(Math.min(panelTargetW, panelMaxW), Math.min(panelMinW, panelMaxW));
     const panelH = portrait ? 304 : 284;
     const panelX = Math.round(WIDTH * 0.5 - panelW * 0.5);
     const panelY = Math.round(
@@ -6131,7 +6213,8 @@
       ctx.fillRect(cursorX, cursorY, 5, 18);
     }
 
-    const buttonW = portrait ? 158 : 188;
+    const buttonLabel = intro.ready ? "Let's go!" : "Skip";
+    const buttonW = Math.min(portrait ? 158 : 188, Math.max(128, panelW - 48));
     const buttonH = portrait ? 44 : 50;
     const buttonX = panelX + panelW - buttonW - 22;
     const buttonY = panelY + panelH - buttonH - 18;
@@ -6149,16 +6232,19 @@
       buttonFill.addColorStop(1, "rgba(220, 171, 87, 0.97)");
       ctx.fillStyle = buttonFill;
     } else {
-      ctx.fillStyle = "rgba(74, 86, 100, 0.72)";
+      const buttonFill = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + buttonH);
+      buttonFill.addColorStop(0, "rgba(166, 197, 226, 0.9)");
+      buttonFill.addColorStop(1, "rgba(121, 157, 192, 0.88)");
+      ctx.fillStyle = buttonFill;
     }
     ctx.fill();
-    ctx.strokeStyle = intro.ready ? "rgba(255, 245, 216, 0.5)" : "rgba(188, 205, 220, 0.22)";
+    ctx.strokeStyle = intro.ready ? "rgba(255, 245, 216, 0.5)" : "rgba(210, 228, 245, 0.42)";
     ctx.lineWidth = 1.1;
     ctx.stroke();
-    ctx.fillStyle = intro.ready ? "#15263a" : "rgba(220, 235, 248, 0.62)";
+    ctx.fillStyle = intro.ready ? "#15263a" : "#142941";
     ctx.textAlign = "center";
     setFont(portrait ? 18 : 20, 700, true);
-    ctx.fillText("Let's go!", buttonX + buttonW * 0.5, buttonY + buttonH * 0.64);
+    ctx.fillText(buttonLabel, buttonX + buttonW * 0.5, buttonY + buttonH * 0.64);
   }
 
   function drawEncounter() {
@@ -6503,7 +6589,8 @@
     });
 
     const statsX = leftChipX + chipBlockW + 14;
-    if (hud.portrait) {
+    const stackedHudText = hud.portrait || hud.span < 700;
+    if (stackedHudText) {
       const columnW = Math.max(120, rowW - chipBlockW - 18);
       const columnX = statsX;
       const lineOneY = rowY + Math.max(12, Math.round(statsH * 0.34));
@@ -6511,11 +6598,11 @@
 
       ctx.textAlign = "left";
       ctx.fillStyle = "#dbeaf7";
-      setFont(13, 700, false);
+      setFont(hud.portrait ? 13 : 12, 700, false);
       ctx.fillText(fitText(floorText, columnW), columnX, lineOneY);
 
       ctx.fillStyle = "#b7ddff";
-      setFont(13, 700, false);
+      setFont(hud.portrait ? 13 : 12, 700, false);
       ctx.fillText(fitText(rightStats, columnW), columnX, lineTwoY);
     } else {
       ctx.textAlign = "left";
@@ -7967,7 +8054,9 @@
     }
     if (state.mode === "playing") {
       if (isEncounterIntroActive()) {
-        return state.encounter?.intro?.ready ? ["enter(let's-go)", "space(let's-go)", "tap(let's-go)"] : ["observe(intro)"];
+        return state.encounter?.intro?.ready
+          ? ["enter(let's-go)", "space(let's-go)", "tap(let's-go)"]
+          : ["enter(skip-intro)", "space(skip-intro)", "tap(skip-intro)"];
       }
       if (canAdvanceDeal()) {
         return ["enter(deal)", "tap(deal)"];
