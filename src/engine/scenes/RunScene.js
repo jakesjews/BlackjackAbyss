@@ -3,7 +3,37 @@ import { BASE_HEIGHT, BASE_WIDTH, SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 
-const BUTTON_STYLES = ACTION_BUTTON_STYLE;
+const BUTTON_STYLES = Object.freeze({
+  idle: Object.freeze({
+    ...ACTION_BUTTON_STYLE.idle,
+    top: 0xe6ca94,
+    bottom: 0xbe9153,
+    text: "#2a1d12",
+    radius: 8,
+  }),
+  hover: Object.freeze({
+    ...ACTION_BUTTON_STYLE.hover,
+    top: 0xefdaa9,
+    bottom: 0xc79a5b,
+    text: "#261a10",
+    radius: 8,
+  }),
+  pressed: Object.freeze({
+    ...ACTION_BUTTON_STYLE.pressed,
+    top: 0xd7b57f,
+    bottom: 0xaa7b42,
+    text: "#23180e",
+    radius: 8,
+  }),
+  disabled: Object.freeze({
+    ...ACTION_BUTTON_STYLE.disabled,
+    top: 0xb7a17f,
+    bottom: 0x958064,
+    alpha: 0.9,
+    text: "#4a3b29",
+    radius: 8,
+  }),
+});
 const RUN_PARTICLE_KEY = "__run-particle__";
 const ENEMY_AVATAR_TEXTURE_PREFIX = "__enemy-avatar__";
 const SUIT_SYMBOL = Object.freeze({
@@ -274,13 +304,15 @@ export class RunScene extends Phaser.Scene {
 
   drawBackground(width, height) {
     const pulse = Math.sin(this.time.now * 0.00032) * 0.5 + 0.5;
-    this.graphics.fillGradientStyle(0x120e0a, 0x120e0a, 0x060504, 0x060504, 1);
+    this.graphics.fillGradientStyle(0x0d0906, 0x0d0906, 0x030202, 0x030202, 1);
     this.graphics.fillRect(0, 0, width, height);
-    this.graphics.fillStyle(0x8c5d26, 0.07 + pulse * 0.06);
-    this.graphics.fillCircle(width * 0.5, height * 0.34, height * 0.44);
+    this.graphics.fillStyle(0xa96c2f, 0.06 + pulse * 0.06);
+    this.graphics.fillCircle(width * 0.5, height * 0.42, height * 0.5);
+    this.graphics.fillStyle(0x4f3418, 0.07 + pulse * 0.03);
+    this.graphics.fillEllipse(width * 0.5, height * 0.44, width * 0.62, height * 0.78);
 
-    this.graphics.lineStyle(1, 0x8f6d43, 0.08);
-    for (let y = 96; y < height - 110; y += 42) {
+    this.graphics.lineStyle(1, 0x6f4d2c, 0.1);
+    for (let y = 74; y < height - 122; y += 34) {
       this.graphics.beginPath();
       this.graphics.moveTo(24, y);
       this.graphics.lineTo(width - 24, y);
@@ -288,60 +320,91 @@ export class RunScene extends Phaser.Scene {
     }
 
     const arenaX = 18;
-    const arenaY = 58;
+    const arenaY = 56;
     const arenaW = width - 36;
     const arenaH = height - 126;
     this.graphics.lineStyle(2, 0x6b4a28, 0.35);
     this.graphics.strokeRoundedRect(arenaX, arenaY, arenaW, arenaH, 24);
-    this.graphics.lineStyle(1, 0xc39a65, 0.16);
+    this.graphics.lineStyle(1, 0xcaa06a, 0.2);
     this.graphics.strokeRoundedRect(arenaX + 4, arenaY + 4, arenaW - 8, arenaH - 8, 22);
   }
 
   drawHud(snapshot, width) {
     const run = snapshot.run || {};
-    const leftLabel = `CHIPS ${run.chips || 0}   STREAK ${run.streak || 0}   GUARDS ${run.bustGuardsLeft || 0}`;
-    const rightLabel = `FLOOR ${run.floor || 1}   ROOM ${run.room || 1}/${run.roomsPerFloor || 5}`;
-    this.drawText(
-      "hud-left",
-      leftLabel,
-      42,
-      28,
-      {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "31px",
-        color: "#e2ccb0",
-      },
-      { x: 0, y: 0.5 }
-    );
-    this.drawText(
-      "hud-right",
-      rightLabel,
-      width - 274,
-      28,
-      {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "31px",
-        color: "#d8c6ac",
-      },
-      { x: 1, y: 0.5 }
-    );
+    const chips = Number.isFinite(run.chips)
+      ? run.chips
+      : Number.isFinite(run.player?.gold)
+        ? run.player.gold
+        : 0;
+    const streak = Number.isFinite(run.streak)
+      ? run.streak
+      : Number.isFinite(run.player?.streak)
+        ? run.player.streak
+        : 0;
+    const guards = Number.isFinite(run.bustGuardsLeft)
+      ? run.bustGuardsLeft
+      : Number.isFinite(run.player?.bustGuardsLeft)
+        ? run.player.bustGuardsLeft
+        : 0;
+    const floor = Number.isFinite(run.floor) ? run.floor : 1;
+    const maxFloor = Number.isFinite(run.maxFloor) ? run.maxFloor : 3;
+    const room = Number.isFinite(run.room) ? run.room : 1;
+    const roomsPerFloor = Number.isFinite(run.roomsPerFloor) ? run.roomsPerFloor : 5;
+    const hudY = 26;
+    this.drawChipIcon(30, hudY, 8);
+    this.drawText("hud-chips", String(chips), 48, hudY, {
+      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+      fontSize: "17px",
+      color: "#f2cd88",
+      fontStyle: "700",
+    }, { x: 0, y: 0.5 });
+    this.drawText("hud-left-stats", `Streak ${streak}  Guards ${guards}`, 96, hudY, {
+      fontFamily: '"Chakra Petch", "Sora", sans-serif',
+      fontSize: "16px",
+      color: "#d8c09a",
+      fontStyle: "700",
+    }, { x: 0, y: 0.5 });
+    this.drawText("hud-floor-room", `Floor ${floor}/${maxFloor}  Room ${room}/${roomsPerFloor}`, width * 0.5, hudY, {
+      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+      fontSize: "16px",
+      color: "#e2d0af",
+      fontStyle: "700",
+    }, { x: 0.5, y: 0.5 });
+    this.graphics.lineStyle(1, 0x6d4e2f, 0.26);
+    this.graphics.beginPath();
+    this.graphics.moveTo(24, 54);
+    this.graphics.lineTo(width - 24, 54);
+    this.graphics.strokePath();
+  }
+
+  drawChipIcon(x, y, radius) {
+    const safeRadius = Math.max(3, Number(radius) || 8);
+    this.graphics.fillStyle(0xe0ba74, 0.92);
+    this.graphics.fillCircle(x, y, safeRadius);
+    this.graphics.lineStyle(1.4, 0x8f6a34, 0.8);
+    this.graphics.strokeCircle(x, y, safeRadius);
+    this.graphics.fillStyle(0x6b4d24, 0.52);
+    this.graphics.fillCircle(x, y, safeRadius * 0.42);
+    this.graphics.lineStyle(1, 0xf4d89f, 0.42);
+    this.graphics.strokeCircle(x, y, safeRadius * 0.74);
   }
 
   drawEncounterPanels(snapshot, width, height) {
     const enemy = snapshot.enemy || {};
     const player = snapshot.player || {};
-    const enemyAvatarW = 130;
-    const enemyAvatarH = 160;
-    const enemyAvatarX = width - 42 - enemyAvatarW;
+    const enemyAvatarW = 146;
+    const enemyAvatarH = 176;
+    const enemyAvatarX = width - 46 - enemyAvatarW;
     const enemyAvatarY = 78;
-    const enemyInfoWidth = Math.max(220, Math.min(300, Math.round(width * 0.22)));
-    const enemyInfoRight = enemyAvatarX - 18;
+    const enemyInfoWidth = Math.max(220, Math.min(288, Math.round(width * 0.22)));
+    const enemyInfoRight = enemyAvatarX - 14;
     const enemyInfoLeft = enemyInfoRight - enemyInfoWidth;
 
     this.drawText("enemy-name", (enemy.name || "Enemy").toUpperCase(), enemyInfoRight, enemyAvatarY + 14, {
-      fontFamily: '"Chakra Petch", "Sora", sans-serif',
-      fontSize: "44px",
-      color: "#d9c7ac",
+      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+      fontSize: "17px",
+      color: "#d8c3a0",
+      fontStyle: "700",
     }, { x: 1, y: 0.5 });
     this.drawText(
       "enemy-type",
@@ -350,8 +413,9 @@ export class RunScene extends Phaser.Scene {
       enemyAvatarY + 38,
       {
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "29px",
-        color: "#dbc6a8",
+        fontSize: "12px",
+        color: "#d3bf9f",
+        fontStyle: "700",
       },
       { x: 1, y: 0.5 }
     );
@@ -359,42 +423,56 @@ export class RunScene extends Phaser.Scene {
     this.drawHpBar(
       "enemy-hp",
       enemyInfoLeft,
-      enemyAvatarY + 54,
+      enemyAvatarY + 52,
       enemyInfoWidth,
-      20,
+      28,
       enemy.hp || 0,
       enemy.maxHp || 1,
-      "#d78b65"
+      "#e39a8d",
+      {
+        trackColor: 0x091426,
+        borderColor: 0x2f4a66,
+        textColor: "#2a1a19",
+        glowColor: 0xf8a08b,
+        glowAlpha: 0.32,
+      }
     );
     this.drawEnemyAvatar(enemy, enemyAvatarX, enemyAvatarY, enemyAvatarW, enemyAvatarH);
 
-    const playerAvatarW = 92;
-    const playerAvatarH = 112;
-    const playerAvatarX = 42;
-    const playerAvatarY = height - 170;
+    const playerAvatarW = 104;
+    const playerAvatarH = 122;
+    const playerAvatarX = 30;
+    const playerAvatarY = height - 168;
     this.drawPlayerAvatar(playerAvatarX, playerAvatarY, playerAvatarW, playerAvatarH);
 
     const playerInfoLeft = playerAvatarX + playerAvatarW + 16;
-    const playerInfoWidth = Math.max(220, Math.min(320, Math.round(width * 0.24)));
+    const playerInfoWidth = Math.max(220, Math.min(320, Math.round(width * 0.25)));
     this.drawText(
       "player-name",
       "PLAYER",
       playerInfoLeft,
-      playerAvatarY + 18,
+      playerAvatarY + 16,
       {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "43px",
-        color: "#e2ccb0",
+        fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+        fontSize: "22px",
+        color: "#e1ccb0",
+        fontStyle: "700",
       },
       { x: 0, y: 0.5 }
     );
 
-    this.drawHpBar("player-hp", playerInfoLeft, playerAvatarY + 38, playerInfoWidth, 20, player.hp || 0, player.maxHp || 1, "#83d0ac");
+    this.drawHpBar("player-hp", playerInfoLeft, playerAvatarY + 34, playerInfoWidth, 28, player.hp || 0, player.maxHp || 1, "#8fdbb9", {
+      trackColor: 0x0a1f1a,
+      borderColor: 0x2e5d53,
+      textColor: "#1a332a",
+      glowColor: 0x86ffd2,
+      glowAlpha: 0.36,
+    });
 
-    const cardWidth = 92;
+    const cardWidth = 88;
     const cardHeight = Math.round(cardWidth * 1.42);
     const enemyRowY = Math.round(height * 0.26);
-    const playerRowY = Math.round(height * 0.58);
+    const playerRowY = Math.round(height * 0.59);
 
     return {
       enemyY: enemyRowY,
@@ -411,9 +489,9 @@ export class RunScene extends Phaser.Scene {
   }
 
   drawPlayerAvatar(x, y, width, height) {
-    this.graphics.fillStyle(0x2b1f18, 0.94);
+    this.graphics.fillStyle(0x2a2017, 0.95);
     this.graphics.fillRoundedRect(x, y, width, height, 18);
-    this.graphics.lineStyle(1.8, 0xa98358, 0.44);
+    this.graphics.lineStyle(1.8, 0x8a6940, 0.58);
     this.graphics.strokeRoundedRect(x, y, width, height, 18);
 
     const inset = 10;
@@ -421,7 +499,7 @@ export class RunScene extends Phaser.Scene {
     const innerY = y + inset;
     const innerW = width - inset * 2;
     const innerH = height - inset * 2;
-    this.graphics.fillStyle(0xcdbb9d, 0.82);
+    this.graphics.fillStyle(0xcfc0a7, 0.86);
     this.graphics.fillCircle(innerX + innerW * 0.5, innerY + innerH * 0.3, innerW * 0.2);
     this.graphics.fillRoundedRect(innerX + innerW * 0.17, innerY + innerH * 0.48, innerW * 0.66, innerH * 0.44, 10);
   }
@@ -448,13 +526,13 @@ export class RunScene extends Phaser.Scene {
   }
 
   drawEnemyAvatar(enemy, x, y, width, height) {
-    this.graphics.fillStyle(0x10243a, 0.96);
+    this.graphics.fillStyle(0x1c2f43, 0.95);
     this.graphics.fillRoundedRect(x, y, width, height, 14);
-    this.graphics.lineStyle(1.8, 0xaed0e8, 0.45);
+    this.graphics.lineStyle(1.8, 0x516f8f, 0.5);
     this.graphics.strokeRoundedRect(x, y, width, height, 14);
 
     const pulse = Math.sin(this.time.now * 0.004) * 0.5 + 0.5;
-    this.graphics.lineStyle(2.1, this.enemyAccent(enemy?.type), 0.3 + pulse * 0.24);
+    this.graphics.lineStyle(2.1, this.enemyAccent(enemy?.type), 0.26 + pulse * 0.22);
     this.graphics.strokeRoundedRect(x - 1, y - 1, width + 2, height + 2, 15);
 
     const innerPad = 6;
@@ -495,24 +573,48 @@ export class RunScene extends Phaser.Scene {
     this.enemyPortrait.setPosition(x + width * 0.5, y + height * 0.5 + bob);
     this.enemyPortrait.setVisible(true);
 
-    this.graphics.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.12, 0.12, 0.02, 0.16);
+    this.graphics.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.1, 0.1, 0.02, 0.13);
     this.graphics.fillRoundedRect(innerX, innerY, innerW, innerH, 10);
   }
 
-  drawHpBar(keyPrefix, x, y, width, height, value, maxValue, colorHex) {
+  mixColor(colorA, colorB, ratio) {
+    const t = Phaser.Math.Clamp(Number(ratio) || 0, 0, 1);
+    const from = Phaser.Display.Color.IntegerToColor(colorA);
+    const to = Phaser.Display.Color.IntegerToColor(colorB);
+    return Phaser.Display.Color.GetColor(
+      Math.round(Phaser.Math.Linear(from.red, to.red, t)),
+      Math.round(Phaser.Math.Linear(from.green, to.green, t)),
+      Math.round(Phaser.Math.Linear(from.blue, to.blue, t))
+    );
+  }
+
+  drawHpBar(keyPrefix, x, y, width, height, value, maxValue, colorHex, options = {}) {
     const safeMax = Math.max(1, Number(maxValue) || 1);
     const safeValue = Math.max(0, Math.min(safeMax, Number(value) || 0));
     const ratio = safeValue / safeMax;
-    this.graphics.fillStyle(0x0f1116, 0.95);
-    this.graphics.fillRoundedRect(x, y, width, height, 8);
+    const trackColor = Number.isFinite(options.trackColor) ? options.trackColor : 0x11151b;
+    const borderColor = Number.isFinite(options.borderColor) ? options.borderColor : 0x5f7691;
+    const textColor = options.textColor || "#171515";
+    const glowColor = Number.isFinite(options.glowColor) ? options.glowColor : null;
+    const glowAlpha = Number.isFinite(options.glowAlpha) ? options.glowAlpha : 0.24;
+    const barRadius = Math.max(6, Math.round(height * 0.5));
+
+    this.graphics.fillStyle(trackColor, 0.94);
+    this.graphics.fillRoundedRect(x, y, width, height, barRadius);
     const fill = Math.max(0, Math.round((width - 4) * ratio));
     if (fill > 0) {
-      const color = Phaser.Display.Color.HexStringToColor(colorHex).color;
-      this.graphics.fillStyle(color, 0.98);
-      this.graphics.fillRoundedRect(x + 2, y + 2, fill, Math.max(1, height - 4), 6);
+      const baseColor = Phaser.Display.Color.HexStringToColor(colorHex).color;
+      const topColor = this.mixColor(baseColor, 0xffffff, 0.2);
+      const bottomColor = this.mixColor(baseColor, 0x000000, 0.22);
+      this.graphics.fillGradientStyle(topColor, topColor, bottomColor, bottomColor, 0.98, 0.98, 0.98, 0.98);
+      this.graphics.fillRoundedRect(x + 2, y + 2, fill, Math.max(1, height - 4), Math.max(4, barRadius - 2));
+      if (glowColor && glowAlpha > 0.01) {
+        this.graphics.lineStyle(2, glowColor, glowAlpha);
+        this.graphics.strokeRoundedRect(x + 1, y + 1, Math.max(2, fill + 2), Math.max(2, height - 2), Math.max(5, barRadius - 1));
+      }
     }
-    this.graphics.lineStyle(1.6, 0x7694b1, 0.38);
-    this.graphics.strokeRoundedRect(x, y, width, height, 8);
+    this.graphics.lineStyle(1.4, borderColor, 0.56);
+    this.graphics.strokeRoundedRect(x, y, width, height, barRadius);
     this.drawText(
       `${keyPrefix}-label`,
       `HP ${safeValue} / ${safeMax}`,
@@ -520,8 +622,9 @@ export class RunScene extends Phaser.Scene {
       y + height * 0.5,
       {
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "31px",
-        color: "#171515",
+        fontSize: `${Math.max(14, Math.round(height * 0.58))}px`,
+        color: textColor,
+        fontStyle: "700",
       },
       { x: 0, y: 0.5 }
     );
@@ -529,10 +632,10 @@ export class RunScene extends Phaser.Scene {
 
   drawCards(snapshot, width, height, layout) {
     const enemyY = layout?.enemyY || Math.round(height * 0.26);
-    const playerY = layout?.playerY || Math.round(height * 0.58);
-    const cardWidth = layout?.cardWidth || 92;
+    const playerY = layout?.playerY || Math.round(height * 0.59);
+    const cardWidth = layout?.cardWidth || 88;
     const cardHeight = layout?.cardHeight || Math.round(cardWidth * 1.42);
-    const spacing = Math.max(50, Math.round(cardWidth * 0.58));
+    const spacing = Math.max(46, Math.round(cardWidth * 0.6));
 
     const enemyCards = Array.isArray(snapshot.cards?.dealer) ? snapshot.cards.dealer : [];
     const playerCards = Array.isArray(snapshot.cards?.player) ? snapshot.cards.player : [];
@@ -566,17 +669,18 @@ export class RunScene extends Phaser.Scene {
     const totals = snapshot.totals || {};
     const enemyHasHidden = enemyCards.some((card) => card.hidden);
     const enemyHandValue = Number.isFinite(totals.dealer) ? String(totals.dealer) : "?";
-    const enemyTotalText = enemyHasHidden && Number.isFinite(totals.dealer) ? `HAND ${enemyHandValue}+?` : `HAND ${enemyHandValue}`;
-    const playerTotalText = Number.isFinite(totals.player) ? `HAND ${totals.player}` : "HAND ?";
+    const enemyTotalText = enemyHasHidden && Number.isFinite(totals.dealer) ? `Hand ${enemyHandValue}+?` : `Hand ${enemyHandValue}`;
+    const playerTotalText = Number.isFinite(totals.player) ? `Hand ${totals.player}` : "Hand ?";
     this.drawText(
       "enemy-total",
       enemyTotalText,
       width * 0.5,
-      enemyY - 18,
+      enemyY - 16,
       {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "37px",
-        color: "#ddd0bc",
+        fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+        fontSize: "17px",
+        color: "#e0ccb0",
+        fontStyle: "700",
       },
       { x: 0.5, y: 0.5 }
     );
@@ -586,9 +690,10 @@ export class RunScene extends Phaser.Scene {
       width * 0.5,
       playerY + cardHeight + 20,
       {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "37px",
-        color: "#ddd0bc",
+        fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+        fontSize: "17px",
+        color: "#e0ccb0",
+        fontStyle: "700",
       },
       { x: 0.5, y: 0.5 }
     );
@@ -803,9 +908,9 @@ export class RunScene extends Phaser.Scene {
     }
 
     const tone = snapshot.resultTone || "neutral";
-    const panelY = Math.round(height * 0.5);
-    const panelW = Phaser.Math.Clamp(300 + resultText.length * 11, 360, 700);
-    const panelH = 54;
+    const panelY = Math.round(height * 0.507);
+    const panelW = Phaser.Math.Clamp(340 + resultText.length * 10, 390, 680);
+    const panelH = 56;
     const toneFill =
       tone === "good" || tone === "win"
         ? 0x184b3d
@@ -822,10 +927,11 @@ export class RunScene extends Phaser.Scene {
     this.graphics.fillRoundedRect(width * 0.5 - panelW * 0.5, panelY - panelH * 0.5, panelW, panelH, 16);
     this.graphics.lineStyle(2.2, toneStroke, 0.85);
     this.graphics.strokeRoundedRect(width * 0.5 - panelW * 0.5, panelY - panelH * 0.5, panelW, panelH, 16);
-    const node = this.drawText("run-result", resultText.toUpperCase(), width * 0.5, panelY + 1, {
-      fontFamily: '"Chakra Petch", "Sora", sans-serif',
-      fontSize: "40px",
+    const node = this.drawText("run-result", resultText, width * 0.5, panelY + 1, {
+      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+      fontSize: "20px",
       color: "#e8e2d2",
+      fontStyle: "700",
     });
 
     const signature = `${tone}|${resultText}`;
@@ -893,14 +999,14 @@ export class RunScene extends Phaser.Scene {
     const singleWide = count === 1;
     const introLayout = introActive ? this.introButtonLayout : null;
     const buttonW = singleWide
-      ? Math.max(360, width - 42)
-      : Math.max(150, Math.min(220, Math.round(width * 0.16)));
+      ? Math.max(360, width - 16)
+      : Math.max(180, Math.min(238, Math.round(width * 0.17)));
     const buttonH = singleWide
-      ? 54
-      : Math.max(54, Math.min(66, Math.round(height * 0.088)));
+      ? 52
+      : Math.max(54, Math.min(60, Math.round(height * 0.085)));
     const totalW = buttonW * count + spacing * Math.max(0, count - 1);
     const startX = width * 0.5 - totalW * 0.5 + buttonW * 0.5;
-    const tunedY = singleWide ? height - 30 : Math.min(height - buttonH * 0.72, height * 0.9);
+    const tunedY = singleWide ? height - 28 : height - 84;
 
     actions.forEach((action, index) => {
       const button = this.buttons.get(action.id);
@@ -922,11 +1028,14 @@ export class RunScene extends Phaser.Scene {
       const label = action.id === "deal" ? "DEAL  (ENTER)" : action.label;
       button.text.setText(label);
       const fontSize = action.id === "confirmIntro"
-        ? Math.max(24, Math.round(resolvedH * 0.48))
-        : Math.max(24, Math.round(resolvedH * 0.42));
+        ? Math.max(20, Math.round(resolvedH * 0.42))
+        : action.id === "deal"
+          ? Math.max(18, Math.round(resolvedH * 0.36))
+          : Math.max(18, Math.round(resolvedH * 0.38));
       button.text.setFontSize(fontSize);
       this.setButtonVisual(button, action.enabled ? "idle" : "disabled");
       button.enabled = action.enabled;
+      button.container.setAlpha(action.enabled ? 1 : 0.82);
       button.container.setVisible(true);
     });
   }
