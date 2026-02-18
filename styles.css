@@ -86,10 +86,13 @@ body.mobile-ui-active:not(.menu-screen) {
 body.menu-screen.mobile-ui-active,
 body.menu-screen.compact-controls.mobile-ui-active {
   padding: 0;
+  place-items: center;
+  align-content: center;
 }
 
 #game-shell {
   position: relative;
+  margin: auto;
   overflow: hidden;
   border-radius: 16px;
   border: 1px solid rgba(136, 193, 233, 0.24);
@@ -1074,6 +1077,9 @@ body.compact-controls #mobile-controls.single-action-only button[data-mobile-act
 
   body.menu-screen {
     padding-top: 0;
+    align-items: center;
+    justify-items: center;
+    align-content: center;
   }
 
   #game-canvas {

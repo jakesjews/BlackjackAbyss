@@ -47,6 +47,8 @@
 
   const WIDTH = 1280;
   const HEIGHT = 720;
+  const MENU_CANVAS_WIDTH = 512;
+  const MENU_CANVAS_HEIGHT = 768;
   const MENU_FRAME_DISPLAY_WIDTH = 464;
   const MENU_FRAME_DISPLAY_HEIGHT = 698;
   const MENU_DESKTOP_SCALE_BOOST = 1.25;
@@ -8396,26 +8398,17 @@
       document.body.classList.add(scaleClass);
       state.menuDesktopScale = uiScale;
 
-      const menuScale =
-        state.compactControls
-          ? Math.max(viewportWidth / WIDTH, viewportHeight / HEIGHT)
-          : Math.max(viewportWidth / WIDTH, viewportHeight / HEIGHT) * uiScale;
-      const canvasDisplayWidth = Math.round(WIDTH * menuScale);
-      const canvasDisplayHeight = Math.round(HEIGHT * menuScale);
-      const canvasLeft = Math.floor((viewportWidth - canvasDisplayWidth) * 0.5);
-      const canvasTop = Math.floor((viewportHeight - canvasDisplayHeight) * 0.5);
-
-      gameShell.style.width = `${viewportWidth}px`;
-      gameShell.style.height = `${viewportHeight}px`;
-      canvas.style.width = `${canvasDisplayWidth}px`;
-      canvas.style.height = `${canvasDisplayHeight}px`;
-      canvas.style.left = `${canvasLeft}px`;
-      canvas.style.top = `${canvasTop}px`;
+      gameShell.style.width = `${MENU_CANVAS_WIDTH}px`;
+      gameShell.style.height = `${MENU_CANVAS_HEIGHT}px`;
+      canvas.style.width = `${MENU_CANVAS_WIDTH}px`;
+      canvas.style.height = `${MENU_CANVAS_HEIGHT}px`;
+      canvas.style.left = "0px";
+      canvas.style.top = "0px";
 
       state.viewport = {
-        width: canvasDisplayWidth,
-        height: canvasDisplayHeight,
-        scale: menuScale,
+        width: MENU_CANVAS_WIDTH,
+        height: MENU_CANVAS_HEIGHT,
+        scale: 1,
         cropWorldX: 0,
         portraitZoomed: false,
       };

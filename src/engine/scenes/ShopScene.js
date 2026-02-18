@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { SCENE_KEYS } from "../constants.js";
+import { BASE_HEIGHT, BASE_WIDTH, SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE, CARD_BUY_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 
@@ -25,6 +25,9 @@ export class ShopScene extends Phaser.Scene {
   }
 
   create() {
+    if (this.scale.gameSize.width !== BASE_WIDTH || this.scale.gameSize.height !== BASE_HEIGHT) {
+      this.scale.resize(BASE_WIDTH, BASE_HEIGHT);
+    }
     this.cameras.main.setBackgroundColor("#081420");
     this.cameras.main.setAlpha(0);
     this.graphics = this.add.graphics();
