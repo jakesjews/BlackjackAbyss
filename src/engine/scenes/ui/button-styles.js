@@ -30,7 +30,7 @@ export const ACTION_BUTTON_STYLE = freezeStyleSet({
     shadowAlpha: 0.28,
     shadowOffsetY: 3,
     text: "#2b1f11",
-    radius: 8,
+    radius: 14,
   },
   hover: {
     top: 0xf0d29a,
@@ -51,7 +51,7 @@ export const ACTION_BUTTON_STYLE = freezeStyleSet({
     shadowAlpha: 0.3,
     shadowOffsetY: 3,
     text: "#261b10",
-    radius: 8,
+    radius: 14,
   },
   pressed: {
     top: 0xe2ba79,
@@ -72,7 +72,7 @@ export const ACTION_BUTTON_STYLE = freezeStyleSet({
     shadowAlpha: 0.24,
     shadowOffsetY: 2,
     text: "#2a1e11",
-    radius: 8,
+    radius: 14,
   },
   disabled: {
     top: 0xc4af8e,
@@ -93,7 +93,7 @@ export const ACTION_BUTTON_STYLE = freezeStyleSet({
     shadowAlpha: 0.2,
     shadowOffsetY: 2,
     text: "#4a3b29",
-    radius: 8,
+    radius: 14,
   },
 });
 
@@ -119,7 +119,7 @@ export const CARD_BUY_BUTTON_STYLE = freezeStyleSet({
     shadowAlpha: 0.24,
     shadowOffsetY: 3,
     text: "#2a1f12",
-    radius: 7,
+    radius: 12,
   },
   hover: {
     top: 0xf0d5a0,
@@ -140,7 +140,7 @@ export const CARD_BUY_BUTTON_STYLE = freezeStyleSet({
     shadowAlpha: 0.28,
     shadowOffsetY: 3,
     text: "#261c11",
-    radius: 7,
+    radius: 12,
   },
   pressed: {
     top: 0xdfb878,
@@ -161,7 +161,7 @@ export const CARD_BUY_BUTTON_STYLE = freezeStyleSet({
     shadowAlpha: 0.2,
     shadowOffsetY: 2,
     text: "#241a0f",
-    radius: 7,
+    radius: 12,
   },
   disabled: {
     top: 0xbea887,
@@ -182,9 +182,9 @@ export const CARD_BUY_BUTTON_STYLE = freezeStyleSet({
     shadowAlpha: 0.18,
     shadowOffsetY: 2,
     text: "#4b3b29",
-    radius: 7,
+    radius: 12,
   },
-  locked: { top: 0x59585b, bottom: 0x454248, alpha: 0.84, stroke: 0x8a8a93, strokeAlpha: 0.44, text: "#d3d6de", radius: 7 },
-  sold: { top: 0x665a4d, bottom: 0x4c4339, alpha: 0.84, stroke: 0x9f8e78, strokeAlpha: 0.45, text: "#e4d8c8", radius: 7 },
-  warn: { top: 0x7a6648, bottom: 0x5b4933, alpha: 0.92, stroke: 0xd5bb84, strokeAlpha: 0.52, text: "#f4e4c2", radius: 7 },
+  locked: { top: 0x59585b, bottom: 0x454248, alpha: 0.84, stroke: 0x8a8a93, strokeAlpha: 0.44, text: "#d3d6de", radius: 12 },
+  sold: { top: 0x665a4d, bottom: 0x4c4339, alpha: 0.84, stroke: 0x9f8e78, strokeAlpha: 0.45, text: "#e4d8c8", radius: 12 },
+  warn: { top: 0x7a6648, bottom: 0x5b4933, alpha: 0.92, stroke: 0xd5bb84, strokeAlpha: 0.52, text: "#f4e4c2", radius: 12 },
 });

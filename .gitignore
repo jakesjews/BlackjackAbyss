@@ -14,6 +14,7 @@ build/
 test-results/
 playwright-report/
 output/
+artifacts/visual-smoke/
 
 # Local environment files
 .env

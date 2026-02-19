@@ -509,7 +509,6 @@ export class MenuScene extends Phaser.Scene {
     bind("keydown-ENTER", () => this.runMenuAction("startRun"));
     bind("keydown-R", () => this.runMenuAction("resumeRun"));
     bind("keydown-A", () => this.runMenuAction("openCollection"));
-    bind("keydown-C", () => this.runMenuAction("openCollection"));
   }
 
   setButtonEnabled(button, enabled) {

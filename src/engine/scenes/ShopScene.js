@@ -1,7 +1,8 @@
 import Phaser from "phaser";
-import { BASE_HEIGHT, BASE_WIDTH, SCENE_KEYS } from "../constants.js";
+import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE, CARD_BUY_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
+import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
 
 const CARD_STYLE = Object.freeze({
   fill: 0x22384a,
@@ -11,6 +12,20 @@ const CARD_STYLE = Object.freeze({
 });
 
 const BUTTON_STYLE = ACTION_BUTTON_STYLE;
+const SHOP_CHIPS_ICON_KEY = "__shop-chips-icon__";
+const SHOP_CHIPS_ICON_TRIM_KEY = "__shop-chips-icon-trim__";
+const SHOP_PRIMARY_GOLD = 0xf2cd88;
+const SHOP_MODAL_BASE_DEPTH = 300;
+const SHOP_MODAL_CONTENT_DEPTH = 310;
+const SHOP_MODAL_CLOSE_DEPTH = 320;
+const SHOP_TOP_ACTION_ICON_KEYS = Object.freeze({
+  logs: "__shop-top-action-logs__",
+  home: "__shop-top-action-home__",
+});
+const SHOP_TOP_ACTION_ICONS = Object.freeze({
+  logs: "/images/icons/log.png",
+  home: "/images/icons/home.png",
+});
 
 export class ShopScene extends Phaser.Scene {
   constructor() {
@@ -22,23 +37,43 @@ export class ShopScene extends Phaser.Scene {
     this.lastCardSignature = "";
     this.keyboardHandlers = [];
     this.lastSnapshot = null;
+    this.overlayGraphics = null;
+    this.topButtons = new Map();
+    this.logsModalOpen = false;
+    this.logsCloseButton = null;
+    this.modalBlocker = null;
+    this.chipsIcon = null;
+    this.darkIconTextureBySource = new Map();
+  }
+
+  preload() {
+    if (!this.textures.exists(SHOP_CHIPS_ICON_KEY)) {
+      this.load.image(SHOP_CHIPS_ICON_KEY, "/images/icons/chips.png");
+    }
+    Object.entries(SHOP_TOP_ACTION_ICON_KEYS).forEach(([actionId, textureKey]) => {
+      if (!this.textures.exists(textureKey)) {
+        this.load.image(textureKey, SHOP_TOP_ACTION_ICONS[actionId] || "/images/icons/home.png");
+      }
+    });
   }
 
   create() {
-    if (this.scale.gameSize.width !== BASE_WIDTH || this.scale.gameSize.height !== BASE_HEIGHT) {
-      this.scale.resize(BASE_WIDTH, BASE_HEIGHT);
-    }
     this.cameras.main.setBackgroundColor("#081420");
-    this.cameras.main.setAlpha(0);
+    this.cameras.main.setAlpha(1);
     this.graphics = this.add.graphics();
+    this.overlayGraphics = this.add.graphics().setDepth(SHOP_MODAL_BASE_DEPTH);
+    this.modalBlocker = this.add
+      .zone(0, 0, 1, 1)
+      .setOrigin(0, 0)
+      .setDepth(SHOP_MODAL_BASE_DEPTH + 1)
+      .setVisible(false)
+      .setInteractive({ useHandCursor: false });
+    this.modalBlocker.on("pointerdown", () => {});
+    const chipsTextureKey = this.resolveGoldIconTexture(this.resolveTightTexture(SHOP_CHIPS_ICON_KEY, SHOP_CHIPS_ICON_TRIM_KEY));
+    this.chipsIcon = this.add.image(0, 0, chipsTextureKey).setVisible(false);
+    this.chipsIcon.setDisplaySize(20, 20);
     this.bindKeyboardInput();
     this.scale.on("resize", this.onResize, this);
-    this.tweens.add({
-      targets: this.cameras.main,
-      alpha: 1,
-      duration: 240,
-      ease: "Sine.easeInOut",
-    });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
   }
 
@@ -52,9 +87,29 @@ export class ShopScene extends Phaser.Scene {
     this.cards.clear();
     this.buttons.forEach((button) => button.container.destroy());
     this.buttons.clear();
+    this.topButtons.forEach((button) => button.container.destroy());
+    this.topButtons.clear();
+    if (this.logsCloseButton) {
+      this.logsCloseButton.container.destroy();
+      this.logsCloseButton = null;
+    }
+    if (this.chipsIcon) {
+      this.chipsIcon.destroy();
+      this.chipsIcon = null;
+    }
+    if (this.modalBlocker) {
+      this.modalBlocker.destroy();
+      this.modalBlocker = null;
+    }
+    if (this.overlayGraphics) {
+      this.overlayGraphics.destroy();
+      this.overlayGraphics = null;
+    }
     this.textNodes.forEach((text) => text.destroy());
     this.textNodes.clear();
     this.lastCardSignature = "";
+    this.logsModalOpen = false;
+    this.darkIconTextureBySource.clear();
   }
 
   update(time, delta) {
@@ -128,10 +183,22 @@ export class ShopScene extends Phaser.Scene {
     const width = this.scale.gameSize.width;
     const height = this.scale.gameSize.height;
     this.graphics.clear();
+    if (this.overlayGraphics) {
+      this.overlayGraphics.clear();
+    }
+    if (this.chipsIcon) {
+      this.chipsIcon.setVisible(false);
+    }
     this.hideAllText();
     if (!snapshot) {
       this.rebuildCards([]);
       this.rebuildButtons([]);
+      this.topButtons.forEach((button) => button.container.setVisible(false));
+      this.logsModalOpen = false;
+      if (this.logsCloseButton) {
+        this.logsCloseButton.container.setVisible(false);
+      }
+      this.syncModalBlocker(width, height);
       return;
     }
 
@@ -139,6 +206,19 @@ export class ShopScene extends Phaser.Scene {
     this.drawHeader(snapshot, width);
     this.renderCards(snapshot, width, height);
     this.renderButtons(snapshot, width, height);
+    this.renderTopActions(width);
+    this.drawLogsModal(snapshot, width, height);
+    this.syncModalBlocker(width, height);
+  }
+
+  syncModalBlocker(width, height) {
+    if (!this.modalBlocker) {
+      return;
+    }
+    const open = Boolean(this.logsModalOpen);
+    this.modalBlocker.setSize(width, height);
+    this.modalBlocker.setVisible(open);
+    this.modalBlocker.active = open;
   }
 
   drawBackground(width, height) {
@@ -169,11 +249,29 @@ export class ShopScene extends Phaser.Scene {
     this.graphics.fillRoundedRect(width * 0.5 - 250, 108, 500, 48, 12);
     this.graphics.lineStyle(1.6, 0x5f88aa, 0.34);
     this.graphics.strokeRoundedRect(width * 0.5 - 250, 108, 500, 48, 12);
-    this.drawText("shop-chips", `CHIPS ${run.chips || 0}`, width * 0.5 - 112, 132, {
+    const chipValueNode = this.drawText("shop-chips", `${run.chips || 0}`, width * 0.5 - 112, 132, {
       fontFamily: '"Chakra Petch", "Sora", sans-serif',
       fontSize: "22px",
       color: "#f6e6a6",
-    });
+      fontStyle: "700",
+    }, { x: 0, y: 0.5 });
+    const chipIconSize = 18;
+    const chipIconX = width * 0.5 - 228;
+    const chipTextX = chipIconX + chipIconSize * 0.5 + 10;
+    let chipFont = 22;
+    chipValueNode.setFontSize(chipFont);
+    const maxChipTextW = 150;
+    while (chipValueNode.width > maxChipTextW && chipFont > 14) {
+      chipFont -= 1;
+      chipValueNode.setFontSize(chipFont);
+    }
+    chipValueNode.setPosition(chipTextX, 132);
+    if (this.chipsIcon) {
+      this.chipsIcon.setPosition(chipIconX, 132);
+      this.chipsIcon.setDisplaySize(chipIconSize, chipIconSize);
+      this.chipsIcon.clearTint();
+      this.chipsIcon.setVisible(true);
+    }
     this.drawText("shop-hp", `HP ${run.hp || 0}/${run.maxHp || 1}`, width * 0.5 + 112, 132, {
       fontFamily: '"Sora", "Segoe UI", sans-serif',
       fontSize: "22px",
@@ -439,5 +537,345 @@ export class ShopScene extends Phaser.Scene {
     node.setText(value);
     node.setVisible(true);
     return node;
+  }
+
+  resolveTightTexture(sourceKey, outputKey, alphaThreshold = 8) {
+    if (!sourceKey || !outputKey || !this.textures.exists(sourceKey)) {
+      return sourceKey;
+    }
+    if (this.textures.exists(outputKey) || typeof this.textures.createCanvas !== "function") {
+      return this.textures.exists(outputKey) ? outputKey : sourceKey;
+    }
+    const texture = this.textures.get(sourceKey);
+    const sourceImage =
+      texture?.getSourceImage?.() ||
+      texture?.source?.[0]?.image ||
+      texture?.source?.[0]?.source ||
+      null;
+    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
+    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
+    if (!sourceImage || sourceW < 1 || sourceH < 1) {
+      return sourceKey;
+    }
+    const scanCanvas = document.createElement("canvas");
+    scanCanvas.width = sourceW;
+    scanCanvas.height = sourceH;
+    const scanCtx = scanCanvas.getContext("2d");
+    if (!scanCtx) {
+      return sourceKey;
+    }
+    scanCtx.clearRect(0, 0, sourceW, sourceH);
+    scanCtx.drawImage(sourceImage, 0, 0);
+    const image = scanCtx.getImageData(0, 0, sourceW, sourceH);
+    const pixels = image.data;
+    let minX = sourceW;
+    let minY = sourceH;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < sourceH; y += 1) {
+      for (let x = 0; x < sourceW; x += 1) {
+        const alpha = pixels[(y * sourceW + x) * 4 + 3];
+        if (alpha > alphaThreshold) {
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+      }
+    }
+    if (maxX < minX || maxY < minY) {
+      return sourceKey;
+    }
+    const pad = 2;
+    const sx = Math.max(0, minX - pad);
+    const sy = Math.max(0, minY - pad);
+    const sw = Math.max(1, Math.min(sourceW - sx, maxX - minX + 1 + pad * 2));
+    const sh = Math.max(1, Math.min(sourceH - sy, maxY - minY + 1 + pad * 2));
+    const canvasTexture = this.textures.createCanvas(outputKey, sw, sh);
+    const ctx = canvasTexture?.getContext?.();
+    if (!ctx) {
+      return sourceKey;
+    }
+    ctx.clearRect(0, 0, sw, sh);
+    ctx.drawImage(sourceImage, sx, sy, sw, sh, 0, 0, sw, sh);
+    canvasTexture.refresh();
+    return outputKey;
+  }
+
+  resolveDarkIconTexture(sourceKey) {
+    if (!sourceKey || !this.textures.exists(sourceKey)) {
+      return sourceKey;
+    }
+    const cached = this.darkIconTextureBySource.get(sourceKey);
+    if (cached && this.textures.exists(cached)) {
+      return cached;
+    }
+    if (typeof this.textures.createCanvas !== "function") {
+      return sourceKey;
+    }
+    const texture = this.textures.get(sourceKey);
+    const sourceImage =
+      texture?.getSourceImage?.() ||
+      texture?.source?.[0]?.image ||
+      texture?.source?.[0]?.source ||
+      null;
+    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
+    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
+    if (!sourceImage || sourceW < 1 || sourceH < 1) {
+      return sourceKey;
+    }
+    const darkKey = `${sourceKey}__dark`;
+    if (this.textures.exists(darkKey)) {
+      this.darkIconTextureBySource.set(sourceKey, darkKey);
+      return darkKey;
+    }
+    const canvasTexture = this.textures.createCanvas(darkKey, sourceW, sourceH);
+    const ctx = canvasTexture?.getContext?.();
+    if (!ctx) {
+      return sourceKey;
+    }
+    ctx.clearRect(0, 0, sourceW, sourceH);
+    ctx.drawImage(sourceImage, 0, 0);
+    const image = ctx.getImageData(0, 0, sourceW, sourceH);
+    const pixels = image.data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const alpha = pixels[i + 3];
+      if (alpha === 0) {
+        continue;
+      }
+      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
+      const value = Math.round(18 + luminance * 34);
+      pixels[i] = Math.round(value * 0.95);
+      pixels[i + 1] = Math.round(value * 0.78);
+      pixels[i + 2] = Math.round(value * 0.58);
+    }
+    ctx.putImageData(image, 0, 0);
+    canvasTexture.refresh();
+    this.darkIconTextureBySource.set(sourceKey, darkKey);
+    return darkKey;
+  }
+
+  resolveGoldIconTexture(sourceKey) {
+    if (!sourceKey || !this.textures.exists(sourceKey)) {
+      return sourceKey;
+    }
+    const goldKey = `${sourceKey}__gold`;
+    if (this.textures.exists(goldKey)) {
+      return goldKey;
+    }
+    if (typeof this.textures.createCanvas !== "function") {
+      return sourceKey;
+    }
+    const texture = this.textures.get(sourceKey);
+    const sourceImage =
+      texture?.getSourceImage?.() ||
+      texture?.source?.[0]?.image ||
+      texture?.source?.[0]?.source ||
+      null;
+    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
+    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
+    if (!sourceImage || sourceW < 1 || sourceH < 1) {
+      return sourceKey;
+    }
+    const canvasTexture = this.textures.createCanvas(goldKey, sourceW, sourceH);
+    const ctx = canvasTexture?.getContext?.();
+    if (!ctx) {
+      return sourceKey;
+    }
+    ctx.clearRect(0, 0, sourceW, sourceH);
+    ctx.drawImage(sourceImage, 0, 0);
+    const image = ctx.getImageData(0, 0, sourceW, sourceH);
+    const pixels = image.data;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const alpha = pixels[i + 3];
+      if (alpha === 0) {
+        continue;
+      }
+      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
+      const strength = 0.38 + luminance * 0.62;
+      pixels[i] = Math.round(242 * strength);
+      pixels[i + 1] = Math.round(205 * strength);
+      pixels[i + 2] = Math.round(136 * strength);
+    }
+    ctx.putImageData(image, 0, 0);
+    canvasTexture.refresh();
+    return goldKey;
+  }
+
+  renderTopActions(width) {
+    if (!this.topButtons.size) {
+      const entries = [
+        {
+          id: "logs",
+          iconKey: SHOP_TOP_ACTION_ICON_KEYS.logs,
+          onPress: () => {
+            this.logsModalOpen = !this.logsModalOpen;
+          },
+        },
+        {
+          id: "home",
+          iconKey: SHOP_TOP_ACTION_ICON_KEYS.home,
+          onPress: () => {
+            this.logsModalOpen = false;
+            this.invokeAction("goHome");
+          },
+        },
+      ];
+      entries.forEach((entry) => {
+        const button = createGradientButton(this, {
+          id: `shop-top-${entry.id}`,
+          label: "",
+          styleSet: BUTTON_STYLE,
+          onPress: entry.onPress,
+          width: 42,
+          height: 42,
+          fontSize: 14,
+          hoverScale: 1,
+          pressedScale: 0.98,
+        });
+        button.text.setVisible(false);
+        const icon = this.add
+          .image(0, 0, this.resolveDarkIconTexture(entry.iconKey))
+          .setDisplaySize(18, 18)
+          .setAlpha(0.92);
+        button.container.add(icon);
+        button.icon = icon;
+        button.container.setDepth(230);
+        this.topButtons.set(entry.id, button);
+      });
+    }
+    const buttonSize = width < 760 ? 38 : 42;
+    const gap = 8;
+    const rightX = width - 20 - buttonSize * 0.5;
+    const y = 32;
+    const home = this.topButtons.get("home");
+    const logs = this.topButtons.get("logs");
+    if (home) {
+      setGradientButtonSize(home, buttonSize, buttonSize);
+      home.container.setPosition(rightX, y);
+      home.container.setVisible(true);
+      if (home.icon) {
+        home.icon.setDisplaySize(buttonSize * 0.825, buttonSize * 0.825);
+      }
+    }
+    if (logs) {
+      setGradientButtonSize(logs, buttonSize, buttonSize);
+      logs.container.setPosition(rightX - (buttonSize + gap), y);
+      logs.container.setVisible(true);
+      if (logs.icon) {
+        logs.icon.setDisplaySize(buttonSize * 0.56, buttonSize * 0.56);
+      }
+    }
+  }
+
+  ensureModalCloseButton(onPress) {
+    if (this.logsCloseButton) {
+      return this.logsCloseButton;
+    }
+    this.logsCloseButton = createModalCloseButton(this, {
+      id: "shop-logs-close",
+      styleSet: BUTTON_STYLE,
+      onPress,
+      depth: SHOP_MODAL_CLOSE_DEPTH,
+      width: 42,
+      height: 32,
+      iconSize: 15,
+    });
+    return this.logsCloseButton;
+  }
+
+  drawLogsModal(snapshot, width, height) {
+    if (!this.overlayGraphics || !this.logsModalOpen) {
+      if (this.logsCloseButton) {
+        this.logsCloseButton.container.setVisible(false);
+      }
+      return;
+    }
+    const rawLogs = Array.isArray(snapshot?.logs) ? snapshot.logs : [];
+    const logs = ["Run started.", ...rawLogs.map((entry) => String(entry || ""))];
+    const compact = width < 760;
+    const modalW = Phaser.Math.Clamp(width - 56, 320, 720);
+    const modalH = Phaser.Math.Clamp(460, 240, height - 96);
+    const x = Math.round(width * 0.5 - modalW * 0.5);
+    const y = Math.round(height * 0.5 - modalH * 0.5);
+    drawModalBackdrop(this.overlayGraphics, width, height, { color: 0x000000, alpha: 0.82 });
+    drawFramedModalPanel(this.overlayGraphics, {
+      x,
+      y,
+      width: modalW,
+      height: modalH,
+      radius: 20,
+      fillColor: 0x0f1f30,
+      fillAlpha: 0.96,
+      borderColor: 0x6f95b6,
+      borderAlpha: 0.46,
+      borderWidth: 1.4,
+      headerColor: 0x0b1623,
+      headerAlpha: 0.9,
+      headerHeight: 52,
+    });
+    const title = this.drawText("shop-logs-title", "RUN LOGS", x + 18, y + 26, {
+      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+      fontSize: "24px",
+      color: "#f2d8a0",
+      fontStyle: "700",
+    }, { x: 0, y: 0.5 });
+    title.setDepth(SHOP_MODAL_CONTENT_DEPTH);
+    const listX = x + 14;
+    const listY = y + 60;
+    const listW = modalW - 28;
+    const listH = modalH - 84;
+    const rowH = compact ? 34 : 38;
+    const rowGap = compact ? 6 : 8;
+    const bubbleAreaH = Math.max(44, listH - 24);
+    const maxRows = Math.max(1, Math.floor((bubbleAreaH + rowGap) / (rowH + rowGap)));
+    const visible = logs.slice(-maxRows);
+    const firstY = Math.round(listY + bubbleAreaH - visible.length * (rowH + rowGap));
+    const maxChars = compact ? 56 : 92;
+    const absoluteStart = logs.length - visible.length;
+    visible.forEach((line, index) => {
+      const absIndex = absoluteStart + index;
+      const isStart = absIndex === 0;
+      const isHandResolution = !isStart && /(?:\bhand\b|\bblackjack\b|\bbust\b|\bdouble\b|\bsplit\b|\bhit\b|\bstand\b|\bdeal\b|\bpush\b|\bwin\b|\blose\b|\bresolved?\b)/i.test(line);
+      const rowY = firstY + index * (rowH + rowGap);
+      const bubbleFill = isStart || isHandResolution ? 0x1f364d : 0x16283a;
+      const bubbleStroke = isStart || isHandResolution ? SHOP_PRIMARY_GOLD : 0x5c7d99;
+      this.overlayGraphics.fillStyle(bubbleFill, isStart || isHandResolution ? 0.92 : 0.84);
+      this.overlayGraphics.fillRoundedRect(listX, rowY, listW, rowH, 12);
+      this.overlayGraphics.lineStyle(1.1, bubbleStroke, isStart || isHandResolution ? 0.54 : 0.34);
+      this.overlayGraphics.strokeRoundedRect(listX, rowY, listW, rowH, 12);
+      const normalized = String(line || "").replace(/\s+/g, " ").trim();
+      const displayLine = normalized.length > maxChars ? `${normalized.slice(0, maxChars - 1).trimEnd()}…` : normalized;
+      const row = this.drawText(`shop-logs-line-${index}`, displayLine, listX + 12, rowY + rowH * 0.5, {
+        fontFamily: '"Sora", "Segoe UI", sans-serif',
+        fontSize: compact ? "13px" : "15px",
+        color: isStart || isHandResolution ? "#f2cd88" : "#d7e6f3",
+        fontStyle: isStart ? "700" : "600",
+      }, { x: 0, y: 0.5 });
+      row.setDepth(SHOP_MODAL_CONTENT_DEPTH);
+    });
+    const dots = ".".repeat((Math.floor(this.time.now / 300) % 3) + 1);
+    const waiting = this.drawText("shop-logs-waiting", `waiting${dots}`, listX + listW - 2, y + modalH - 14, {
+      fontFamily: '"Sora", "Segoe UI", sans-serif',
+      fontSize: compact ? "11px" : "12px",
+      color: "#f2cd88",
+      fontStyle: "600",
+    }, { x: 1, y: 1 });
+    waiting.setDepth(SHOP_MODAL_CONTENT_DEPTH);
+    const closeButton = this.ensureModalCloseButton(() => {
+      this.logsModalOpen = false;
+    });
+    placeModalCloseButton(closeButton, {
+      x: x + modalW - 26,
+      y: y + 24,
+      depth: SHOP_MODAL_CLOSE_DEPTH,
+      width: 42,
+      height: 32,
+      iconSize: 15,
+      enabled: true,
+      visible: true,
+      styleName: "idle",
+      applyStyle: (button, styleName) => this.applyButtonStyle(button, styleName),
+    });
   }
 }

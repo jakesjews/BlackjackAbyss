@@ -502,11 +502,14 @@ body.menu-screen #top-right-actions {
 #collection-modal {
   position: fixed;
   inset: 0;
-  background: rgba(5, 12, 19, 0.72);
+  background:
+    radial-gradient(980px 560px at 50% 18%, rgba(74, 137, 185, 0.24), rgba(5, 12, 19, 0.8) 74%),
+    rgba(5, 12, 19, 0.84);
   z-index: 94;
   display: grid;
   place-items: center;
-  padding: 14px;
+  padding: 16px;
+  backdrop-filter: blur(3px);
 }
 
 #collection-modal[hidden] {
@@ -514,12 +517,16 @@ body.menu-screen #top-right-actions {
 }
 
 #collection-panel {
-  width: min(720px, 100%);
+  width: min(980px, calc(100vw - 8px));
   height: min(86vh, 860px);
-  background: linear-gradient(180deg, rgba(11, 26, 40, 0.98), rgba(7, 18, 29, 0.97));
+  background:
+    linear-gradient(180deg, rgba(22, 46, 67, 0.14), transparent 24%),
+    linear-gradient(180deg, rgba(11, 26, 40, 0.98), rgba(7, 18, 29, 0.97));
   border-radius: 18px;
   border: 1px solid rgba(173, 212, 238, 0.34);
-  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.5);
+  box-shadow:
+    0 26px 62px rgba(0, 0, 0, 0.54),
+    inset 0 0 0 1px rgba(202, 231, 255, 0.08);
   overflow: hidden;
   display: grid;
   grid-template-rows: auto auto 1fr;
@@ -529,7 +536,7 @@ body.menu-screen #top-right-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 14px;
+  padding: 14px 16px 12px;
   border-bottom: 1px solid rgba(159, 199, 227, 0.22);
 }
 
@@ -537,10 +544,11 @@ body.menu-screen #top-right-actions {
   margin: 0;
   font-family: "Chakra Petch", "Sora", sans-serif;
   color: #f1d49a;
-  font-size: 25px;
+  font-size: 27px;
   line-height: 1;
   text-transform: uppercase;
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 20px rgba(242, 202, 134, 0.22);
 }
 
 #collection-close {
@@ -548,28 +556,57 @@ body.menu-screen #top-right-actions {
   height: 34px;
   border: 0;
   border-radius: 10px;
-  background: rgba(17, 41, 61, 0.92);
+  background: linear-gradient(180deg, rgba(18, 46, 68, 0.97), rgba(13, 31, 47, 0.95));
   color: #eaf4ff;
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: inset 0 0 0 1px rgba(151, 196, 225, 0.22);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
 }
 
 #collection-stats {
-  padding: 12px 14px 10px;
-  color: #bcd8ec;
-  font-size: 14px;
+  margin: 10px 14px 0;
+  padding: 9px 12px;
+  color: #d0e6f7;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1.35;
-  border-bottom: 1px solid rgba(159, 199, 227, 0.2);
+  border: 1px solid rgba(151, 197, 227, 0.2);
+  border-radius: 12px;
+  background: rgba(10, 28, 43, 0.84);
 }
 
 #collection-list {
   overflow-y: auto;
-  padding: 12px 12px 16px;
+  padding: 12px 14px 16px;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 10px;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 12px;
+  scrollbar-width: auto;
+  scrollbar-color: #e2b86e rgba(9, 24, 36, 0.96);
+}
+
+#collection-list::-webkit-scrollbar {
+  width: 14px;
+}
+
+#collection-list::-webkit-scrollbar-track {
+  background: linear-gradient(180deg, rgba(20, 44, 64, 0.95), rgba(9, 21, 32, 0.95));
+  border: 1px solid rgba(136, 180, 212, 0.32);
+}
+
+#collection-list::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #f4dcad 0%, #c98a39 100%);
+  border: 2px solid rgba(44, 26, 6, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(253, 237, 197, 0.5);
+}
+
+#collection-list::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #f9e8c4 0%, #d99d4f 100%);
 }
 
 #passive-modal {
@@ -645,25 +682,34 @@ body.menu-screen #top-right-actions {
 }
 
 .collection-row {
-  border-radius: 14px;
+  border-radius: 10px;
   border: 1px solid rgba(147, 188, 218, 0.24);
-  background: rgba(15, 37, 56, 0.68);
+  background: linear-gradient(180deg, rgba(20, 46, 67, 0.72), rgba(12, 30, 46, 0.82));
   display: grid;
-  grid-template-columns: 64px 1fr auto;
-  gap: 10px;
+  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-areas:
+    "thumb meta"
+    "thumb owned";
+  gap: 4px 8px;
   align-items: start;
-  padding: 10px;
+  padding: 6px 8px;
+  box-shadow:
+    inset 0 0 0 1px rgba(201, 229, 250, 0.06),
+    0 6px 14px rgba(0, 0, 0, 0.22);
+  transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .collection-row.locked {
-  background: rgba(20, 30, 42, 0.72);
+  background: linear-gradient(180deg, rgba(26, 36, 48, 0.82), rgba(16, 24, 35, 0.84));
   border-color: rgba(130, 151, 171, 0.22);
+  filter: saturate(0.78);
 }
 
 .collection-thumb {
-  width: 64px;
-  height: 84px;
-  border-radius: 10px;
+  grid-area: thumb;
+  width: 42px;
+  height: 56px;
+  border-radius: 7px;
   border: 1px solid rgba(173, 212, 238, 0.28);
   background: linear-gradient(150deg, rgba(18, 40, 58, 0.95), rgba(10, 25, 38, 0.92));
   background-size: cover;
@@ -672,49 +718,60 @@ body.menu-screen #top-right-actions {
 }
 
 .collection-meta {
+  grid-area: meta;
   min-width: 0;
 }
 
 .collection-meta .row-top {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 4px 8px;
+  flex-wrap: wrap;
+  margin-bottom: 3px;
 }
 
 .collection-rarity {
-  font-size: 11px;
+  font-size: 8px;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #9fc5df;
+  color: #9ed0f2;
+  padding: 3px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(156, 200, 229, 0.36);
+  background: rgba(10, 30, 45, 0.84);
+  line-height: 1;
 }
 
 .collection-name {
   font-family: "Chakra Petch", "Sora", sans-serif;
-  font-size: 20px;
+  font-size: 14px;
   font-weight: 700;
-  line-height: 1.05;
+  line-height: 1;
   color: #ecf4ff;
+  text-shadow: 0 0 20px rgba(136, 194, 237, 0.2);
 }
 
 .collection-desc {
-  color: #c9ddf0;
-  font-size: 13px;
-  line-height: 1.35;
+  color: #d2e2f1;
+  font-size: 10px;
+  line-height: 1.2;
   white-space: normal;
   word-wrap: break-word;
 }
 
 .collection-owned {
-  min-width: 68px;
-  padding: 7px 10px;
+  grid-area: owned;
+  justify-self: start;
+  min-width: 52px;
+  padding: 4px 7px;
   border-radius: 999px;
-  background: rgba(10, 26, 40, 0.9);
-  border: 1px solid rgba(173, 212, 238, 0.24);
-  color: #f1d49a;
+  background: rgba(9, 25, 38, 0.94);
+  border: 1px solid rgba(173, 212, 238, 0.28);
+  color: #f5d8a0;
   text-align: center;
-  font-size: 12px;
+  font-size: 9px;
   font-weight: 700;
   line-height: 1;
 }
@@ -725,6 +782,75 @@ body.menu-screen #top-right-actions {
   border-color: rgba(128, 152, 174, 0.28);
   background: rgba(10, 20, 30, 0.58);
   filter: saturate(0.7);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  #collection-close:hover {
+    box-shadow:
+      inset 0 0 0 1px rgba(188, 223, 247, 0.38),
+      0 8px 18px rgba(3, 10, 16, 0.45);
+    filter: brightness(1.05);
+  }
+
+  .collection-row:hover {
+    border-color: rgba(177, 219, 247, 0.42);
+    transform: translateY(-1px);
+  }
+}
+
+@media (max-width: 760px) {
+  #collection-modal {
+    padding: 10px;
+  }
+
+  #collection-panel {
+    width: min(980px, calc(100vw - 8px));
+    border-radius: 14px;
+  }
+
+  #collection-header {
+    padding: 12px 12px 10px;
+  }
+
+  #collection-header h2 {
+    font-size: 22px;
+  }
+
+  #collection-stats {
+    margin: 8px 10px 0;
+    font-size: 12px;
+  }
+
+  #collection-list {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .collection-row {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 3px 7px;
+    padding: 5px 6px;
+  }
+
+  .collection-thumb {
+    width: 36px;
+    height: 48px;
+    border-radius: 6px;
+  }
+
+  .collection-name {
+    font-size: 12px;
+  }
+
+  .collection-desc {
+    font-size: 9px;
+    line-height: 1.18;
+  }
+
+  .collection-owned {
+    font-size: 8px;
+    padding: 3px 6px;
+  }
 }
 
 #passive-rail {

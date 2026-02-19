@@ -90,7 +90,7 @@ export function createPhaserApp() {
       render: {
         antialias: true,
         roundPixels: true,
-        clearBeforeRender: false,
+        clearBeforeRender: true,
         pixelArt: false,
         transparent: true,
         premultipliedAlpha: false,

@@ -1,9 +1,12 @@
 import Phaser from "phaser";
-import { BASE_HEIGHT, BASE_WIDTH, SCENE_KEYS } from "../constants.js";
+import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
+import { createModalCloseButton, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
 
 const BUTTON_STYLE = ACTION_BUTTON_STYLE;
+const COLLECTION_ROW_GAP = 9;
+const COLLECTION_ROW_HEIGHT = 56;
 
 export class OverlayScene extends Phaser.Scene {
   constructor() {
@@ -16,23 +19,32 @@ export class OverlayScene extends Phaser.Scene {
     this.keyboardHandlers = [];
     this.lastSnapshot = null;
     this.currentMode = null;
+    this.collectionListContainer = null;
+    this.collectionMaskShape = null;
+    this.collectionMask = null;
+    this.collectionScroll = 0;
+    this.collectionScrollTarget = 0;
+    this.collectionScrollMax = 0;
+    this.collectionViewport = null;
+    this.collectionDragPointerId = null;
+    this.collectionDragStartY = 0;
+    this.collectionDragStartScroll = 0;
+    this.collectionSignature = "";
+    this.pointerHandlers = [];
   }
 
   create() {
-    if (this.scale.gameSize.width !== BASE_WIDTH || this.scale.gameSize.height !== BASE_HEIGHT) {
-      this.scale.resize(BASE_WIDTH, BASE_HEIGHT);
-    }
     this.cameras.main.setBackgroundColor("#081420");
-    this.cameras.main.setAlpha(0);
+    this.cameras.main.setAlpha(1);
     this.graphics = this.add.graphics();
+    this.collectionListContainer = this.add.container(0, 0);
+    this.collectionMaskShape = this.make.graphics({ x: 0, y: 0, add: false });
+    this.collectionMask = this.collectionMaskShape.createGeometryMask();
+    this.collectionListContainer.setMask(this.collectionMask);
+    this.collectionListContainer.setVisible(false);
     this.bindKeyboardInput();
+    this.bindPointerInput();
     this.scale.on("resize", this.onResize, this);
-    this.tweens.add({
-      targets: this.cameras.main,
-      alpha: 1,
-      duration: 240,
-      ease: "Sine.easeInOut",
-    });
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
   }
 
@@ -46,10 +58,28 @@ export class OverlayScene extends Phaser.Scene {
     this.entryCards.clear();
     this.buttons.forEach((button) => button.container.destroy());
     this.buttons.clear();
+    if (this.collectionListContainer) {
+      this.collectionListContainer.destroy();
+      this.collectionListContainer = null;
+    }
+    if (this.collectionMaskShape) {
+      this.collectionMaskShape.destroy();
+      this.collectionMaskShape = null;
+      this.collectionMask = null;
+    }
     this.textNodes.forEach((text) => text.destroy());
     this.textNodes.clear();
     this.lastEntrySignature = "";
     this.currentMode = null;
+    this.collectionSignature = "";
+    this.collectionViewport = null;
+    this.collectionScroll = 0;
+    this.collectionScrollTarget = 0;
+    this.collectionScrollMax = 0;
+    this.pointerHandlers.forEach(({ eventName, handler }) => {
+      this.input.off(eventName, handler);
+    });
+    this.pointerHandlers = [];
   }
 
   update(time, delta) {
@@ -61,6 +91,13 @@ export class OverlayScene extends Phaser.Scene {
     const snapshot = this.getSnapshot();
     this.lastSnapshot = snapshot;
     this.currentMode = snapshot?.mode || null;
+    if (this.currentMode !== "collection") {
+      this.collectionScroll = 0;
+      this.collectionScrollTarget = 0;
+      this.collectionScrollMax = 0;
+      this.collectionViewport = null;
+      this.collectionDragPointerId = null;
+    }
     this.renderSnapshot(snapshot);
   }
 
@@ -81,12 +118,32 @@ export class OverlayScene extends Phaser.Scene {
 
     bind("keydown-LEFT", () => {
       if (this.currentMode === "collection") {
-        this.invokeAction("prevPage");
+        this.scrollCollectionBy(-180);
       }
     });
     bind("keydown-RIGHT", () => {
       if (this.currentMode === "collection") {
-        this.invokeAction("nextPage");
+        this.scrollCollectionBy(180);
+      }
+    });
+    bind("keydown-UP", () => {
+      if (this.currentMode === "collection") {
+        this.scrollCollectionBy(-150);
+      }
+    });
+    bind("keydown-DOWN", () => {
+      if (this.currentMode === "collection") {
+        this.scrollCollectionBy(150);
+      }
+    });
+    bind("keydown-PAGEUP", () => {
+      if (this.currentMode === "collection") {
+        this.scrollCollectionBy(-360);
+      }
+    });
+    bind("keydown-PAGEDOWN", () => {
+      if (this.currentMode === "collection") {
+        this.scrollCollectionBy(360);
       }
     });
     bind("keydown-ENTER", (event) => {
@@ -114,6 +171,58 @@ export class OverlayScene extends Phaser.Scene {
     });
   }
 
+  bindPointerInput() {
+    const bind = (eventName, handler) => {
+      this.input.on(eventName, handler);
+      this.pointerHandlers.push({ eventName, handler });
+    };
+
+    bind("wheel", (pointer, gameObjects, deltaX, deltaY) => {
+      if (this.currentMode !== "collection" || !this.collectionViewport) {
+        return;
+      }
+      if (!this.pointInRect(pointer.worldX, pointer.worldY, this.collectionViewport)) {
+        return;
+      }
+      this.scrollCollectionBy(deltaY * 0.84);
+    });
+
+    bind("pointerdown", (pointer) => {
+      if (this.currentMode !== "collection" || !this.collectionViewport) {
+        return;
+      }
+      if (!this.pointInRect(pointer.worldX, pointer.worldY, this.collectionViewport)) {
+        return;
+      }
+      this.collectionDragPointerId = pointer.id;
+      this.collectionDragStartY = pointer.worldY;
+      this.collectionDragStartScroll = this.collectionScrollTarget;
+    });
+
+    bind("pointermove", (pointer) => {
+      if (this.currentMode !== "collection") {
+        return;
+      }
+      if (this.collectionDragPointerId == null || pointer.id !== this.collectionDragPointerId) {
+        return;
+      }
+      const delta = this.collectionDragStartY - pointer.worldY;
+      this.setCollectionScroll(this.collectionDragStartScroll + delta);
+      this.collectionScroll = this.collectionScrollTarget;
+    });
+
+    bind("pointerup", (pointer) => {
+      if (pointer.id === this.collectionDragPointerId) {
+        this.collectionDragPointerId = null;
+      }
+    });
+    bind("pointerupoutside", (pointer) => {
+      if (pointer.id === this.collectionDragPointerId) {
+        this.collectionDragPointerId = null;
+      }
+    });
+  }
+
   getOverlayApi() {
     const runtime = this.game.__ABYSS_RUNTIME__ || null;
     const bridge = runtime?.legacyAdapter?.bridge || null;
@@ -136,11 +245,50 @@ export class OverlayScene extends Phaser.Scene {
   }
 
   invokeAction(actionName, value = undefined) {
+    const mappedName = actionName === "closeCollection" ? "backToMenu" : actionName;
     const api = this.getOverlayApi();
-    const action = api ? api[actionName] : null;
+    const action = api ? api[mappedName] : null;
     if (typeof action === "function") {
       action(value);
     }
+  }
+
+  pointInRect(x, y, rect) {
+    if (!rect) {
+      return false;
+    }
+    return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+  }
+
+  setCollectionScroll(next) {
+    this.collectionScrollTarget = Phaser.Math.Clamp(Number(next) || 0, 0, this.collectionScrollMax);
+  }
+
+  scrollCollectionBy(delta) {
+    this.setCollectionScroll(this.collectionScrollTarget + (Number(delta) || 0));
+  }
+
+  ensureCollectionThumbTexture(entry) {
+    const id = String(entry?.id || "");
+    const thumbUrl = entry?.thumbUrl;
+    if (!id || typeof thumbUrl !== "string" || !thumbUrl.startsWith("data:image/")) {
+      return null;
+    }
+    const textureKey = `collection-thumb-${id}`;
+    if (!this.textures.exists(textureKey)) {
+      try {
+        this.textures.addBase64(textureKey, thumbUrl);
+      } catch {
+        return null;
+      }
+      return null;
+    }
+    const texture = this.textures.get(textureKey);
+    const source = texture?.source?.[0];
+    if (!source || !source.width || !source.height) {
+      return null;
+    }
+    return textureKey;
   }
 
   renderSnapshot(snapshot) {
@@ -149,6 +297,9 @@ export class OverlayScene extends Phaser.Scene {
     this.graphics.clear();
     this.hideAllText();
     if (!snapshot) {
+      if (this.collectionListContainer) {
+        this.collectionListContainer.setVisible(false);
+      }
       this.rebuildEntryCards([]);
       this.rebuildButtons([]);
       return;
@@ -158,93 +309,163 @@ export class OverlayScene extends Phaser.Scene {
       this.renderCollection(snapshot, width, height);
       return;
     }
+    if (this.collectionListContainer) {
+      this.collectionListContainer.setVisible(false);
+    }
     this.rebuildEntryCards([]);
     this.renderEndOverlay(snapshot, width, height);
   }
 
   renderCollection(snapshot, width, height) {
-    this.graphics.fillGradientStyle(0x081420, 0x081420, 0x040b12, 0x040b12, 1);
+    this.graphics.fillGradientStyle(0x0a1d2c, 0x0a1d2c, 0x06121d, 0x06121d, 1);
     this.graphics.fillRect(0, 0, width, height);
-    this.graphics.fillStyle(0x000000, 0.42);
-    this.graphics.fillRoundedRect(16, 12, width - 32, height - 24, 16);
-    this.graphics.lineStyle(2, 0x3c6584, 0.33);
-    this.graphics.strokeRoundedRect(16, 12, width - 32, height - 24, 16);
+    drawModalBackdrop(this.graphics, width, height, { color: 0x000000, alpha: 0.82 });
 
-    const panelW = Math.max(760, Math.min(width - 60, 1120));
-    const panelH = Math.max(520, Math.min(height - 110, 604));
-    const panelX = width * 0.5 - panelW * 0.5;
-    const panelY = Math.max(60, Math.min(80, height * 0.12));
+    const panelInsetX = 6;
+    const panelInsetY = 8;
+    const panelX = panelInsetX;
+    const panelY = panelInsetY;
+    const panelW = Math.max(320, width - panelInsetX * 2);
+    const panelH = Math.max(240, height - panelInsetY * 2);
+    const panelRadius = 20;
 
-    this.graphics.fillStyle(0x0f1e2d, 0.95);
-    this.graphics.fillRoundedRect(panelX, panelY, panelW, panelH, 22);
-    this.graphics.lineStyle(1.8, 0xa6d0ec, 0.34);
-    this.graphics.strokeRoundedRect(panelX, panelY, panelW, panelH, 22);
+    this.graphics.fillGradientStyle(0x112435, 0x112435, 0x0d1d2c, 0x0d1d2c, 0.97);
+    this.graphics.fillRoundedRect(panelX, panelY, panelW, panelH, panelRadius);
+    this.graphics.lineStyle(1, 0xd2e6f7, 0.18);
+    this.graphics.strokeRoundedRect(panelX + 1, panelY + 1, panelW - 2, panelH - 2, panelRadius - 2);
 
-    this.drawText("collection-title", "COLLECTIONS", width * 0.5, panelY + 44, {
-      fontFamily: '"Chakra Petch", "Sora", sans-serif',
-      fontSize: "40px",
-      color: "#f6e6a6",
-      stroke: "#0f1b28",
-      strokeThickness: 4,
+    this.drawText("collection-title", "COLLECTIONS", width * 0.5, panelY + 34, {
+      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+      fontSize: "34px",
+      color: "#f2d8a0",
+      stroke: "#0a1118",
+      strokeThickness: 2,
+      fontStyle: "700",
     });
-    this.drawText("collection-summary", snapshot.summary || "", width * 0.5, panelY + 76, {
+    this.drawText("collection-summary", snapshot.summary || "", width * 0.5, panelY + 62, {
       fontFamily: '"Sora", "Segoe UI", sans-serif',
-      fontSize: "16px",
-      color: "#bed8ec",
-    });
-    this.drawText("collection-page", `PAGE ${(snapshot.page || 0) + 1}/${snapshot.pageCount || 1}`, width * 0.5, panelY + 100, {
-      fontFamily: '"Sora", "Segoe UI", sans-serif',
-      fontSize: "14px",
-      color: "#9ac0dc",
+      fontSize: "15px",
+      color: "#bdd5e8",
     });
 
-    const layout = snapshot.layout || {};
-    const cols = Math.max(1, Number(layout.cols) || 1);
-    const rows = Math.max(1, Number(layout.rows) || 1);
-    const gridPadX = 20;
-    const gridPadTop = 120;
-    const gridPadBottom = 116;
-    const gridX = panelX + gridPadX;
-    const gridY = panelY + gridPadTop;
-    const gridW = panelW - gridPadX * 2;
-    const gridH = panelH - gridPadTop - gridPadBottom;
-    const gapX = 12;
-    const gapY = 12;
-    const cardW = (gridW - gapX * (cols - 1)) / cols;
-    const cardH = (gridH - gapY * (rows - 1)) / rows;
-    const entries = Array.isArray(snapshot.pageEntries) ? snapshot.pageEntries : [];
+    const viewportPadX = 12;
+    const viewportY = panelY + 78;
+    const viewportH = panelH - 90;
+    const scrollBarW = 14;
+    const viewportX = panelX + viewportPadX;
+    const viewportW = panelW - viewportPadX * 2 - scrollBarW - 8;
+
+    this.graphics.fillStyle(0x0d1b29, 0.4);
+    this.graphics.fillRoundedRect(viewportX, viewportY, viewportW, viewportH, 16);
+    this.graphics.lineStyle(1, 0xa8c6db, 0.22);
+    this.graphics.strokeRoundedRect(viewportX, viewportY, viewportW, viewportH, 16);
+
+    const entries = Array.isArray(snapshot.entries)
+      ? snapshot.entries
+      : Array.isArray(snapshot.pageEntries)
+        ? snapshot.pageEntries
+        : [];
+    const signature = entries.map((entry) => entry.id).join("|");
+    if (signature !== this.collectionSignature) {
+      this.collectionSignature = signature;
+      this.collectionScroll = 0;
+      this.collectionScrollTarget = 0;
+    }
     this.rebuildEntryCards(entries);
+    this.collectionViewport = { x: viewportX, y: viewportY, width: viewportW, height: viewportH };
+    if (this.collectionMaskShape) {
+      this.collectionMaskShape.clear();
+      this.collectionMaskShape.fillStyle(0xffffff, 1);
+      this.collectionMaskShape.fillRoundedRect(viewportX, viewportY, viewportW, viewportH, 14);
+    }
+
+    const cardW = viewportW - 12;
+    const cardH = COLLECTION_ROW_HEIGHT;
+    const contentH = Math.max(0, entries.length * (cardH + COLLECTION_ROW_GAP) - COLLECTION_ROW_GAP);
+    this.collectionScrollMax = Math.max(0, contentH - viewportH);
+    this.setCollectionScroll(this.collectionScrollTarget);
+    this.collectionScroll = Phaser.Math.Linear(this.collectionScroll, this.collectionScrollTarget, 0.34);
+    const listStartX = viewportX + 6;
+    const listStartY = viewportY + 6 - this.collectionScroll;
 
     entries.forEach((entry, index) => {
       const card = this.entryCards.get(entry.id);
       if (!card) {
         return;
       }
-      const col = index % cols;
-      const row = Math.floor(index / cols);
-      const x = gridX + col * (cardW + gapX);
-      const y = gridY + row * (cardH + gapY);
+      const x = listStartX;
+      const y = listStartY + index * (cardH + COLLECTION_ROW_GAP);
+      const bottom = y + cardH;
+      const visible = bottom >= viewportY - 24 && y <= viewportY + viewportH + 24;
       card.container.setPosition(x, y);
-      card.bg.width = cardW;
-      card.bg.height = cardH;
-      card.bg.radius = 14;
-      card.descPanel.setSize(Math.max(96, cardW - 16), Math.max(26, cardH - 96));
-      card.bg.setFillStyle(entry.unlocked ? 0x223648 : 0x1a242d, 0.94);
-      card.bg.setStrokeStyle(1.4, Phaser.Display.Color.HexStringToColor(entry.rarityColor || "#91a7bb").color, entry.unlocked ? 0.72 : 0.34);
+      card.bg.clear();
+      card.bg.fillStyle(entry.unlocked ? 0x203447 : 0x172634, entry.unlocked ? 0.92 : 0.82);
+      card.bg.fillRoundedRect(0, 0, cardW, cardH, 12);
+
+      card.thumbFrame.clear();
+      card.thumbFrame.fillStyle(0x0f1f2d, 0.95);
+      card.thumbFrame.fillRoundedRect(12, 7, 34, 42, 10);
+      const thumbBorderColor = Phaser.Display.Color.HexStringToColor(entry.rarityColor || "#8ca4ba").color;
+      card.thumbFrame.lineStyle(1, thumbBorderColor, entry.unlocked ? 0.42 : 0.22);
+      card.thumbFrame.strokeRoundedRect(12, 7, 34, 42, 10);
+
+      const thumbTextureKey = this.ensureCollectionThumbTexture(entry);
+      if (thumbTextureKey) {
+        if (card.thumbImage.texture?.key !== thumbTextureKey) {
+          card.thumbImage.setTexture(thumbTextureKey);
+        }
+        card.thumbImage.setPosition(29, 28);
+        card.thumbImage.setDisplaySize(32, 40);
+        card.thumbImage.setVisible(true);
+        card.thumbGlyph.setVisible(false);
+      } else {
+        card.thumbImage.setPosition(29, 28);
+        card.thumbImage.setDisplaySize(32, 40);
+        card.thumbImage.setVisible(false);
+        card.thumbGlyph.setVisible(true);
+      }
 
       card.rarity.setText((entry.rarityLabel || "").toUpperCase());
-      card.name.setText(entry.name || "LOCKED");
-      card.desc.setText(entry.description || "");
-      card.desc.setWordWrapWidth(Math.max(120, cardW - 22));
-      card.owned.setText(entry.copies > 0 ? `OWNED ${entry.copies > 99 ? "99+" : entry.copies}` : "NONE");
-      card.owned.setPosition(cardW * 0.5, cardH - 14);
+      const ownedText = entry.copies > 0 ? `OWNED ${entry.copies > 99 ? "99+" : entry.copies}` : "NONE";
+      card.owned.setText(ownedText);
+      const ownedChipW = Phaser.Math.Clamp(Math.round(card.owned.width + 14), 50, 94);
+      const rarityChipW = Phaser.Math.Clamp(Math.round(card.rarity.width + 14), 48, 98);
+      const badgeGap = 8;
+      const badgeTop = 8;
+      const rarityChipLeft = cardW - 12 - rarityChipW;
+      const ownedChipLeft = rarityChipLeft - badgeGap - ownedChipW;
+      const ownedChipX = ownedChipLeft + ownedChipW * 0.5;
+      card.ownedChip.clear();
+      card.ownedChip.fillStyle(entry.copies > 0 ? 0x3b2d16 : 0x243240, entry.copies > 0 ? 0.96 : 0.78);
+      card.ownedChip.fillRoundedRect(ownedChipLeft, badgeTop, ownedChipW, 18, 9);
+      card.owned.setPosition(ownedChipX, badgeTop + 9);
 
-      card.rarity.setColor(entry.unlocked ? (entry.rarityColor || "#b7c9d8") : "#9aa9b8");
-      card.name.setColor(entry.unlocked ? "#f1f8ff" : "#bac8d6");
-      card.desc.setColor(entry.unlocked ? "#e2f1ff" : "#b4c0cc");
-      card.owned.setColor(entry.copies > 0 ? "#f8e7b8" : "#9eb6cb");
-      card.descPanel.setFillStyle(0x0a1520, entry.unlocked ? 0.34 : 0.26);
-      card.container.setVisible(true);
+      card.rarityChip.clear();
+      card.rarityChip.fillStyle(0x123046, entry.unlocked ? 0.88 : 0.58);
+      card.rarityChip.fillRoundedRect(rarityChipLeft, badgeTop, rarityChipW, 18, 9);
+      card.rarity.setPosition(rarityChipLeft + rarityChipW * 0.5, badgeTop + 9);
+      card.rarity.setColor(entry.unlocked ? (entry.rarityColor || "#b7c9d8") : "#96a7b5");
+
+      const nameX = 58;
+      const nameSpace = Math.max(100, ownedChipLeft - 10 - nameX);
+      const rawName = String(entry.name || "LOCKED").replace(/\s+/g, " ").trim();
+      const nameCharCap = Math.max(10, Math.floor(nameSpace / 8.6));
+      const compactName = rawName.length > nameCharCap ? `${rawName.slice(0, nameCharCap - 1).trimEnd()}…` : rawName;
+      card.name.setText(compactName);
+      card.name.setPosition(nameX, 17);
+
+      const descW = Math.max(140, cardW - 76);
+      const rawDesc = String(entry.description || "").replace(/\s+/g, " ").trim();
+      const descCharCap = Math.max(24, Math.floor((descW - 8) / 6.2));
+      const compactDesc = rawDesc.length > descCharCap ? `${rawDesc.slice(0, descCharCap - 1).trimEnd()}…` : rawDesc;
+      card.desc.setText(compactDesc);
+      card.desc.setWordWrapWidth(descW, false);
+      card.desc.setPosition(58, 36);
+      card.name.setColor(entry.unlocked ? "#eef6ff" : "#b5c2cf");
+      card.desc.setColor(entry.unlocked ? "#c6d8e8" : "#96a8b7");
+      card.owned.setColor(entry.copies > 0 ? "#f4d598" : "#8ea4b8");
+      card.thumbGlyph.setColor(entry.unlocked ? "#f0f8ff" : "#8ea3b7");
+      card.container.setVisible(visible);
     });
 
     this.entryCards.forEach((card, id) => {
@@ -254,48 +475,53 @@ export class OverlayScene extends Phaser.Scene {
       }
     });
 
-    const actions = [
-      { id: "prevPage", label: "PREV", enabled: Boolean(snapshot.canPrev) },
-      { id: "nextPage", label: "NEXT", enabled: Boolean(snapshot.canNext) },
-      { id: "backToMenu", label: "BACK", enabled: true },
-    ];
+    if (this.collectionListContainer) {
+      this.collectionListContainer.setVisible(true);
+    }
+
+    const actions = [{ id: "closeCollection", label: "", enabled: true, modalClose: true }];
     this.rebuildButtons(actions);
-    const leftButton = this.buttons.get("prevPage");
-    const rightButton = this.buttons.get("nextPage");
-    const backButton = this.buttons.get("backToMenu");
-    const arrowY = gridY + gridH * 0.5;
-    if (leftButton) {
-      leftButton.container.setPosition(panelX + 34, arrowY);
-      setGradientButtonSize(leftButton, 96, 44);
-      leftButton.text.setFontSize(20);
-      leftButton.text.setText("PREV");
-      leftButton.enabled = Boolean(snapshot.canPrev);
-      this.applyButtonStyle(leftButton, leftButton.enabled ? "idle" : "disabled");
-      leftButton.container.setVisible(true);
+    const closeButton = this.buttons.get("closeCollection");
+    if (closeButton) {
+      placeModalCloseButton(closeButton, {
+        x: panelX + panelW - 28,
+        y: panelY + 26,
+        depth: 220,
+        width: 42,
+        height: 32,
+        iconSize: 15,
+        enabled: true,
+        visible: true,
+        styleName: "idle",
+        applyStyle: (button, styleName) => this.applyButtonStyle(button, styleName),
+      });
     }
-    if (rightButton) {
-      rightButton.container.setPosition(panelX + panelW - 34, arrowY);
-      setGradientButtonSize(rightButton, 96, 44);
-      rightButton.text.setFontSize(20);
-      rightButton.text.setText("NEXT");
-      rightButton.enabled = Boolean(snapshot.canNext);
-      this.applyButtonStyle(rightButton, rightButton.enabled ? "idle" : "disabled");
-      rightButton.container.setVisible(true);
-    }
-    if (backButton) {
-      backButton.container.setPosition(width * 0.5, panelY + panelH - 50);
-      setGradientButtonSize(backButton, Math.min(280, panelW - 36), 48);
-      backButton.text.setFontSize(24);
-      backButton.text.setText("BACK");
-      backButton.enabled = true;
-      this.applyButtonStyle(backButton, "idle");
-      backButton.container.setVisible(true);
+
+    const scrollTrackX = viewportX + viewportW + 4;
+    const scrollTrackY = viewportY;
+    const scrollTrackH = viewportH;
+    this.graphics.fillStyle(0x102233, 0.74);
+    this.graphics.fillRoundedRect(scrollTrackX, scrollTrackY, scrollBarW, scrollTrackH, 6);
+    if (this.collectionScrollMax > 0) {
+      const thumbMin = 40;
+      const thumbH = Math.max(thumbMin, Math.round((viewportH / contentH) * viewportH));
+      const scrollRatio = this.collectionScrollMax > 0 ? this.collectionScroll / this.collectionScrollMax : 0;
+      const thumbY = scrollTrackY + Math.round((scrollTrackH - thumbH) * scrollRatio);
+      const thumbX = scrollTrackX + 1;
+      const thumbW = scrollBarW - 2;
+      this.graphics.fillStyle(0xf2c56d, 0.98);
+      this.graphics.fillRoundedRect(thumbX, thumbY, thumbW, thumbH, 6);
+    } else {
+      this.graphics.fillStyle(0xf2c56d, 0.44);
+      this.graphics.fillRoundedRect(scrollTrackX + 1, scrollTrackY + 1, scrollBarW - 2, scrollTrackH - 2, 6);
     }
   }
 
   renderEndOverlay(snapshot, width, height) {
-    this.graphics.fillStyle(0x050a10, 0.78);
-    this.graphics.fillRect(0, 0, width, height);
+    if (this.collectionListContainer) {
+      this.collectionListContainer.setVisible(false);
+    }
+    drawModalBackdrop(this.graphics, width, height, { color: 0x000000, alpha: 0.82 });
     const panelW = Math.max(660, Math.min(width - 70, 780));
     const panelH = Math.max(370, Math.min(height - 80, 430));
     const panelX = width * 0.5 - panelW * 0.5;
@@ -357,53 +583,74 @@ export class OverlayScene extends Phaser.Scene {
 
     entries.forEach((entry) => {
       const container = this.add.container(0, 0);
-      const bg = this.add.rectangle(0, 0, 250, 140, 0x223648, 0.94).setOrigin(0, 0);
-      bg.setStrokeStyle(1.4, 0x91a7bb, 0.72);
+      const bg = this.add.graphics();
+      const thumbFrame = this.add.graphics();
+      const thumbImage = this.add.image(29, 28, "__WHITE").setVisible(false);
+      thumbImage.setDisplaySize(32, 40);
+      thumbImage.setAlpha(0.98);
+      const thumbGlyph = this.add
+        .text(29, 28, "◆", {
+          fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+          fontSize: "14px",
+          color: "#f0f8ff",
+          stroke: "#0d1520",
+          strokeThickness: 2,
+          fontStyle: "700",
+        })
+        .setOrigin(0.5, 0.5);
       const rarity = this.add
         .text(0, 0, "", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
-          fontSize: "12px",
+          fontSize: "9px",
           color: "#9aa9b8",
-          stroke: "#09131c",
+          stroke: "#0b121a",
           strokeThickness: 1,
+          fontStyle: "700",
         })
         .setOrigin(0.5, 0.5);
+      const rarityChip = this.add.graphics();
       const name = this.add
         .text(0, 0, "", {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
-          fontSize: "22px",
+          fontSize: "14px",
           color: "#ecf4ff",
-          stroke: "#08131d",
-          strokeThickness: 2,
+          stroke: "#0a121a",
+          strokeThickness: 1,
         })
-        .setOrigin(0.5, 0.5);
+        .setOrigin(0, 0.5)
+        .setFontStyle("700");
       const desc = this.add
         .text(0, 0, "", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
-          fontSize: "15px",
+          fontSize: "10px",
           color: "#e2f1ff",
           stroke: "#08131d",
           strokeThickness: 1,
-          align: "center",
-          wordWrap: { width: 220 },
+          align: "left",
+          wordWrap: { width: 260 },
         })
-        .setOrigin(0.5, 0);
-      const descPanel = this.add.rectangle(8, 68, 234, 42, 0x0a1520, 0.34).setOrigin(0, 0);
-      descPanel.setStrokeStyle(1, 0x789bb4, 0.24);
+        .setOrigin(0, 0.5);
+      const ownedChip = this.add.graphics();
       const owned = this.add
         .text(0, 0, "", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
-          fontSize: "13px",
+          fontSize: "10px",
           color: "#90a9bf",
+          stroke: "#0a121a",
+          strokeThickness: 1,
+          fontStyle: "700",
         })
         .setOrigin(0.5, 0.5);
 
-      rarity.setPosition(125, 20);
-      name.setPosition(125, 48);
-      desc.setPosition(125, 72);
-      owned.setPosition(125, 126);
-      container.add([bg, rarity, name, descPanel, desc, owned]);
-      this.entryCards.set(entry.id, { container, bg, rarity, name, descPanel, desc, owned });
+      rarity.setPosition(96, 15);
+      name.setPosition(128, 17);
+      desc.setPosition(58, 36);
+      owned.setPosition(208, 17);
+      container.add([bg, thumbFrame, thumbImage, thumbGlyph, rarityChip, rarity, name, desc, ownedChip, owned]);
+      if (this.collectionListContainer) {
+        this.collectionListContainer.add(container);
+      }
+      this.entryCards.set(entry.id, { container, bg, thumbFrame, thumbImage, thumbGlyph, rarityChip, rarity, name, desc, ownedChip, owned });
     });
   }
 
@@ -420,15 +667,25 @@ export class OverlayScene extends Phaser.Scene {
       if (this.buttons.has(action.id)) {
         return;
       }
-      const button = createGradientButton(this, {
-        id: action.id,
-        label: action.label,
-        styleSet: BUTTON_STYLE,
-        onPress: () => this.invokeAction(action.id),
-        width: 210,
-        height: 64,
-        fontSize: 28,
-      });
+      const button = action.modalClose
+        ? createModalCloseButton(this, {
+            id: action.id,
+            styleSet: BUTTON_STYLE,
+            onPress: () => this.invokeAction(action.id),
+            depth: 220,
+            width: 42,
+            height: 32,
+            iconSize: 15,
+          })
+        : createGradientButton(this, {
+            id: action.id,
+            label: action.label,
+            styleSet: BUTTON_STYLE,
+            onPress: () => this.invokeAction(action.id),
+            width: 210,
+            height: 64,
+            fontSize: 28,
+          });
       this.buttons.set(action.id, button);
     });
   }

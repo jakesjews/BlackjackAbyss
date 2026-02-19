@@ -69,8 +69,17 @@ Storage keys:
 - `src/engine/app.js` - Phaser application bootstrap + runtime context
 - `src/engine/phaser-host.js` - compatibility re-export for existing host import paths
 - `game.js` - current gameplay implementation (legacy module loaded by `src/main.js`)
+- `scripts/visual-smoke.js` - Playwright screenshot sweep for key UI states (desktop + mobile)
 - `test-actions.json` - short Playwright action burst
 - `test-actions-long.json` - longer Playwright scenario
+
+## Visual Smoke Check
+
+Run the app (`npm run start`) and in another terminal capture screenshots:
+
+```bash
+node scripts/visual-smoke.js --url http://127.0.0.1:4173 --out /tmp/abyss-visual-smoke
+```
 
 ## Build / Deploy
 

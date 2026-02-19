@@ -1349,6 +1349,9 @@
         }
         modeValue = nextMode;
         reportMode(modeValue);
+        // Mode changes can switch between fixed menu canvas size and gameplay aspect ratio.
+        // Resize immediately to avoid transient stretched frames (especially menu -> collection).
+        resizeCanvas();
       },
     });
 
@@ -2143,7 +2146,7 @@
     }
     state.collectionDomSignature = signature;
 
-    collectionStats.textContent = `Unlocked ${unlockedCount}/${entries.length} | Found ${foundCount}/${entries.length} | Copies ${totalCopies}`;
+    collectionStats.textContent = `Unlocked ${unlockedCount}/${entries.length}  •  Found ${foundCount}/${entries.length}  •  Copies ${totalCopies}`;
     collectionList.textContent = "";
 
     const fragment = document.createDocumentFragment();
@@ -2628,6 +2631,16 @@
       return;
     }
 
+    if (isExternalModeRendering()) {
+      topRightActions.style.left = "";
+      topRightActions.style.right = "";
+      topRightActions.style.top = "";
+      if (topbarTooltipAnchor && topbarTooltip && !topbarTooltip.hidden) {
+        positionTopbarTooltip(topbarTooltipAnchor);
+      }
+      return;
+    }
+
     const rect = canvas.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) {
       return;
@@ -2715,6 +2728,10 @@
       mobileControls.classList.remove("reward-claim-only");
       mobileControls.classList.remove("single-action-only");
     }
+    if (passiveRail) {
+      passiveRail.hidden = true;
+      passiveRail.textContent = "";
+    }
     document.body.classList.remove("menu-screen");
     hideTopbarTooltip();
     hidePassiveTooltip();
@@ -2744,7 +2761,7 @@
     if (menuResume) {
       menuResume.disabled = !hasSavedRun();
     }
-    const showTopActions = state.mode !== "menu" && state.mode !== "collection" && (runActive || externalModeRendering);
+    const showTopActions = !externalModeRendering && state.mode !== "menu" && state.mode !== "collection" && runActive;
     const showHome = showTopActions;
     const showLogs = showTopActions;
     if (topRightActions) {
@@ -2785,21 +2802,33 @@
     if ((!runActive || state.mode === "menu" || state.mode === "collection" || (logsToggle && logsToggle.hidden)) && isLogsModalOpen()) {
       closeLogsModal();
     }
-    if ((!runActive || state.mode === "menu" || state.mode === "collection") && isPassiveModalOpen()) {
+    if (externalModeRendering || (!runActive || state.mode === "menu" || state.mode === "collection")) {
+      if (passiveRail) {
+        passiveRail.hidden = true;
+        passiveRail.textContent = "";
+      }
+    } else if (passiveRail) {
+      passiveRail.hidden = false;
+    }
+    if ((externalModeRendering || !runActive || state.mode === "menu" || state.mode === "collection") && isPassiveModalOpen()) {
       closePassiveModal();
     }
     if (!collectionActive) {
       state.collectionDomSignature = "";
     }
-    if (isPassiveModalOpen()) {
+    if (!externalModeRendering && isPassiveModalOpen()) {
       renderPassiveModal();
     } else {
       state.passiveModalSignature = "";
     }
-    if (isLogsModalOpen()) {
+    if (!externalModeRendering && isLogsModalOpen()) {
       renderLogsFeed();
     }
-    syncPassiveRail();
+    if (!externalModeRendering) {
+      syncPassiveRail();
+    } else {
+      state.passiveRailSignature = "";
+    }
   }
 
   function semitoneToFreq(base, semitoneOffset) {
@@ -3698,11 +3727,11 @@
       const ch = dialogue.charAt(intro.visibleChars);
       intro.visibleChars += 1;
       if (/[.!?,]/.test(ch)) {
-        intro.typeTimer += 0.11;
+        intro.typeTimer += 0.052;
       } else if (ch === " ") {
-        intro.typeTimer += 0.016;
+        intro.typeTimer += 0.008;
       } else {
-        intro.typeTimer += 0.028;
+        intro.typeTimer += 0.015;
       }
     }
 
@@ -4837,7 +4866,7 @@
     const viewportHeight = Math.floor(
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
-    state.mobilePortrait = state.compactControls && viewportHeight > viewportWidth;
+    state.mobilePortrait = false;
 
     const canAdvance = state.mode === "playing" ? canAdvanceDeal() : false;
     const canAct = state.mode === "playing" ? canPlayerAct() : false;
@@ -4879,7 +4908,12 @@
     state.uiMobileSignature = mobileSignature;
     state.uiMobileViewportSignature = viewportSignature;
 
-    const showMobileControls = state.mobileActive && state.mode !== "menu" && state.mode !== "collection";
+    const showMobileControls =
+      state.mobileActive &&
+      state.mode !== "menu" &&
+      state.mode !== "collection" &&
+      state.mode !== "reward" &&
+      !isExternalModeRendering();
     mobileControls.classList.toggle("active", showMobileControls);
     document.body.classList.toggle("mobile-ui-active", state.mobileActive);
     document.body.classList.toggle("mobile-portrait-ui", state.mobilePortrait);
@@ -4922,7 +4956,7 @@
     if (state.mode === "playing") {
       if (introActive) {
         Object.values(mobileButtons).forEach(clearMobileButtonAttention);
-        setMobileButton(mobileButtons.confirm, introReady ? "Deal" : "Skip", true, true);
+        setMobileButton(mobileButtons.confirm, "Continue", true, true);
         setMobileButton(mobileButtons.left, "Left", false, false);
         setMobileButton(mobileButtons.right, "Right", false, false);
         setMobileButton(mobileButtons.hit, "Hit", false, false);
@@ -5391,7 +5425,16 @@
     }
     if (raw.length === 1) {
       const low = raw.toLowerCase();
-      if (low === "a" || low === "b" || low === "s" || low === "r" || low === "m") {
+      if (
+        low === "a" ||
+        low === "b" ||
+        low === "c" ||
+        low === "s" ||
+        low === "r" ||
+        low === "m" ||
+        low === "x" ||
+        low === "z"
+      ) {
         return low;
       }
     }
@@ -5467,18 +5510,19 @@
 
     if (state.mode === "playing") {
       if (isEncounterIntroActive()) {
-        if (key === "enter" || key === "space") {
+        const introReady = Boolean(state.encounter?.intro?.ready);
+        if (introReady && (key === "enter" || key === "space")) {
           advanceEncounterIntro();
         }
         return;
       }
-      if (key === "a") {
+      if (key === "a" || key === "z") {
         hitAction();
-      } else if (key === "b") {
+      } else if (key === "b" || key === "x") {
         standAction();
       } else if (key === "s") {
         splitAction();
-      } else if (key === "space") {
+      } else if (key === "c" || key === "space") {
         doubleAction();
       } else if (key === "enter" && canAdvanceDeal()) {
         advanceToNextDeal();
@@ -6348,7 +6392,7 @@
       ctx.fillRect(cursorX, cursorY, 5, 18);
     }
 
-    const buttonLabel = intro.ready ? "Let's go!" : "Skip";
+    const buttonLabel = "Continue";
     const buttonW = Math.min(portrait ? 158 : 188, Math.max(128, panelW - 48));
     const buttonH = portrait ? 44 : 50;
     const buttonX = panelX + panelW - buttonW - 22;
@@ -7717,7 +7761,7 @@
     ctx.fillStyle = "#bed8ec";
     setFont(portrait ? 14 : 16, 600, false);
     ctx.fillText(
-      `Unlocked ${unlockedCount}/${entries.length}  |  Found ${collectedUnique}/${entries.length}  |  Copies ${totalCopies}`,
+      `Unlocked ${unlockedCount}/${entries.length}  •  Found ${collectedUnique}/${entries.length}  •  Copies ${totalCopies}`,
       WIDTH * 0.5,
       panelY + 82
     );
@@ -8138,8 +8182,6 @@
     updateMobileControls();
     syncOverlayUi();
     if (isExternalModeRendering()) {
-      alignTopRightActionsToHudRow();
-      alignPassiveRailToCombatLayout();
       return;
     }
     const shake = currentShakeOffset();
@@ -8196,7 +8238,7 @@
       if (isEncounterIntroActive()) {
         return state.encounter?.intro?.ready
           ? ["enter(let's-go)", "space(let's-go)", "tap(let's-go)"]
-          : ["enter(skip-intro)", "space(skip-intro)", "tap(skip-intro)"];
+          : ["wait(dialogue)"];
       }
       if (canAdvanceDeal()) {
         return ["enter(deal)", "tap(deal)"];
@@ -8212,12 +8254,12 @@
         !state.encounter.splitUsed
       );
       const canSplit = canSplitCurrentHand();
-      const actions = ["a(hit)", "b(stand)"];
+      const actions = ["z(hit)", "x(stand)"];
       if (canSplit) {
         actions.push("s(split)");
       }
       if (canDouble) {
-        actions.push("space(double)");
+        actions.push("c(double)");
       }
       return actions;
     }
@@ -8357,7 +8399,7 @@
     const viewportHeight = Math.floor(
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
-    const menuScreen = state.mode === "menu";
+    const menuScreen = state.mode === "menu" || state.mode === "collection";
     MENU_SCALE_CLASSES.forEach((cls) => document.body.classList.remove(cls));
     if (!menuScreen || !state.compactControls) {
       document.body.style.removeProperty("--menu-mobile-ui-scale");
@@ -8415,6 +8457,33 @@
       return;
     }
     state.menuDesktopScale = 1;
+
+    if (isExternalModeRendering()) {
+      const shellW = Math.max(1, viewportWidth);
+      const shellH = Math.max(120, viewportHeight);
+      gameShell.style.width = `${shellW}px`;
+      gameShell.style.height = `${shellH}px`;
+      canvas.style.width = `${shellW}px`;
+      canvas.style.height = `${shellH}px`;
+      canvas.style.left = "0px";
+      canvas.style.top = "0px";
+      const phaserGame = window.__ABYSS_PHASER_GAME__;
+      if (phaserGame?.scale && typeof phaserGame.scale.resize === "function") {
+        const currentW = Math.round(phaserGame.scale.gameSize?.width || 0);
+        const currentH = Math.round(phaserGame.scale.gameSize?.height || 0);
+        if (currentW !== shellW || currentH !== shellH) {
+          phaserGame.scale.resize(shellW, shellH);
+        }
+      }
+      state.viewport = {
+        width: shellW,
+        height: shellH,
+        scale: 1,
+        cropWorldX: 0,
+        portraitZoomed: false,
+      };
+      return;
+    }
 
     let availableHeight = 0;
     if (!menuScreen && state.mobileActive && mobileControls && mobileControls.classList.contains("active")) {
@@ -8605,6 +8674,18 @@
       encounter.playerHand.length === 2 &&
       !encounter.doubleDown &&
       !encounter.splitUsed;
+    const logs = getRunEventLog(run).slice(-120);
+    const passives = passiveStacksForRun(run).map((entry) => {
+      const rarity = relicRarityMeta(entry.relic);
+      return {
+        id: entry.relic.id,
+        name: entry.relic.name,
+        description: passiveDescription(entry.relic.description),
+        count: entry.count,
+        thumbUrl: passiveThumbUrl(entry.relic),
+        rarityLabel: rarity.label,
+      };
+    });
 
     return {
       mode: state.mode,
@@ -8643,7 +8724,10 @@
       },
       totals: {
         player: encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total,
-        dealer: encounter.hideDealerHole && encounter.phase === "player" ? null : handTotal(encounter.dealerHand).total,
+        dealer:
+          encounter.hideDealerHole && encounter.phase === "player"
+            ? visibleDealerTotal(encounter)
+            : handTotal(encounter.dealerHand).total,
       },
       resultText: encounter.resultText || "",
       resultTone: encounter.resultTone || "neutral",
@@ -8654,6 +8738,8 @@
         text: introDialogue.slice(0, visibleChars),
         fullText: introDialogue,
       },
+      logs,
+      passives,
       status: {
         canAct,
         canHit: canAct,
@@ -8695,6 +8781,17 @@
         unlockAudio();
         advanceEncounterIntro();
       },
+      goHome: () => {
+        unlockAudio();
+        if (state.run && state.mode !== "menu" && state.mode !== "collection") {
+          closeLogsModal();
+          closePassiveModal();
+          hidePassiveTooltip();
+          playUiSfx("confirm");
+          saveRunSnapshot();
+          state.mode = "menu";
+        }
+      },
     });
   }
 
@@ -8712,6 +8809,7 @@
         rarity: normalizeRelicRarity(relic.rarity),
         rarityLabel: rarity.label,
         color: relic.color || rarity.glow || "#c8d7a1",
+        thumbUrl: passiveThumbUrl(relic),
         selected: index === state.selectionIndex,
       };
     });
@@ -8727,6 +8825,7 @@
       options,
       selectionIndex: state.selectionIndex,
       canClaim: options.length > 0,
+      logs: getRunEventLog(run).slice(-120),
     };
   }
 
@@ -8757,6 +8856,17 @@
         if (target !== state.selectionIndex) {
           state.selectionIndex = target;
           playUiSfx("select");
+        }
+      },
+      goHome: () => {
+        unlockAudio();
+        if (state.run && state.mode !== "menu" && state.mode !== "collection") {
+          closeLogsModal();
+          closePassiveModal();
+          hidePassiveTooltip();
+          playUiSfx("confirm");
+          saveRunSnapshot();
+          state.mode = "menu";
         }
       },
     });
@@ -8811,6 +8921,7 @@
       selectionIndex: state.selectionIndex,
       canBuySelected,
       canContinue: true,
+      logs: getRunEventLog(run).slice(-120),
     };
   }
 
@@ -8858,21 +8969,28 @@
           playUiSfx("select");
         }
       },
+      goHome: () => {
+        unlockAudio();
+        if (state.run && state.mode !== "menu" && state.mode !== "collection") {
+          closeLogsModal();
+          closePassiveModal();
+          hidePassiveTooltip();
+          playUiSfx("confirm");
+          saveRunSnapshot();
+          state.mode = "menu";
+        }
+      },
     });
   }
 
   function buildPhaserOverlaySnapshot() {
     if (state.mode === "collection") {
       const entries = collectionEntries();
-      const { cols, rows } = collectionPageLayout();
-      const perPage = Math.max(1, cols * rows);
-      const pageCount = Math.max(1, Math.ceil(entries.length / perPage));
-      const page = clampNumber(nonNegInt(state.collectionPage, 0), 0, pageCount - 1, 0);
-      const start = page * perPage;
-      const pageEntries = entries.slice(start, start + perPage).map((entry) => {
+      const mappedEntries = entries.map((entry) => {
         const rarityMeta = RELIC_RARITY_META[entry.rarity] || RELIC_RARITY_META.common;
         return {
           id: entry.relic.id,
+          thumbUrl: entry.unlocked ? passiveThumbUrl(entry.relic) : "",
           rarityLabel: entry.rarityLabel,
           rarityColor: rarityMeta.glow,
           name: entry.unlocked ? entry.relic.name : "LOCKED",
@@ -8888,13 +9006,8 @@
 
       return {
         mode: state.mode,
-        summary: `Unlocked ${unlockedCount}/${entries.length} | Found ${foundCount}/${entries.length} | Copies ${totalCopies}`,
-        page,
-        pageCount,
-        layout: { cols, rows },
-        pageEntries,
-        canPrev: page > 0,
-        canNext: page < pageCount - 1,
+        summary: `Unlocked ${unlockedCount}/${entries.length}  •  Found ${foundCount}/${entries.length}  •  Copies ${totalCopies}`,
+        entries: mappedEntries,
       };
     }
 
@@ -9169,11 +9282,25 @@
   registerPhaserShopApi();
   registerPhaserOverlayApi();
 
+  const requestLandscapeLock = () => {
+    const orientation = window.screen?.orientation;
+    if (!orientation || typeof orientation.lock !== "function") {
+      return;
+    }
+    orientation.lock("landscape").catch(() => {});
+  };
+
   window.addEventListener("pointerdown", unlockAudio, { passive: true });
+  window.addEventListener("pointerdown", requestLandscapeLock, { passive: true });
   window.addEventListener("touchstart", unlockAudio, { passive: true });
+  window.addEventListener("touchstart", requestLandscapeLock, { passive: true });
   window.addEventListener("click", unlockAudio, { passive: true });
+  window.addEventListener("click", requestLandscapeLock, { passive: true });
   window.addEventListener("resize", resizeCanvas);
-  window.addEventListener("orientationchange", resizeCanvas);
+  window.addEventListener("orientationchange", () => {
+    requestLandscapeLock();
+    resizeCanvas();
+  });
   document.addEventListener("fullscreenchange", resizeCanvas);
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) {
@@ -9187,6 +9314,7 @@
     if (state.audio.enabled && state.audio.started && state.audio.context && state.audio.context.state === "suspended") {
       state.audio.context.resume().catch(() => {});
     }
+    requestLandscapeLock();
   });
   window.addEventListener("beforeunload", () => {
     saveRunSnapshot();
@@ -9195,6 +9323,7 @@
 
   window.render_game_to_text = renderGameToText;
   window.advanceTime = advanceTime;
+  requestLandscapeLock();
 
   startRuntimeLoop();
 })();

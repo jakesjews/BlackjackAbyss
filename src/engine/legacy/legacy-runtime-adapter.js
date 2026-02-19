@@ -68,6 +68,7 @@ export class LegacyRuntimeAdapter {
           split: typeof api.split === "function" ? api.split : null,
           deal: typeof api.deal === "function" ? api.deal : null,
           confirmIntro: typeof api.confirmIntro === "function" ? api.confirmIntro : null,
+          goHome: typeof api.goHome === "function" ? api.goHome : null,
         };
       },
       getRunApi: () => this.runApi,
@@ -82,6 +83,7 @@ export class LegacyRuntimeAdapter {
           next: typeof api.next === "function" ? api.next : null,
           claim: typeof api.claim === "function" ? api.claim : null,
           selectIndex: typeof api.selectIndex === "function" ? api.selectIndex : null,
+          goHome: typeof api.goHome === "function" ? api.goHome : null,
         };
       },
       getRewardApi: () => this.rewardApi,
@@ -97,6 +99,7 @@ export class LegacyRuntimeAdapter {
           buy: typeof api.buy === "function" ? api.buy : null,
           continueRun: typeof api.continueRun === "function" ? api.continueRun : null,
           selectIndex: typeof api.selectIndex === "function" ? api.selectIndex : null,
+          goHome: typeof api.goHome === "function" ? api.goHome : null,
         };
       },
       getShopApi: () => this.shopApi,

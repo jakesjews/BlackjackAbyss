@@ -2,6 +2,79 @@ import Phaser from "phaser";
 
 const DESKTOP_HOVER_MEDIA = "(hover: hover) and (pointer: fine)";
 
+function colorHex(value) {
+  return `#${(value >>> 0).toString(16).padStart(6, "0").slice(-6)}`;
+}
+
+function colorRgba(value, alpha) {
+  const c = Phaser.Display.Color.IntegerToColor(value);
+  const a = Math.max(0, Math.min(1, Number(alpha) || 0));
+  return `rgba(${c.red}, ${c.green}, ${c.blue}, ${a})`;
+}
+
+function roundedPath(ctx, x, y, w, h, radius) {
+  const r = Math.max(0, Math.min(radius, w * 0.5, h * 0.5));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function textureKeyForStyle(styleName, style, w, h, radius, strokeWidth, strokeAlpha) {
+  const alpha = Number.isFinite(style.alpha) ? style.alpha : 1;
+  return [
+    "__btn",
+    styleName,
+    w,
+    h,
+    Math.round(radius * 100),
+    style.top,
+    style.bottom,
+    Math.round(alpha * 1000),
+    style.stroke || 0,
+    Math.round(strokeAlpha * 1000),
+    Math.round(strokeWidth * 1000),
+  ].join("-");
+}
+
+function ensureGradientTexture(scene, styleName, style, w, h, radius, strokeWidth, strokeAlpha) {
+  const key = textureKeyForStyle(styleName, style, w, h, radius, strokeWidth, strokeAlpha);
+  if (scene.textures.exists(key)) {
+    return key;
+  }
+  const tex = scene.textures.createCanvas(key, w, h);
+  const ctx = tex.getContext();
+  ctx.clearRect(0, 0, w, h);
+  const alpha = Number.isFinite(style.alpha) ? style.alpha : 1;
+  const inset = strokeWidth > 0 && strokeAlpha > 0 ? strokeWidth * 0.5 : 0;
+  const drawW = Math.max(1, w - inset * 2);
+  const drawH = Math.max(1, h - inset * 2);
+  const drawRadius = Math.max(0, radius - inset);
+  roundedPath(ctx, inset, inset, drawW, drawH, drawRadius);
+  const gradient = ctx.createLinearGradient(0, inset, 0, inset + drawH);
+  gradient.addColorStop(0, colorHex(style.top));
+  gradient.addColorStop(1, colorHex(style.bottom));
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  if (strokeWidth > 0 && strokeAlpha > 0) {
+    ctx.strokeStyle = colorRgba(style.stroke, strokeAlpha);
+    ctx.lineWidth = strokeWidth;
+    roundedPath(ctx, inset, inset, drawW, drawH, drawRadius);
+    ctx.stroke();
+  }
+  tex.refresh();
+  return key;
+}
+
 function resolveStyle(styleSet, styleName) {
   return styleSet?.[styleName] || styleSet?.idle || {
     top: 0x4aa3d8,
@@ -10,7 +83,7 @@ function resolveStyle(styleSet, styleName) {
     stroke: 0xc0deef,
     strokeAlpha: 0.42,
     text: "#f2f8ff",
-    radius: 8,
+    radius: 6,
   };
 }
 
@@ -19,26 +92,6 @@ function canUseDesktopHoverScale() {
     return false;
   }
   return window.matchMedia(DESKTOP_HOVER_MEDIA).matches;
-}
-
-function drawVerticalBands(gfx, x, y, width, height, topColor, bottomColor, topAlpha = 1, bottomAlpha = 1, steps = 20) {
-  const w = Math.max(1, Number(width) || 1);
-  const h = Math.max(1, Number(height) || 1);
-  const count = Math.max(2, Math.floor(steps));
-  const bandH = h / count;
-  const top = Phaser.Display.Color.IntegerToColor(topColor);
-  const bottom = Phaser.Display.Color.IntegerToColor(bottomColor);
-
-  for (let i = 0; i < count; i += 1) {
-    const t = i / (count - 1);
-    const r = Math.round(Phaser.Math.Linear(top.red, bottom.red, t));
-    const g = Math.round(Phaser.Math.Linear(top.green, bottom.green, t));
-    const b = Math.round(Phaser.Math.Linear(top.blue, bottom.blue, t));
-    const color = (r << 16) | (g << 8) | b;
-    const alpha = Phaser.Math.Linear(topAlpha, bottomAlpha, t);
-    gfx.fillStyle(color, alpha);
-    gfx.fillRect(x, y + i * bandH, w, Math.ceil(bandH + 0.8));
-  }
 }
 
 function applyButtonScale(button, targetScale) {
@@ -72,67 +125,20 @@ function redrawButton(button, styleName) {
   const style = resolveStyle(button.styleSet, styleName);
   const w = Math.max(24, Number(button.width) || 24);
   const h = Math.max(16, Number(button.height) || 16);
-  const radius = Math.max(4, Math.min(10, Number(style.radius) || Math.round(h * 0.18)));
+  const radius = Math.max(4, Math.min(24, Number(style.radius) || Math.round(h * 0.28)));
   const bg = button.bg;
+  const shadow = button.shadow;
   const strokeWidth = Number.isFinite(style.strokeWidth) ? style.strokeWidth : 1.8;
   const strokeAlpha = Number.isFinite(style.strokeAlpha) ? style.strokeAlpha : 0.42;
   const shadowOffsetY = Number.isFinite(style.shadowOffsetY) ? style.shadowOffsetY : 2;
   const shadowAlpha = Number.isFinite(style.shadowAlpha) ? style.shadowAlpha : button.enabled ? 0.14 : 0.1;
-  const innerInset = Number.isFinite(style.innerInset) ? style.innerInset : 1;
-  const innerStrokeWidth = Number.isFinite(style.innerStrokeWidth) ? style.innerStrokeWidth : 1;
-  const innerStrokeAlpha = Number.isFinite(style.innerStrokeAlpha) ? style.innerStrokeAlpha : 0.32;
-
-  bg.clear();
-  bg.fillStyle(style.shadowColor ?? 0x000000, shadowAlpha);
-  bg.fillRoundedRect(-w * 0.5, -h * 0.5 + shadowOffsetY, w, h, radius);
-  const fillAlpha = Number.isFinite(style.alpha) ? style.alpha : 1;
-  bg.fillStyle(style.bottom, fillAlpha);
-  bg.fillRoundedRect(-w * 0.5, -h * 0.5, w, h, radius);
-  const fillInset = 1;
-  drawVerticalBands(
-    bg,
-    -w * 0.5 + fillInset,
-    -h * 0.5 + fillInset,
-    Math.max(2, w - fillInset * 2),
-    Math.max(2, h - fillInset * 2),
-    style.top,
-    style.bottom,
-    fillAlpha,
-    fillAlpha,
-    Math.max(16, Math.round(h * 0.8))
-  );
-  bg.fillStyle(style.top, Math.min(0.14, fillAlpha * 0.14));
-  bg.fillRoundedRect(-w * 0.5, -h * 0.5, w, Math.max(3, Math.round(h * 0.22)), radius);
-  const glossAlpha = Number.isFinite(style.glossAlpha) ? style.glossAlpha : 0;
-  if (glossAlpha > 0) {
-    const glossColor = Number.isFinite(style.glossColor) ? style.glossColor : 0xffffff;
-    const glossHeightRatio = Phaser.Math.Clamp(Number(style.glossHeight) || 0.52, 0.2, 1);
-    const glossBottomAlpha = Number.isFinite(style.glossBottomAlpha) ? style.glossBottomAlpha : 0;
-    const glossHeight = Math.max(4, Math.round(h * glossHeightRatio));
-    drawVerticalBands(
-      bg,
-      -w * 0.5 + 1,
-      -h * 0.5 + 1,
-      Math.max(2, w - 2),
-      Math.min(h - 2, glossHeight),
-      glossColor,
-      glossColor,
-      glossAlpha,
-      glossBottomAlpha,
-      Math.max(8, Math.round(glossHeight * 0.75))
-    );
-  }
-  if (strokeWidth > 0 && strokeAlpha > 0) {
-    bg.lineStyle(strokeWidth, style.stroke, strokeAlpha);
-    bg.strokeRoundedRect(-w * 0.5, -h * 0.5, w, h, radius);
-  }
-  if (style.innerStroke && innerStrokeWidth > 0 && innerStrokeAlpha > 0) {
-    const innerW = Math.max(2, w - innerInset * 2);
-    const innerH = Math.max(2, h - innerInset * 2);
-    const innerRadius = Math.max(2, radius - innerInset * 0.5);
-    bg.lineStyle(innerStrokeWidth, style.innerStroke, innerStrokeAlpha);
-    bg.strokeRoundedRect(-w * 0.5 + innerInset, -h * 0.5 + innerInset, innerW, innerH, innerRadius);
-  }
+  shadow.clear();
+  shadow.fillStyle(style.shadowColor ?? 0x000000, shadowAlpha);
+  shadow.fillRoundedRect(-w * 0.5, -h * 0.5 + shadowOffsetY, w, h, radius);
+  const textureKey = ensureGradientTexture(button.scene, styleName, style, w, h, radius, strokeWidth, strokeAlpha);
+  bg.setTexture(textureKey);
+  bg.setDisplaySize(w, h);
+  bg.setVisible(true);
 
   button.text.setColor(style.text || "#f2f8ff");
   button.currentStyle = styleName;
@@ -146,11 +152,12 @@ function syncHitArea(button) {
   const h = Math.max(16, Number(button.height) || 16);
   const area = button.bg.input?.hitArea;
   if (area && typeof area.setTo === "function") {
-    area.setTo(-w * 0.5, -h * 0.5, w, h);
+    // Phaser hit areas are in local texture space (top-left origin).
+    area.setTo(0, 0, w, h);
     return;
   }
   button.bg.setInteractive({
-    hitArea: new Phaser.Geom.Rectangle(-w * 0.5, -h * 0.5, w, h),
+    hitArea: new Phaser.Geom.Rectangle(0, 0, w, h),
     hitAreaCallback: Phaser.Geom.Rectangle.Contains,
     useHandCursor: true,
   });
@@ -174,7 +181,8 @@ export function createGradientButton(
   }
 ) {
   const container = scene.add.container(0, 0);
-  const bg = scene.add.graphics();
+  const shadow = scene.add.graphics();
+  const bg = scene.add.image(0, 0, "__WHITE");
   const text = scene.add
     .text(0, 0, label, {
       fontFamily,
@@ -183,12 +191,13 @@ export function createGradientButton(
       color: "#f2f8ff",
     })
     .setOrigin(0.5, 0.5);
-  container.add([bg, text]);
+  container.add([shadow, bg, text]);
 
   const button = {
     scene,
     id,
     container,
+    shadow,
     bg,
     text,
     width,
