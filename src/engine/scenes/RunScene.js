@@ -18,6 +18,8 @@ const RUN_RELIC_ICON_KEY = "__run-relic-icon__";
 const RUN_PLAYER_AVATAR_KEY = "__run-player-avatar__";
 const RUN_CARD_BACKPLATE_KEY = "__run-card-backplate__";
 const RUN_CARD_HEIGHT_SCALE = 1.08;
+const RUN_MOBILE_BUTTON_SCALE = 0.75;
+const RUN_MOBILE_HAND_GROUP_SCALE_BOOST = 1.25;
 const RUN_DEALER_CARD_FLIP_MS = 560;
 const RUN_DEALER_CARD_FLIP_STRETCH = 0.14;
 const RUN_DEALER_CARD_ENTRY_MS = 460;
@@ -60,6 +62,92 @@ const RUN_ACTION_SHORTCUTS = Object.freeze({
   doubleDown: "C",
   deal: "ENTER",
   confirmIntro: "ENTER",
+});
+const RUN_SECONDARY_BUTTON_STYLE = Object.freeze({
+  idle: Object.freeze({
+    top: 0x6d4f33,
+    bottom: 0x3f2d1c,
+    alpha: 1,
+    stroke: 0xffffff,
+    strokeAlpha: 0.58,
+    strokeWidth: 1.4,
+    innerStroke: 0xffffff,
+    innerStrokeAlpha: 0.2,
+    innerStrokeWidth: 1,
+    innerInset: 1.5,
+    glossColor: 0xb3936d,
+    glossAlpha: 0.08,
+    glossHeight: 0.56,
+    glossBottomAlpha: 0,
+    shadowColor: 0x000000,
+    shadowAlpha: 0.3,
+    shadowOffsetY: 3,
+    text: "#f2f5f9",
+    radius: 14,
+  }),
+  hover: Object.freeze({
+    top: 0x7a5b3d,
+    bottom: 0x493424,
+    alpha: 1,
+    stroke: 0xffffff,
+    strokeAlpha: 0.72,
+    strokeWidth: 1.6,
+    innerStroke: 0xffffff,
+    innerStrokeAlpha: 0.28,
+    innerStrokeWidth: 1,
+    innerInset: 1.5,
+    glossColor: 0xc1a179,
+    glossAlpha: 0.1,
+    glossHeight: 0.58,
+    glossBottomAlpha: 0,
+    shadowColor: 0x000000,
+    shadowAlpha: 0.32,
+    shadowOffsetY: 3,
+    text: "#ffffff",
+    radius: 14,
+  }),
+  pressed: Object.freeze({
+    top: 0x5f442c,
+    bottom: 0x382717,
+    alpha: 1,
+    stroke: 0xffffff,
+    strokeAlpha: 0.5,
+    strokeWidth: 1.3,
+    innerStroke: 0xffffff,
+    innerStrokeAlpha: 0.16,
+    innerStrokeWidth: 1,
+    innerInset: 1.5,
+    glossColor: 0x9f815d,
+    glossAlpha: 0.05,
+    glossHeight: 0.44,
+    glossBottomAlpha: 0,
+    shadowColor: 0x000000,
+    shadowAlpha: 0.24,
+    shadowOffsetY: 2,
+    text: "#f1f5fb",
+    radius: 14,
+  }),
+  disabled: Object.freeze({
+    top: 0x6b5a48,
+    bottom: 0x4f4337,
+    alpha: 0.9,
+    stroke: 0xffffff,
+    strokeAlpha: 0.32,
+    strokeWidth: 1.2,
+    innerStroke: 0xffffff,
+    innerStrokeAlpha: 0.12,
+    innerStrokeWidth: 1,
+    innerInset: 1.5,
+    glossColor: 0x8f7b64,
+    glossAlpha: 0.03,
+    glossHeight: 0.48,
+    glossBottomAlpha: 0,
+    shadowColor: 0x000000,
+    shadowAlpha: 0.18,
+    shadowOffsetY: 2,
+    text: "#dbe2ea",
+    radius: 14,
+  }),
 });
 const SUIT_SYMBOL = Object.freeze({
   S: "♠",
@@ -1040,7 +1128,9 @@ export class RunScene extends Phaser.Scene {
   getRunLayout(width, height) {
     const compact = this.isCompactLayout(width);
     const topBarH = compact ? 76 : RUN_TOP_BAR_HEIGHT;
-    const bottomBarH = compact ? 158 : RUN_BOTTOM_BAR_HEIGHT;
+    const compactButtonH = Math.max(36, Math.round(50 * RUN_MOBILE_BUTTON_SCALE));
+    const compactRowGap = Math.max(8, Math.round(10 * RUN_MOBILE_BUTTON_SCALE));
+    const bottomBarH = compact ? compactButtonH * 2 + compactRowGap : RUN_BOTTOM_BAR_HEIGHT;
     const sidePad = Math.max(compact ? 16 : 22, Math.round(width * (compact ? 0.016 : 0.02)));
     const arenaTop = topBarH;
     const arenaBottom = Math.max(arenaTop + 180, height - bottomBarH);
@@ -1249,14 +1339,14 @@ export class RunScene extends Phaser.Scene {
         fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
         fontSize: "16px",
         color: "#f2cd88",
-        fontStyle: "700",
+        fontStyle: "800",
       }, { x: 0, y: 0.5 });
       const floorRoomX = chipsNode.x + chipsNode.width + 26;
       this.drawText("hud-floor-room", `Floor ${floor}/${maxFloor}  Room ${room}/${roomsPerFloor}`, floorRoomX, rowY, {
         fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
         fontSize: "15px",
         color: "#e2d0af",
-        fontStyle: "700",
+        fontStyle: "800",
       }, { x: 0, y: 0.5 });
       return;
     }
@@ -1525,8 +1615,14 @@ export class RunScene extends Phaser.Scene {
     const enemyFadeProgress = enemyDefeatTransition
       ? Phaser.Math.Easing.Cubic.In(Phaser.Math.Clamp((enemyDefeatTransition.progress - 0.16) / 0.84, 0, 1))
       : 0;
-    const enemyAvatarW = compact ? Math.max(96, Math.min(124, Math.round(width * 0.29))) : 146;
-    const enemyAvatarH = compact ? Math.round(enemyAvatarW * 1.18) : 176;
+    const playerAvatarW = compact ? 84 : 110;
+    const playerButtonH = compact ? 40 : 50;
+    const playerAvatarH = Math.max(
+      playerAvatarW,
+      (compact ? 22 : 34) + (compact ? 24 : 28) + (compact ? 30 : 36) + Math.round(playerButtonH * 0.5)
+    );
+    const enemyAvatarW = compact ? playerAvatarW : 146;
+    const enemyAvatarH = compact ? playerAvatarH : 176;
     const enemyAvatarX = width - runLayout.sidePad - enemyAvatarW;
     const enemyAvatarY = runLayout.arenaY + (compact ? 8 : 12);
     const enemyInfoRight = enemyAvatarX - (compact ? 10 : 14);
@@ -1535,32 +1631,16 @@ export class RunScene extends Phaser.Scene {
       : enemyInfoRight - Math.max(220, Math.min(288, Math.round(width * 0.21)));
     const enemyInfoWidth = Math.max(120, enemyInfoRight - enemyInfoLeft);
     const enemyNameY = enemyAvatarY + (compact ? 12 : 14);
-    const nameToTypeGap = Math.round((compact ? 20 : 24) * 0.85);
-    const typeToHpGap = Math.round((compact ? 10 : 14) * 1.25);
-    const enemyTypeY = enemyNameY + nameToTypeGap;
-    const enemyHpY = enemyTypeY + typeToHpGap;
+    const nameToHpGap = Math.round((compact ? 26 : 34) * 0.9);
+    const enemyHpY = enemyNameY + nameToHpGap;
     const enemyNameSize = `${Math.round((compact ? 12 : 17) * 1.15)}px`;
-    const enemyTypeSize = compact ? "10px" : "12px";
 
     this.drawText("enemy-name", (enemy.name || "Enemy").toUpperCase(), enemyInfoRight, enemyNameY, {
       fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
       fontSize: enemyNameSize,
       color: "#d8c3a0",
-      fontStyle: "700",
+      fontStyle: compact ? "800" : "700",
     }, { x: 1, y: 0.5 });
-    this.drawText(
-      "enemy-type",
-      this.getEncounterTypeLabel(enemy.type),
-      enemyInfoRight,
-      enemyTypeY,
-      {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: enemyTypeSize,
-        color: "#d3bf9f",
-        fontStyle: "700",
-      },
-      { x: 1, y: 0.5 }
-    );
 
     this.drawHpBar(
       "enemy-hp",
@@ -1583,12 +1663,6 @@ export class RunScene extends Phaser.Scene {
       fadeProgress: enemyFadeProgress,
     });
 
-    const playerAvatarW = compact ? 84 : 110;
-    const playerButtonH = compact ? 40 : 50;
-    const playerAvatarH = Math.max(
-      playerAvatarW,
-      (compact ? 22 : 34) + (compact ? 24 : 28) + (compact ? 30 : 36) + Math.round(playerButtonH * 0.5)
-    );
     const playerAvatarX = runLayout.sidePad;
     const playerAvatarY = runLayout.arenaBottom - playerAvatarH - (compact ? 12 : 14);
     this.drawPlayerAvatar(playerAvatarX, playerAvatarY, playerAvatarW, playerAvatarH);
@@ -1606,7 +1680,7 @@ export class RunScene extends Phaser.Scene {
         fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
         fontSize: enemyNameSize,
         color: "#e1ccb0",
-        fontStyle: "700",
+        fontStyle: compact ? "800" : "700",
       },
       { x: 0, y: 0.5 }
     );
@@ -1621,36 +1695,64 @@ export class RunScene extends Phaser.Scene {
     });
 
     const cardAspect = 1.42;
-    const nominalCardWidth = compact ? 64 : 88;
-    const nominalCardHeight = Math.round(nominalCardWidth * cardAspect * RUN_CARD_HEIGHT_SCALE);
-    const nominalMessageGap = compact ? 18 : 24;
-    const messagePanelH = compact ? 48 : 60;
-    const messagePanelW = compact
-      ? Phaser.Math.Clamp(width - runLayout.sidePad * 2 - 24, 280, 360)
+    const baseCardWidth = compact ? Math.round(64 * 0.85) : 88;
+    const baseMessageMargin = compact ? Math.round(18 * 0.9) : 24;
+    const baseMessagePanelH = compact ? Math.round(48 * 0.9) : 60;
+    const baseMessagePanelW = compact
+      ? Math.round(Phaser.Math.Clamp(width - runLayout.sidePad * 2 - 24, 280, 360) * 0.9)
       : Phaser.Math.Clamp(Math.round(width * 0.44), 500, 640);
     const desiredCenterY = Math.round(runLayout.arenaY + runLayout.arenaH * 0.5);
-    const topHandBound = Math.max(
-      runLayout.arenaY + (compact ? 96 : 110),
-      enemyHpY + (compact ? 34 : 40),
-      enemyAvatarY + enemyAvatarH + (compact ? 10 : 14)
+    const enemyDetailBottom = Math.max(
+      enemyAvatarY + enemyAvatarH,
+      enemyHpY + (compact ? 24 : 28),
+      enemyNameY + Math.round((compact ? 14 : 18))
     );
-    const bottomHandBound = Math.min(
-      runLayout.arenaBottom - (compact ? 12 : 16),
-      playerAvatarY - (compact ? 8 : 12)
-    );
-    const messageHalf = Math.round(messagePanelH * 0.5);
-    const halfSpan = nominalCardHeight + nominalMessageGap + messageHalf;
-    const minCenterY = topHandBound + halfSpan;
-    const maxCenterY = bottomHandBound - halfSpan;
+    const playerDetailTop = Math.min(playerAvatarY, playerHpY);
+    const topHandBound = Math.max(runLayout.arenaY + (compact ? 90 : 110), enemyDetailBottom + (compact ? 12 : 16));
+    const bottomHandBound = Math.min(runLayout.arenaBottom - (compact ? 10 : 16), playerDetailTop - (compact ? 12 : 16));
+    const availableSpan = Math.max(1, bottomHandBound - topHandBound);
+    const handLabelScale = compact ? Phaser.Math.Clamp(width / 430, 0.68, 0.9) : 1;
+    const handLabelGapEstimate = Math.max(10, Math.round((compact ? 20 : 24) * handLabelScale));
+    const handLabelFontEstimate = Math.max(12, Math.round((compact ? 14 : 17) * handLabelScale));
+    const handLabelReserve = handLabelGapEstimate + Math.round(handLabelFontEstimate * 0.62) + (compact ? 2 : 4);
+    const baseCardHeight = Math.round(baseCardWidth * cardAspect * RUN_CARD_HEIGHT_SCALE);
+    const baseTotalSpan = baseCardHeight * 2 + baseMessagePanelH + baseMessageMargin * 2 + handLabelReserve * 2;
+    const mobileGroupScaleBoost = compact ? RUN_MOBILE_HAND_GROUP_SCALE_BOOST : 1;
+    let stackScale = compact
+      ? Phaser.Math.Clamp(
+        (availableSpan / Math.max(1, baseTotalSpan)) * mobileGroupScaleBoost,
+        0.56,
+        mobileGroupScaleBoost
+      )
+      : 1;
+    let cardWidth = Math.max(compact ? 38 : 72, Math.round(baseCardWidth * stackScale));
+    let cardHeight = Math.round(cardWidth * cardAspect * RUN_CARD_HEIGHT_SCALE);
+    let messagePanelH = Math.max(compact ? 30 : 54, Math.round(baseMessagePanelH * (compact ? stackScale : 1)));
+    let messageMargin = Math.max(compact ? 8 : 18, Math.round(baseMessageMargin * (compact ? stackScale : 1)));
+    let messagePanelW = compact
+      ? Math.max(220, Math.round(baseMessagePanelW * Math.max(0.84, stackScale)))
+      : baseMessagePanelW;
+    let messageHalf = Math.round(messagePanelH * 0.5);
+    let halfSpan = cardHeight + messageMargin + messageHalf + handLabelReserve;
+    let minCenterY = topHandBound + halfSpan;
+    let maxCenterY = bottomHandBound - halfSpan;
+    if (compact && minCenterY > maxCenterY) {
+      const emergencyScale = Phaser.Math.Clamp(availableSpan / Math.max(1, halfSpan * 2), 0.5, 1);
+      stackScale *= emergencyScale;
+      cardWidth = Math.max(34, Math.round(cardWidth * emergencyScale));
+      cardHeight = Math.round(cardWidth * cardAspect * RUN_CARD_HEIGHT_SCALE);
+      messagePanelH = Math.max(26, Math.round(messagePanelH * emergencyScale));
+      messageMargin = Math.max(6, Math.round(messageMargin * emergencyScale));
+      messagePanelW = Math.max(200, Math.round(messagePanelW * emergencyScale));
+      messageHalf = Math.round(messagePanelH * 0.5);
+      halfSpan = cardHeight + messageMargin + messageHalf + handLabelReserve;
+      minCenterY = topHandBound + halfSpan;
+      maxCenterY = bottomHandBound - halfSpan;
+    }
     const groupCenterY = minCenterY <= maxCenterY
       ? Phaser.Math.Clamp(desiredCenterY, minCenterY, maxCenterY)
-      : desiredCenterY;
-
-    // Keep card and message container sizes static.
-    const groupScale = 1;
-    const cardHeight = nominalCardHeight;
-    const cardWidth = nominalCardWidth;
-    const messageGap = nominalMessageGap + messageHalf;
+      : Math.round((topHandBound + bottomHandBound) * 0.5);
+    const messageGap = messageMargin + messageHalf;
     const enemyRowY = Math.round(groupCenterY - messageGap - cardHeight);
     const playerRowY = Math.round(groupCenterY + messageGap);
 
@@ -1659,7 +1761,7 @@ export class RunScene extends Phaser.Scene {
       playerY: playerRowY,
       cardWidth,
       cardHeight,
-      groupScale,
+      groupScale: stackScale,
       messageGap,
       enemyInfoLeft,
       enemyInfoRight,
@@ -1689,7 +1791,10 @@ export class RunScene extends Phaser.Scene {
       messageY: groupCenterY,
       messagePanelW,
       messagePanelH,
-      messageMargin: nominalMessageGap,
+      messageMargin,
+      cardsTopBound: topHandBound,
+      cardsBottomBound: bottomHandBound,
+      handLabelReserve,
     };
   }
 
@@ -1698,7 +1803,7 @@ export class RunScene extends Phaser.Scene {
       this.relicButton = createGradientButton(this, {
         id: "relics",
         label: "RELICS",
-        styleSet: BUTTON_STYLES,
+        styleSet: RUN_SECONDARY_BUTTON_STYLE,
         onPress: () => {
           const count = Array.isArray(this.lastSnapshot?.passives) ? this.lastSnapshot.passives.length : 0;
           if (count <= 0) {
@@ -1714,18 +1819,19 @@ export class RunScene extends Phaser.Scene {
       });
       this.relicButton.container.setDepth(86);
       const icon = this.add
-        .image(0, 0, this.resolveDarkIconTexture(RUN_RELIC_ICON_KEY))
+        .image(0, 0, RUN_RELIC_ICON_KEY)
         .setDisplaySize(18, 18)
+        .setTint(0xffffff)
         .setAlpha(0.92);
       const shortcut = this.add
         .text(0, 0, "TAB", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "12px",
-          color: "#000000",
+          color: "#f2f6fb",
           fontStyle: "700",
         })
         .setOrigin(1, 0.5)
-        .setAlpha(0.5);
+        .setAlpha(0.76);
       this.relicButton.container.add([icon, shortcut]);
       this.relicButton.icon = icon;
       this.relicButton.shortcut = shortcut;
@@ -1736,41 +1842,50 @@ export class RunScene extends Phaser.Scene {
       this.setModalOpen("relics", false);
     }
     const compact = Boolean(runLayout?.compact);
+    const mobileButtonScale = compact ? RUN_MOBILE_BUTTON_SCALE : 1;
     const showKeyboardHints = this.shouldShowKeyboardHints(this.scale.gameSize.width);
-    const desiredButtonW = compact ? 170 : 220;
+    const desiredButtonW = compact ? Math.round(170 * mobileButtonScale) : 220;
     const availableButtonW = Math.max(120, Math.round(layout.playerInfoWidth || desiredButtonW));
     const buttonW = Math.max(120, Math.min(desiredButtonW, availableButtonW));
-    const buttonH = compact ? 40 : 50;
+    const buttonH = compact ? Math.max(30, Math.round(40 * mobileButtonScale)) : 50;
     const x = Math.round(layout.playerInfoLeft + buttonW * 0.5);
     const y = Math.round(layout.playerHpY + layout.playerHpH + (compact ? 30 : 36));
     setGradientButtonSize(this.relicButton, buttonW, buttonH);
     this.relicButton.container.setPosition(x, y);
     const relicLabel = `RELICS (${count})`;
     this.relicButton.text.setText(relicLabel);
-    let relicFontSize = compact ? 16 : 18;
+    let relicFontSize = compact ? Math.max(12, Math.round(16 * mobileButtonScale)) : 18;
     this.relicButton.text.setFontSize(relicFontSize);
+    this.relicButton.text.setFontStyle(compact ? "800" : "700");
     const relicTextMaxW = Math.max(64, buttonW - (compact ? 82 : 98));
     while (this.relicButton.text.width > relicTextMaxW && relicFontSize > 12) {
       relicFontSize -= 1;
       this.relicButton.text.setFontSize(relicFontSize);
     }
     this.relicButton.text.setOrigin(0, 0.5);
-    this.relicButton.text.setPosition(-buttonW * 0.5 + (compact ? 36 : 46), 0);
+    this.relicButton.text.setPosition(-buttonW * 0.5 + (compact ? Math.round(36 * mobileButtonScale) : 46), 0);
     this.relicButton.text.setAlign("left");
     if (this.relicButton.icon) {
-      this.relicButton.icon.setTexture(this.resolveDarkIconTexture(RUN_RELIC_ICON_KEY));
-      this.relicButton.icon.setDisplaySize(compact ? 18 : 22, compact ? 18 : 22);
-      this.relicButton.icon.setPosition(-buttonW * 0.5 + (compact ? 16 : 22), 0);
+      this.relicButton.icon.setTexture(RUN_RELIC_ICON_KEY);
+      this.relicButton.icon.setDisplaySize(
+        compact ? Math.max(13, Math.round(18 * mobileButtonScale)) : 22,
+        compact ? Math.max(13, Math.round(18 * mobileButtonScale)) : 22
+      );
+      this.relicButton.icon.setTint(0xffffff);
+      this.relicButton.icon.setPosition(-buttonW * 0.5 + (compact ? Math.round(16 * mobileButtonScale) : 22), 0);
       this.relicButton.icon.setVisible(true);
     }
     if (this.relicButton.shortcut) {
       this.relicButton.shortcut.setText("TAB");
-      this.relicButton.shortcut.setFontSize(compact ? 11 : 13);
-      this.relicButton.shortcut.setPosition(buttonW * 0.5 - (compact ? 16 : 24), 0);
+      this.relicButton.shortcut.setFontSize(compact ? Math.max(8, Math.round(11 * mobileButtonScale)) : 13);
+      this.relicButton.shortcut.setColor("#f2f6fb");
+      this.relicButton.shortcut.setAlpha(0.76);
+      this.relicButton.shortcut.setPosition(buttonW * 0.5 - (compact ? Math.round(16 * mobileButtonScale) : 24), 0);
       this.relicButton.shortcut.setVisible(showKeyboardHints);
     }
     this.relicButton.enabled = count > 0;
     this.setButtonVisual(this.relicButton, this.relicButton.enabled ? "idle" : "disabled");
+    this.relicButton.text.setColor(this.relicButton.enabled ? "#f8fbff" : "#dbe2ea");
     this.relicButton.container.setAlpha(this.relicButton.enabled ? 1 : 0.84);
     this.relicButton.container.setVisible(true);
   }
@@ -1983,6 +2098,8 @@ export class RunScene extends Phaser.Scene {
   }
 
   drawHpBar(keyPrefix, x, y, width, height, value, maxValue, colorHex, options = {}) {
+    const compact = this.isCompactLayout(this.scale.gameSize.width);
+    const labelWeight = compact ? "800" : "700";
     const safeMax = Math.max(1, Number(maxValue) || 1);
     const safeValue = Math.max(0, Math.min(safeMax, Number(value) || 0));
     const ratio = safeValue / safeMax;
@@ -2037,7 +2154,7 @@ export class RunScene extends Phaser.Scene {
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
         fontSize,
         color: darkTextColor,
-        fontStyle: "700",
+        fontStyle: labelWeight,
       },
       { x: 0, y: 0.5 }
     );
@@ -2050,7 +2167,7 @@ export class RunScene extends Phaser.Scene {
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
         fontSize,
         color: lightTextColor,
-        fontStyle: "700",
+        fontStyle: labelWeight,
       },
       { x: 0, y: 0.5 }
     );
@@ -2136,18 +2253,42 @@ export class RunScene extends Phaser.Scene {
     const enemyHandValue = Number.isFinite(totals.dealer) ? String(totals.dealer) : "?";
     const enemyTotalText = enemyHasHidden && Number.isFinite(totals.dealer) ? `Hand ${enemyHandValue} + ?` : `Hand ${enemyHandValue}`;
     const playerTotalText = Number.isFinite(totals.player) ? `Hand ${totals.player}` : "Hand ?";
-    const handLabelGap = 18;
+    const handLabelScale = compact ? Phaser.Math.Clamp(width / 430, 0.68, 0.9) : 1;
+    const handLabelGap = Math.max(10, Math.round((compact ? 20 : 24) * handLabelScale));
+    const handLabelFontSize = Math.max(12, Math.round((compact ? 14 : 17) * handLabelScale));
+    const cardsTopBound = Number.isFinite(layout?.cardsTopBound)
+      ? Math.round(layout.cardsTopBound)
+      : Math.round((layout?.enemyHpY || layout?.arenaY || 0) + (layout?.enemyHpH || 24) + 12);
+    const cardsBottomBound = Number.isFinite(layout?.cardsBottomBound)
+      ? Math.round(layout.cardsBottomBound)
+      : Math.round((layout?.arenaBottom || height) - 12);
+    const enemyLabelIdealY = enemyY - handLabelGap;
+    const enemyLabelMinY = Math.round(cardsTopBound + Math.max(4, Math.round(6 * handLabelScale)));
+    const enemyLabelMaxY = Math.round(enemyY - Math.max(6, Math.round(10 * handLabelScale)));
+    const enemyLabelY = Phaser.Math.Clamp(
+      enemyLabelIdealY,
+      Math.min(enemyLabelMinY, enemyLabelMaxY),
+      Math.max(enemyLabelMinY, enemyLabelMaxY)
+    );
+    const playerLabelIdealY = playerY + cardHeight + handLabelGap;
+    const playerLabelMinY = Math.round(playerY + cardHeight + Math.max(8, Math.round(10 * handLabelScale)));
+    const playerLabelMaxY = Math.round(cardsBottomBound - Math.max(4, Math.round(6 * handLabelScale)));
+    const playerLabelY = Phaser.Math.Clamp(
+      playerLabelIdealY,
+      Math.min(playerLabelMinY, playerLabelMaxY),
+      Math.max(playerLabelMinY, playerLabelMaxY)
+    );
     if (!deferResolutionUi) {
       this.drawText(
         "enemy-total",
         enemyTotalText,
         width * 0.5,
-        enemyY - handLabelGap,
+        enemyLabelY,
         {
           fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-          fontSize: "17px",
+          fontSize: `${handLabelFontSize}px`,
           color: "#e0ccb0",
-          fontStyle: "700",
+          fontStyle: compact ? "800" : "700",
         },
         { x: 0.5, y: 0.5 }
       );
@@ -2157,12 +2298,12 @@ export class RunScene extends Phaser.Scene {
         "player-total",
         playerTotalText,
         width * 0.5,
-        playerY + cardHeight + handLabelGap,
+        playerLabelY,
         {
           fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-          fontSize: "17px",
+          fontSize: `${handLabelFontSize}px`,
           color: "#e0ccb0",
-          fontStyle: "700",
+          fontStyle: compact ? "800" : "700",
         },
         { x: 0.5, y: 0.5 }
       );
@@ -2468,6 +2609,9 @@ export class RunScene extends Phaser.Scene {
           this.nextGlobalDealStartAt = startTime + queueGap;
         } else if (Number.isFinite(customDelay)) {
           startTime = now + Math.max(0, customDelay);
+        } else {
+          // Existing cards should stay settled; only explicit flip states animate.
+          startTime = now - RUN_DEALER_CARD_ENTRY_MS;
         }
         anim = {
           start: startTime,
@@ -2524,13 +2668,14 @@ export class RunScene extends Phaser.Scene {
       const baseDrawW = cardW * scale;
       const baseDrawH = cardH * scale;
       const flipState = isDealerRow ? this.cardFlipStates.get(key) : null;
+      const entryFlipActive = Boolean(anim.entryFlip && !(isDealerRow && currentlyHidden));
       let flipWidthScale = 1;
       let flipHeightScale = 1;
       let showBackHalf = false;
       let flipOffsetX = 0;
       let flipOffsetY = 0;
       let flipTilt = 0;
-      if (anim.entryFlip) {
+      if (entryFlipActive) {
         const flipStart = 0.22;
         const flipEnd = 0.8;
         if (progress < flipStart) {
@@ -2629,7 +2774,7 @@ export class RunScene extends Phaser.Scene {
           }
         }
       }
-      node.label.setFontSize(Math.max(24, Math.round(cardW * 0.3 * scale)));
+      node.label.setFontSize(Math.max(12, Math.round(baseDrawW * 0.33)));
       node.label.setStyle({
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
         align: "center",
@@ -3067,22 +3212,25 @@ export class RunScene extends Phaser.Scene {
     this.rebuildButtons(actions);
     const count = actions.length;
     const showKeyboardHints = this.shouldShowKeyboardHints(width);
-    let spacing = compact ? 8 : 14;
-    const rowGap = compact ? 10 : 14;
+    const mobileButtonScale = compact ? RUN_MOBILE_BUTTON_SCALE : 1;
+    let spacing = compact ? Math.max(6, Math.round(8 * mobileButtonScale)) : 14;
+    const rowGap = compact ? Math.max(8, Math.round(10 * mobileButtonScale)) : 14;
     const singleWide = count <= 1;
-    const buttonH = compact ? 50 : 56;
+    const buttonH = compact ? Math.max(36, Math.round(50 * mobileButtonScale)) : 56;
     const bandW = Math.max(220, width - runLayout.sidePad * 2 - 8);
     const maxPerRow = compact ? 2 : Math.max(1, count);
     const rowCount = count > 0 ? Math.ceil(count / maxPerRow) : 0;
     let buttonW = 0;
     if (compact) {
+      let compactButtonW = 0;
       if (singleWide) {
         const singleActionId = actions[0] ? actions[0].id : "";
         const singleWideFactor = singleActionId === "deal" ? 0.42 : 0.62;
-        buttonW = Phaser.Math.Clamp(Math.round(bandW * singleWideFactor), 160, 320);
+        compactButtonW = Phaser.Math.Clamp(Math.round(bandW * singleWideFactor), 160, 320);
       } else {
-        buttonW = Phaser.Math.Clamp(Math.floor((bandW - spacing) / 2), 132, 220);
+        compactButtonW = Phaser.Math.Clamp(Math.floor((bandW - spacing) / 2), 132, 220);
       }
+      buttonW = Math.max(98, Math.round(compactButtonW * mobileButtonScale));
     } else {
       const singleActionId = singleWide && actions[0] ? actions[0].id : "";
       const singleWideFactor = singleActionId === "deal" ? 0.34 : 0.62;
@@ -3110,7 +3258,8 @@ export class RunScene extends Phaser.Scene {
       }
     }
     const totalButtonH = rowCount > 0 ? rowCount * buttonH + Math.max(0, rowCount - 1) * rowGap : 0;
-    const blockTop = height - runLayout.bottomBarH + Math.max(6, Math.round((runLayout.bottomBarH - totalButtonH) * 0.5));
+    const verticalInset = Math.max(0, Math.round((runLayout.bottomBarH - totalButtonH) * 0.5));
+    const blockTop = height - runLayout.bottomBarH + verticalInset;
 
     actions.forEach((action, index) => {
       const button = this.buttons.get(action.id);
@@ -3132,14 +3281,17 @@ export class RunScene extends Phaser.Scene {
       const iconKey = this.resolveDarkIconTexture(RUN_ACTION_ICON_KEYS[action.id] || RUN_ACTION_ICON_KEYS.deal);
       if (button.icon) {
         button.icon.setTexture(iconKey);
-        button.icon.setDisplaySize(compact ? 20 : 27, compact ? 20 : 27);
+        button.icon.setDisplaySize(
+          compact ? Math.max(14, Math.round(20 * mobileButtonScale)) : 27,
+          compact ? Math.max(14, Math.round(20 * mobileButtonScale)) : 27
+        );
         button.icon.setAlpha(0.92);
         button.icon.setVisible(true);
       }
       const shortcut = RUN_ACTION_SHORTCUTS[action.id] || "";
       if (button.shortcut) {
         button.shortcut.setText(shortcut);
-        button.shortcut.setFontSize(compact ? 9 : 13);
+        button.shortcut.setFontSize(compact ? Math.max(7, Math.round(9 * mobileButtonScale)) : 13);
         button.shortcut.setColor("#000000");
         button.shortcut.setAlpha(0.5);
         button.shortcut.setVisible(showKeyboardHints && Boolean(shortcut));
@@ -3147,23 +3299,24 @@ export class RunScene extends Phaser.Scene {
 
       button.text.setText(action.label);
       const fontSize = compact
-        ? action.id === "confirmIntro"
-          ? 15
-          : 14
+        ? Math.max(11, Math.round((action.id === "confirmIntro" ? 15 : 14) * mobileButtonScale))
         : action.id === "confirmIntro"
           ? 20
           : 18;
       button.text.setFontSize(fontSize);
+      button.text.setFontStyle(compact ? "800" : "700");
       const hasIcon = Boolean(button.icon?.visible);
-      const iconPad = hasIcon ? (compact ? 28 : 38) : 10;
+      const iconPad = hasIcon
+        ? (compact ? Math.round(28 * mobileButtonScale) : 38)
+        : (compact ? Math.round(10 * mobileButtonScale) : 10);
       button.text.setOrigin(0, 0.5);
-      button.text.setPosition(-resolvedW * 0.5 + iconPad + (compact ? 4 : 10), 0);
+      button.text.setPosition(-resolvedW * 0.5 + iconPad + (compact ? Math.round(4 * mobileButtonScale) : 10), 0);
       button.text.setAlign("left");
       if (button.icon) {
-        button.icon.setPosition(-resolvedW * 0.5 + (compact ? 16 : 24), 0);
+        button.icon.setPosition(-resolvedW * 0.5 + (compact ? Math.round(16 * mobileButtonScale) : 24), 0);
       }
       if (button.shortcut) {
-        button.shortcut.setPosition(resolvedW * 0.5 - (compact ? 12 : 20), 0);
+        button.shortcut.setPosition(resolvedW * 0.5 - (compact ? Math.round(12 * mobileButtonScale) : 20), 0);
       }
 
       this.setButtonVisual(button, action.enabled ? "idle" : "disabled");

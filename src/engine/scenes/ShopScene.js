@@ -563,6 +563,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   drawBackground(width, height) {
+    const compact = this.isCompactLayout(width);
     if (this.campBackground && this.textures.exists(SHOP_CAMP_BACKGROUND_KEY)) {
       const cover = this.coverSizeForTexture(SHOP_CAMP_BACKGROUND_KEY, width, height);
       this.campBackground
@@ -579,7 +580,9 @@ export class ShopScene extends Phaser.Scene {
     this.graphics.fillRect(0, 0, width, height);
     this.graphics.fillStyle(0x000000, 0.3);
     this.graphics.fillRoundedRect(12, 10, width - 24, height - 20, 16);
-    const bottomBarH = Math.max(74, Math.round(height * 0.115));
+    const bottomBarH = compact
+      ? Phaser.Math.Clamp(Math.round(height * 0.19), 108, 146)
+      : Math.max(74, Math.round(height * 0.115));
     const bottomBarY = height - bottomBarH - 12;
     this.graphics.fillStyle(0x120b07, 0.94);
     this.graphics.fillRoundedRect(12, bottomBarY, width - 24, bottomBarH, 16);
@@ -663,11 +666,14 @@ export class ShopScene extends Phaser.Scene {
       this.pickShopDialogue();
     }
 
+    const compact = this.isCompactLayout(width);
     const bottomLimit = (this.bottomBarRect?.y || (height - 90)) - 10;
-    const panelX = 16;
-    const panelY = Math.max(154, Math.round(height * 0.205));
-    const maxPanelW = Math.max(220, width - 32);
-    const panelW = Phaser.Math.Clamp(Math.round(width * 0.335), Math.min(308, maxPanelW), Math.min(460, maxPanelW));
+    const panelX = compact ? 12 : 16;
+    const panelY = compact ? Math.max(142, Math.round(height * 0.19)) : Math.max(154, Math.round(height * 0.205));
+    const maxPanelW = Math.max(220, width - panelX * 2);
+    const panelW = compact
+      ? maxPanelW
+      : Phaser.Math.Clamp(Math.round(width * 0.335), Math.min(308, maxPanelW), Math.min(460, maxPanelW));
     const panelH = Math.max(120, bottomLimit - panelY);
     const panelRadius = 18;
 
@@ -677,9 +683,10 @@ export class ShopScene extends Phaser.Scene {
     this.graphics.strokeRoundedRect(panelX, panelY, panelW, panelH, panelRadius);
     this.graphics.fillStyle(0x000000, 0.22);
     this.graphics.fillRoundedRect(panelX + 1, panelY + 1, panelW - 2, 46, panelRadius - 2);
+    const panelTitleFont = compact ? "22px" : "27px";
     this.drawText("shop-panel-title", "CAMP STORE", panelX + 16, panelY + 24, {
       fontFamily: '"Chakra Petch", "Sora", sans-serif',
-      fontSize: "27px",
+      fontSize: panelTitleFont,
       color: "#f6e6a6",
       fontStyle: "700",
     }, { x: 0, y: 0.5 });
@@ -698,32 +705,39 @@ export class ShopScene extends Phaser.Scene {
       applyStyle: (button, styleName) => this.applyButtonStyle(button, styleName),
     });
 
-    const dialogueX = Math.min(panelX + panelW + 16, width - 136);
-    const dialogueW = Phaser.Math.Clamp(width - dialogueX - 16, 120, 420);
-    const dialogueY = panelY + 10;
-    const dialogueH = Math.min(124, Math.max(90, Math.round(panelH * 0.25)));
+    const rightColumnX = panelX + panelW + 16;
+    const rightColumnW = Math.max(0, width - rightColumnX - 16);
+    const dialogueInsidePanel = compact || rightColumnW < 180;
+    const dialogueX = dialogueInsidePanel ? panelX + 12 : rightColumnX;
+    const dialogueW = dialogueInsidePanel
+      ? Math.max(140, panelW - 24)
+      : Phaser.Math.Clamp(rightColumnW, 160, 420);
+    const dialogueY = dialogueInsidePanel ? panelY + 54 : panelY + 10;
+    const dialogueH = dialogueInsidePanel
+      ? Phaser.Math.Clamp(Math.round(panelH * (compact ? 0.22 : 0.18)), 74, 112)
+      : Math.min(124, Math.max(90, Math.round(panelH * 0.25)));
     this.graphics.fillStyle(0x110a07, 0.9);
     this.graphics.fillRoundedRect(dialogueX, dialogueY, dialogueW, dialogueH, 14);
     this.graphics.lineStyle(1.2, 0x614b34, 0.5);
     this.graphics.strokeRoundedRect(dialogueX, dialogueY, dialogueW, dialogueH, 14);
     this.drawText("shopkeeper-label", "SHOPKEEPER", dialogueX + 14, dialogueY + 18, {
       fontFamily: '"Chakra Petch", "Sora", sans-serif',
-      fontSize: "16px",
+      fontSize: compact ? "14px" : "16px",
       color: "#f2cd88",
       fontStyle: "700",
     }, { x: 0, y: 0.5 });
     this.drawText("shopkeeper-dialogue", this.shopDialogueText || SHOPKEEPER_DIALOGUE_VARIANTS[0], dialogueX + 14, dialogueY + 32, {
       fontFamily: '"Sora", "Segoe UI", sans-serif',
-      fontSize: "16px",
+      fontSize: compact ? "13px" : "16px",
       color: "#dcc7a6",
-      lineSpacing: 4,
+      lineSpacing: compact ? 2 : 4,
       wordWrap: { width: Math.max(120, dialogueW - 28) },
     }, { x: 0, y: 0 });
 
-    const listPadX = 12;
-    const listTop = panelY + 56;
+    const listPadX = compact ? 10 : 12;
+    const listTop = dialogueInsidePanel ? dialogueY + dialogueH + 10 : panelY + 56;
     const listBottom = panelY + panelH - 12;
-    const listH = Math.max(120, listBottom - listTop);
+    const listH = Math.max(96, listBottom - listTop);
     const cardW = panelW - listPadX * 2;
     const listX = panelX + listPadX;
     if (this.shopListMaskShape) {
@@ -731,15 +745,20 @@ export class ShopScene extends Phaser.Scene {
       this.shopListMaskShape.fillStyle(0xffffff, 1);
       this.shopListMaskShape.fillRect(listX, listTop, cardW, listH);
     }
-    let gap = 10;
+    let gap = compact ? 8 : 10;
     const count = Math.max(1, items.length);
     let cardH = Math.floor((listH - gap * Math.max(0, count - 1)) / count);
-    if (cardH < 118) {
-      gap = 6;
-      cardH = Math.floor((listH - gap * Math.max(0, count - 1)) / count);
+    cardH = Phaser.Math.Clamp(cardH, compact ? 88 : 104, compact ? 168 : 188);
+    let stackH = count * cardH + Math.max(0, count - 1) * gap;
+    if (stackH > listH) {
+      cardH = Math.max(compact ? 68 : 84, Math.floor((listH - gap * Math.max(0, count - 1)) / count));
+      stackH = count * cardH + Math.max(0, count - 1) * gap;
     }
-    cardH = Phaser.Math.Clamp(cardH, 104, 182);
-    const stackH = count * cardH + Math.max(0, count - 1) * gap;
+    if (stackH > listH && gap > 4) {
+      gap = 4;
+      cardH = Math.max(compact ? 66 : 80, Math.floor((listH - gap * Math.max(0, count - 1)) / count));
+      stackH = count * cardH + Math.max(0, count - 1) * gap;
+    }
     const startY = listTop + Math.max(0, Math.round((listH - stackH) * 0.5));
 
     items.forEach((item, index) => {
@@ -758,21 +777,39 @@ export class ShopScene extends Phaser.Scene {
       card.bg.fillRoundedRect(0, 0, cardW, cardH, 18);
       card.bg.fillStyle(0xffffff, selected ? 0.06 : 0.03);
       card.bg.fillRoundedRect(1, 1, cardW - 2, Math.max(30, Math.round(cardH * 0.22)), 18);
-      const buttonH = Math.max(42, Math.min(50, Math.round(cardH * 0.3)));
-      const buttonY = cardH - Math.round(buttonH * 0.5) - 8;
-      const costY = buttonY - Math.round(buttonH * 0.5) - 16;
-      const descTop = 70;
-      const descHeight = Math.max(28, costY - descTop - 8);
-      card.descPanel.setPosition(14, descTop);
-      card.descPanel.setSize(Math.max(130, cardW - 28), descHeight);
+      const cardPadX = Phaser.Math.Clamp(Math.round(cardW * 0.045), 12, 18);
+      const buttonH = Phaser.Math.Clamp(Math.round(cardH * 0.3), compact ? 34 : 40, 52);
+      const buttonBottomPad = Phaser.Math.Clamp(Math.round(cardH * 0.07), 6, 12);
+      const buttonY = cardH - Math.round(buttonH * 0.5) - buttonBottomPad;
+      const costGap = Phaser.Math.Clamp(Math.round(cardH * 0.08), 10, 18);
+      const costY = buttonY - Math.round(buttonH * 0.5) - costGap;
+      const typeY = Phaser.Math.Clamp(Math.round(cardH * 0.13), 16, 26);
+      const nameY = typeY + Phaser.Math.Clamp(Math.round(cardH * 0.15), 20, 36);
+      const descTop = nameY + Phaser.Math.Clamp(Math.round(cardH * 0.09), 10, 16);
+      const descBottom = costY - Phaser.Math.Clamp(Math.round(cardH * 0.07), 8, 14);
+      const descHeight = Math.max(20, descBottom - descTop);
+      const descPanelW = Math.max(120, cardW - cardPadX * 2);
+      card.descPanel.setPosition(cardPadX, descTop);
+      card.descPanel.setSize(descPanelW, descHeight);
       card.descPanel.setFillStyle(this.toBrownThemeColorNumber(0x0b1622), selected ? 0.26 : 0.2);
-      card.desc.setPosition(14, descTop + 4);
+      card.desc.setPosition(cardPadX, descTop + 4);
       card.type.setText(String(item.type || "SERVICE").toUpperCase());
-      card.type.setPosition(14, 20);
+      card.type.setPosition(cardPadX, typeY);
       card.name.setText(item.name || "Item");
-      card.name.setPosition(14, 44);
+      card.name.setPosition(cardPadX, nameY);
       card.desc.setText(item.description || "");
-      card.desc.setWordWrapWidth(Math.max(130, cardW - 34));
+      card.desc.setWordWrapWidth(Math.max(120, descPanelW - 8));
+      const typeFontSize = Phaser.Math.Clamp(Math.round(cardH * 0.11), 12, 17);
+      const nameFontSize = Phaser.Math.Clamp(Math.round(cardH * 0.145), 18, 30);
+      const descFontSize = Phaser.Math.Clamp(Math.round(cardH * 0.098), 12, 19);
+      const costFontSize = Phaser.Math.Clamp(Math.round(cardH * 0.112), 14, 22);
+      card.type.setFontSize(typeFontSize);
+      card.type.setFontStyle("700");
+      card.name.setFontSize(nameFontSize);
+      card.name.setFontStyle("700");
+      card.desc.setFontSize(descFontSize);
+      card.desc.setLineSpacing(Math.max(2, Math.round(descFontSize * 0.2)));
+      card.cost.setFontSize(costFontSize);
       card.cost.setText(`${item.cost || 0}`);
       card.cost.setPosition(cardW * 0.5, costY);
 
@@ -780,7 +817,7 @@ export class ShopScene extends Phaser.Scene {
       const sold = Boolean(item.sold);
       const buyEnabled = Boolean(item.canBuy);
       card.buyEnabled = buyEnabled;
-      const buyButtonWidth = Math.max(140, cardW - 22);
+      const buyButtonWidth = Math.max(128, cardW - cardPadX * 2);
       const buyButtonHeight = buttonH;
       setGradientButtonSize(card.buyButton, buyButtonWidth, buyButtonHeight);
       card.buyButton.container.setPosition(cardW * 0.5, buttonY);
@@ -803,22 +840,24 @@ export class ShopScene extends Phaser.Scene {
         this.applyBuyButtonStyle(card.buyButton, "disabled");
       }
       card.buyButton.container.setAlpha(card.buyButton.enabled ? 1 : 0.86);
-      card.buyButton.text.setFontSize(18);
+      const buyLabelFontSize = Phaser.Math.Clamp(Math.round(buyButtonHeight * 0.36), 13, 18);
+      card.buyButton.text.setFontSize(buyLabelFontSize);
       card.buyButton.text.setOrigin(0, 0.5);
       card.buyButton.text.setAlign("left");
-      card.buyButton.text.setPosition(-buyButtonWidth * 0.5 + 46, 0);
+      card.buyButton.text.setPosition(-buyButtonWidth * 0.5 + Math.max(34, Math.round(buyButtonHeight * 0.9)), 0);
       if (card.buyIcon) {
         card.buyIcon.setTexture(this.resolveDarkIconTexture(SHOP_BUY_ICON_KEY));
-        card.buyIcon.setDisplaySize(33, 33);
-        card.buyIcon.setPosition(-buyButtonWidth * 0.5 + 22, 0);
+        const buyIconSize = Phaser.Math.Clamp(Math.round(buyButtonHeight * 0.66), 18, 33);
+        card.buyIcon.setDisplaySize(buyIconSize, buyIconSize);
+        card.buyIcon.setPosition(-buyButtonWidth * 0.5 + Math.max(16, Math.round(buyButtonHeight * 0.44)), 0);
         card.buyIcon.setVisible(true);
       }
       if (card.buyShortcut) {
         card.buyShortcut.setText("Z");
-        card.buyShortcut.setFontSize(13);
+        card.buyShortcut.setFontSize(Phaser.Math.Clamp(Math.round(buyButtonHeight * 0.24), 10, 13));
         card.buyShortcut.setColor("#000000");
         card.buyShortcut.setAlpha(card.buyButton.enabled ? 0.58 : 0.46);
-        card.buyShortcut.setPosition(buyButtonWidth * 0.5 - 16, 0);
+        card.buyShortcut.setPosition(buyButtonWidth * 0.5 - Math.max(12, Math.round(buyButtonHeight * 0.3)), 0);
         card.buyShortcut.setVisible(showKeyboardHints);
       }
       card.type.setColor(this.toBrownThemeColorString(selected ? "#f8e7b8" : "#cde4f6"));
@@ -856,19 +895,71 @@ export class ShopScene extends Phaser.Scene {
       { id: "continueRun", label: "LEAVE CAMP", enabled: true },
     ];
     this.rebuildButtons(actions);
+    const compact = this.isCompactLayout(width);
     const bar = this.bottomBarRect || {
       x: 12,
       y: height - 88,
       width: width - 24,
       height: 76,
     };
+    const sidePad = 16;
+    const shopButton = this.buttons.get("openShop");
+    const showKeyboardHints = this.shouldShowKeyboardHints(width);
+    if (compact) {
+      const rowGap = 10;
+      const verticalPad = 10;
+      const buttonH = Math.max(38, Math.floor((bar.height - verticalPad * 2 - rowGap) * 0.5));
+      const buttonW = Math.max(156, bar.width - sidePad * 2);
+      const centerX = bar.x + bar.width * 0.5;
+      const firstY = bar.y + verticalPad + buttonH * 0.5;
+      const secondY = firstY + buttonH + rowGap;
+      if (shopButton) {
+        shopButton.container.setPosition(centerX, firstY);
+        setGradientButtonSize(shopButton, buttonW, buttonH);
+        shopButton.text.setFontSize(Math.max(14, Math.round(buttonH * 0.34)));
+        shopButton.text.setText(this.shopOpen ? "Close Shop" : "Shop");
+        shopButton.text.setOrigin(0.5, 0.5);
+        shopButton.text.setAlign("center");
+        shopButton.text.setPosition(0, 0);
+        if (shopButton.icon) {
+          shopButton.icon.setVisible(false);
+        }
+        if (shopButton.shortcut) {
+          shopButton.shortcut.setVisible(false);
+        }
+        shopButton.enabled = true;
+        this.applyButtonStyle(shopButton, "idle");
+        shopButton.container.setAlpha(1);
+        shopButton.container.setVisible(true);
+      }
+      const continueButton = this.buttons.get("continueRun");
+      if (continueButton) {
+        continueButton.container.setPosition(centerX, secondY);
+        setGradientButtonSize(continueButton, buttonW, buttonH);
+        continueButton.text.setFontSize(Math.max(14, Math.round(buttonH * 0.34)));
+        continueButton.text.setText("LEAVE CAMP");
+        continueButton.text.setOrigin(0, 0.5);
+        continueButton.text.setAlign("left");
+        continueButton.text.setPosition(-buttonW * 0.5 + 18, 0);
+        if (continueButton.icon) {
+          continueButton.icon.setVisible(false);
+        }
+        if (continueButton.shortcut) {
+          continueButton.shortcut.setText("ENTER");
+          continueButton.shortcut.setPosition(buttonW * 0.5 - 14, 0);
+          continueButton.shortcut.setVisible(showKeyboardHints);
+        }
+        continueButton.enabled = true;
+        this.applyButtonStyle(continueButton, "idle");
+        continueButton.container.setAlpha(1);
+        continueButton.container.setVisible(true);
+      }
+      return;
+    }
     const buttonH = Math.max(50, Math.min(62, Math.round(bar.height * 0.72)));
     const shopButtonW = Math.max(170, Math.min(230, Math.round(width * 0.17)));
     const leaveButtonW = Math.max(220, Math.min(320, Math.round(width * 0.24)));
     const y = bar.y + bar.height * 0.5;
-    const sidePad = 16;
-    const shopButton = this.buttons.get("openShop");
-    const showKeyboardHints = this.shouldShowKeyboardHints(width);
     if (shopButton) {
       shopButton.container.setPosition(bar.x + sidePad + shopButtonW * 0.5, y);
       setGradientButtonSize(shopButton, shopButtonW, buttonH);
