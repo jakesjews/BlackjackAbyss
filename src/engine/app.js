@@ -2,7 +2,6 @@ import Phaser from "phaser";
 import { BASE_HEIGHT, BASE_WIDTH, SCENE_KEYS } from "./constants.js";
 import { LegacyRuntimeAdapter } from "./legacy/legacy-runtime-adapter.js";
 import { BootScene } from "./scenes/BootScene.js";
-import { LegacyCompatScene } from "./scenes/LegacyCompatScene.js";
 import { MenuScene } from "./scenes/MenuScene.js";
 import { RunScene } from "./scenes/RunScene.js";
 import { RewardScene } from "./scenes/RewardScene.js";
@@ -36,7 +35,7 @@ function syncPhaserScenesForMode(game, mode) {
     return;
   }
   const activeModes = new Set(["menu", "playing", "reward", "shop", "collection", "gameover", "victory"]);
-  const activeSceneKeys = [SCENE_KEYS.menu, SCENE_KEYS.run, SCENE_KEYS.reward, SCENE_KEYS.shop, SCENE_KEYS.overlay, SCENE_KEYS.legacyCompat];
+  const activeSceneKeys = [SCENE_KEYS.menu, SCENE_KEYS.run, SCENE_KEYS.reward, SCENE_KEYS.shop, SCENE_KEYS.overlay];
   const desired = new Set();
 
   if (mode === "menu") {
@@ -49,8 +48,6 @@ function syncPhaserScenesForMode(game, mode) {
     desired.add(SCENE_KEYS.shop);
   } else if (mode === "collection" || mode === "gameover" || mode === "victory") {
     desired.add(SCENE_KEYS.overlay);
-  } else if (!activeModes.has(mode)) {
-    desired.add(SCENE_KEYS.legacyCompat);
   }
 
   activeSceneKeys.forEach((key) => {
@@ -84,7 +81,7 @@ export function createPhaserApp() {
       parent: shell,
       width: BASE_WIDTH,
       height: BASE_HEIGHT,
-      scene: [BootScene, LegacyCompatScene, MenuScene, RunScene, RewardScene, ShopScene, OverlayScene],
+      scene: [BootScene, MenuScene, RunScene, RewardScene, ShopScene, OverlayScene],
       transparent: true,
       backgroundColor: "#000000",
       render: {
@@ -117,9 +114,6 @@ export function createPhaserApp() {
           bootedGame.__ABYSS_RUNTIME__ = runtime;
 
           const bridge = runtime.legacyAdapter.attachGame(bootedGame);
-          if (typeof bridge.setExternalRenderModes === "function") {
-            bridge.setExternalRenderModes(["menu", "playing", "reward", "shop", "collection", "gameover", "victory"]);
-          }
           if (typeof bridge.setModeHandler === "function") {
             bridge.setModeHandler((mode) => {
               runtime.gameState.setMode(mode);

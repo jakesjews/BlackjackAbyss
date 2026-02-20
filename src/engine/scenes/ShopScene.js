@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { SCENE_KEYS } from "../constants.js";
-import { ACTION_BUTTON_STYLE, CARD_BUY_BUTTON_STYLE } from "./ui/button-styles.js";
+import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
 
@@ -14,6 +14,8 @@ const CARD_STYLE = Object.freeze({
 const BUTTON_STYLE = ACTION_BUTTON_STYLE;
 const SHOP_CHIPS_ICON_KEY = "__shop-chips-icon__";
 const SHOP_CHIPS_ICON_TRIM_KEY = "__shop-chips-icon-trim__";
+const SHOP_BUY_ICON_KEY = "__shop-buy-icon__";
+const SHOP_DEAL_ICON_KEY = "__shop-deal-icon__";
 const SHOP_PRIMARY_GOLD = 0xf2cd88;
 const SHOP_MODAL_BASE_DEPTH = 300;
 const SHOP_MODAL_CONTENT_DEPTH = 310;
@@ -26,6 +28,11 @@ const SHOP_TOP_ACTION_ICONS = Object.freeze({
   logs: "/images/icons/log.png",
   home: "/images/icons/home.png",
 });
+const SHOP_THEME_BLUE_HUE_MIN = 170;
+const SHOP_THEME_BLUE_HUE_MAX = 255;
+const SHOP_THEME_BROWN_HUE = 30 / 360;
+const SHOP_THEME_SATURATION_FLOOR = 0.18;
+const SHOP_THEME_SATURATION_SCALE = 0.8;
 
 export class ShopScene extends Phaser.Scene {
   constructor() {
@@ -44,6 +51,14 @@ export class ShopScene extends Phaser.Scene {
     this.modalBlocker = null;
     this.chipsIcon = null;
     this.darkIconTextureBySource = new Map();
+    this.hoveredCardIndex = null;
+    this.focusedCardIndex = 0;
+    this.pointerHandlers = [];
+    this.logsScrollIndex = 0;
+    this.logsScrollMax = 0;
+    this.logsLastCount = 0;
+    this.logsPinnedToBottom = true;
+    this.logsViewport = null;
   }
 
   preload() {
@@ -55,13 +70,21 @@ export class ShopScene extends Phaser.Scene {
         this.load.image(textureKey, SHOP_TOP_ACTION_ICONS[actionId] || "/images/icons/home.png");
       }
     });
+    if (!this.textures.exists(SHOP_BUY_ICON_KEY)) {
+      this.load.image(SHOP_BUY_ICON_KEY, "/images/icons/buy.png");
+    }
+    if (!this.textures.exists(SHOP_DEAL_ICON_KEY)) {
+      this.load.image(SHOP_DEAL_ICON_KEY, "/images/icons/deal.png");
+    }
   }
 
   create() {
-    this.cameras.main.setBackgroundColor("#081420");
+    this.cameras.main.setBackgroundColor("#171006");
     this.cameras.main.setAlpha(1);
     this.graphics = this.add.graphics();
+    this.applyBrownThemeToGraphics(this.graphics);
     this.overlayGraphics = this.add.graphics().setDepth(SHOP_MODAL_BASE_DEPTH);
+    this.applyBrownThemeToGraphics(this.overlayGraphics);
     this.modalBlocker = this.add
       .zone(0, 0, 1, 1)
       .setOrigin(0, 0)
@@ -73,6 +96,7 @@ export class ShopScene extends Phaser.Scene {
     this.chipsIcon = this.add.image(0, 0, chipsTextureKey).setVisible(false);
     this.chipsIcon.setDisplaySize(20, 20);
     this.bindKeyboardInput();
+    this.bindPointerInput();
     this.scale.on("resize", this.onResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
   }
@@ -110,6 +134,17 @@ export class ShopScene extends Phaser.Scene {
     this.lastCardSignature = "";
     this.logsModalOpen = false;
     this.darkIconTextureBySource.clear();
+    this.pointerHandlers.forEach(({ eventName, handler }) => {
+      this.input.off(eventName, handler);
+    });
+    this.pointerHandlers = [];
+    this.hoveredCardIndex = null;
+    this.focusedCardIndex = 0;
+    this.logsScrollIndex = 0;
+    this.logsScrollMax = 0;
+    this.logsLastCount = 0;
+    this.logsPinnedToBottom = true;
+    this.logsViewport = null;
   }
 
   update(time, delta) {
@@ -138,16 +173,83 @@ export class ShopScene extends Phaser.Scene {
       this.keyboardHandlers.push({ eventName, handler });
     };
 
-    bind("keydown-LEFT", () => this.invokeAction("prev"));
-    bind("keydown-RIGHT", () => this.invokeAction("next"));
-    bind("keydown-SPACE", (event) => {
+    bind("keydown-TAB", (event) => {
       event.preventDefault();
-      this.invokeAction("buy");
+      const count = Array.isArray(this.lastSnapshot?.items) ? this.lastSnapshot.items.length : 0;
+      if (count <= 0) {
+        return;
+      }
+      const direction = event.shiftKey ? -1 : 1;
+      const baseIndex = this.resolveSelectedIndex(this.lastSnapshot, false);
+      const nextIndex = Phaser.Math.Wrap(baseIndex + direction, 0, count);
+      this.focusedCardIndex = nextIndex;
+      this.hoveredCardIndex = null;
+      this.invokeAction("selectIndex", nextIndex);
+    });
+    bind("keydown-Z", () => {
+      const selectedIndex = this.resolveSelectedIndex(this.lastSnapshot);
+      this.invokeAction("buy", selectedIndex);
     });
     bind("keydown-ENTER", (event) => {
       event.preventDefault();
       this.invokeAction("continueRun");
     });
+    bind("keydown-ESC", () => {
+      this.logsModalOpen = false;
+    });
+  }
+
+  bindPointerInput() {
+    const bind = (eventName, handler) => {
+      this.input.on(eventName, handler);
+      this.pointerHandlers.push({ eventName, handler });
+    };
+    bind("wheel", (pointer, gameObjects, deltaX, deltaY) => {
+      if (!this.logsModalOpen || !this.logsViewport) {
+        return;
+      }
+      if (!this.pointInRect(pointer.worldX, pointer.worldY, this.logsViewport)) {
+        return;
+      }
+      this.logsPinnedToBottom = false;
+      this.setLogsScroll(this.logsScrollIndex + Math.sign(deltaY || 0) * 2);
+    });
+  }
+
+  pointInRect(x, y, rect) {
+    if (!rect) {
+      return false;
+    }
+    return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+  }
+
+  setLogsScroll(next) {
+    this.logsScrollIndex = Phaser.Math.Clamp(Math.round(next), 0, this.logsScrollMax);
+    this.logsPinnedToBottom = this.logsScrollIndex >= this.logsScrollMax;
+  }
+
+  resolveSelectedIndex(snapshot, includeHover = true) {
+    const count = Array.isArray(snapshot?.items) ? snapshot.items.length : 0;
+    if (count <= 0) {
+      return 0;
+    }
+    if (includeHover && Number.isFinite(this.hoveredCardIndex)) {
+      return Phaser.Math.Clamp(Math.round(this.hoveredCardIndex), 0, count - 1);
+    }
+    if (Number.isFinite(this.focusedCardIndex)) {
+      return Phaser.Math.Clamp(Math.round(this.focusedCardIndex), 0, count - 1);
+    }
+    return Phaser.Math.Clamp(Math.round(Number(snapshot?.selectionIndex) || 0), 0, count - 1);
+  }
+
+  handleCardHover(index) {
+    if (!Number.isFinite(index)) {
+      return;
+    }
+    const safeIndex = Math.max(0, Math.round(index));
+    this.hoveredCardIndex = safeIndex;
+    this.focusedCardIndex = safeIndex;
+    this.invokeAction("selectIndex", safeIndex);
   }
 
   getShopApi() {
@@ -179,6 +281,122 @@ export class ShopScene extends Phaser.Scene {
     }
   }
 
+  applyBrownThemeToGraphics(graphics) {
+    if (!graphics || graphics.__brownThemePatched) {
+      return;
+    }
+    const fillStyle = graphics.fillStyle;
+    const lineStyle = graphics.lineStyle;
+    const fillGradientStyle = graphics.fillGradientStyle;
+    graphics.fillStyle = (color, alpha) => fillStyle.call(graphics, this.toBrownThemeColorNumber(color), alpha);
+    graphics.lineStyle = (lineWidth, color, alpha) => {
+      lineStyle.call(graphics, lineWidth, this.toBrownThemeColorNumber(color), alpha);
+    };
+    graphics.fillGradientStyle = (topLeft, topRight, bottomLeft, bottomRight, alpha) => {
+      fillGradientStyle.call(
+        graphics,
+        this.toBrownThemeColorNumber(topLeft),
+        this.toBrownThemeColorNumber(topRight),
+        this.toBrownThemeColorNumber(bottomLeft),
+        this.toBrownThemeColorNumber(bottomRight),
+        alpha
+      );
+    };
+    graphics.__brownThemePatched = true;
+  }
+
+  toBrownThemeTextStyle(style) {
+    if (!style || typeof style !== "object") {
+      return style;
+    }
+    const themed = { ...style };
+    if (typeof themed.color === "string") {
+      themed.color = this.toBrownThemeColorString(themed.color);
+    }
+    if (typeof themed.stroke === "string") {
+      themed.stroke = this.toBrownThemeColorString(themed.stroke);
+    }
+    if (typeof themed.backgroundColor === "string") {
+      themed.backgroundColor = this.toBrownThemeColorString(themed.backgroundColor);
+    }
+    return themed;
+  }
+
+  toBrownThemeColorString(value) {
+    if (typeof value !== "string" || !value.startsWith("#")) {
+      return value;
+    }
+    const input = Number.parseInt(value.slice(1), 16);
+    if (!Number.isFinite(input)) {
+      return value;
+    }
+    const output = this.toBrownThemeColorNumber(input);
+    return `#${output.toString(16).padStart(6, "0")}`;
+  }
+
+  toBrownThemeColorNumber(value) {
+    if (!Number.isFinite(value)) {
+      return value;
+    }
+    const r = (value >> 16) & 0xff;
+    const g = (value >> 8) & 0xff;
+    const b = value & 0xff;
+    const [hue, sat, light] = this.rgbToHsl(r, g, b);
+    const hueDeg = hue * 360;
+    if (sat < 0.08 || hueDeg < SHOP_THEME_BLUE_HUE_MIN || hueDeg > SHOP_THEME_BLUE_HUE_MAX) {
+      return value;
+    }
+    const shiftedSat = Phaser.Math.Clamp(sat * SHOP_THEME_SATURATION_SCALE + SHOP_THEME_SATURATION_FLOOR, 0, 1);
+    const shifted = this.hslToRgb(SHOP_THEME_BROWN_HUE, shiftedSat, light);
+    return (shifted[0] << 16) | (shifted[1] << 8) | shifted[2];
+  }
+
+  rgbToHsl(r, g, b) {
+    const rn = r / 255;
+    const gn = g / 255;
+    const bn = b / 255;
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    let h = 0;
+    let s = 0;
+    const l = (max + min) * 0.5;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === rn) {
+        h = (gn - bn) / d + (gn < bn ? 6 : 0);
+      } else if (max === gn) {
+        h = (bn - rn) / d + 2;
+      } else {
+        h = (rn - gn) / d + 4;
+      }
+      h /= 6;
+    }
+    return [h, s, l];
+  }
+
+  hslToRgb(h, s, l) {
+    if (s === 0) {
+      const value = Math.round(l * 255);
+      return [value, value, value];
+    }
+    const hue2rgb = (p, q, t) => {
+      let tl = t;
+      if (tl < 0) tl += 1;
+      if (tl > 1) tl -= 1;
+      if (tl < 1 / 6) return p + (q - p) * 6 * tl;
+      if (tl < 1 / 2) return q;
+      if (tl < 2 / 3) return p + (q - p) * (2 / 3 - tl) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const r = hue2rgb(p, q, h + 1 / 3);
+    const g = hue2rgb(p, q, h);
+    const b = hue2rgb(p, q, h - 1 / 3);
+    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+  }
+
   renderSnapshot(snapshot) {
     const width = this.scale.gameSize.width;
     const height = this.scale.gameSize.height;
@@ -193,6 +411,7 @@ export class ShopScene extends Phaser.Scene {
     if (!snapshot) {
       this.rebuildCards([]);
       this.rebuildButtons([]);
+      this.logsViewport = null;
       this.topButtons.forEach((button) => button.container.setVisible(false));
       this.logsModalOpen = false;
       if (this.logsCloseButton) {
@@ -204,6 +423,7 @@ export class ShopScene extends Phaser.Scene {
 
     this.drawBackground(width, height);
     this.drawHeader(snapshot, width);
+    this.focusedCardIndex = this.resolveSelectedIndex(snapshot, false);
     this.renderCards(snapshot, width, height);
     this.renderButtons(snapshot, width, height);
     this.renderTopActions(width);
@@ -224,10 +444,8 @@ export class ShopScene extends Phaser.Scene {
   drawBackground(width, height) {
     this.graphics.fillGradientStyle(0x081420, 0x081420, 0x040b12, 0x040b12, 1);
     this.graphics.fillRect(0, 0, width, height);
-    this.graphics.fillStyle(0x000000, 0.38);
-    this.graphics.fillRoundedRect(12, 10, width - 24, height - 20, 14);
-    this.graphics.lineStyle(2, 0x3c6584, 0.33);
-    this.graphics.strokeRoundedRect(12, 10, width - 24, height - 20, 14);
+    this.graphics.fillStyle(0x000000, 0.3);
+    this.graphics.fillRoundedRect(12, 10, width - 24, height - 20, 16);
   }
 
   drawHeader(snapshot, width) {
@@ -241,14 +459,12 @@ export class ShopScene extends Phaser.Scene {
     this.drawText("shop-subtitle", "ONE PURCHASE PER MARKET. CHOOSE CAREFULLY.", width * 0.5, 90, {
       fontFamily: '"Sora", "Segoe UI", sans-serif',
       fontSize: "18px",
-      color: "#b7ddff",
+      color: "#d7e6f3",
     });
 
     const run = snapshot.run || {};
     this.graphics.fillStyle(0x10263a, 0.9);
     this.graphics.fillRoundedRect(width * 0.5 - 250, 108, 500, 48, 12);
-    this.graphics.lineStyle(1.6, 0x5f88aa, 0.34);
-    this.graphics.strokeRoundedRect(width * 0.5 - 250, 108, 500, 48, 12);
     const chipValueNode = this.drawText("shop-chips", `${run.chips || 0}`, width * 0.5 - 112, 132, {
       fontFamily: '"Chakra Petch", "Sora", sans-serif',
       fontSize: "22px",
@@ -277,13 +493,6 @@ export class ShopScene extends Phaser.Scene {
       fontSize: "22px",
       color: "#c8f0d7",
     });
-    if (run.shopPurchaseMade) {
-      this.drawText("shop-status", "PURCHASE COMPLETE. CONTINUE WHEN READY.", width * 0.5, 170, {
-        fontFamily: '"Sora", "Segoe UI", sans-serif',
-        fontSize: "16px",
-        color: "#f6e6a6",
-      });
-    }
   }
 
   renderCards(snapshot, width, height) {
@@ -302,38 +511,41 @@ export class ShopScene extends Phaser.Scene {
         return;
       }
       const x = startX + index * (cardW + gap);
-      const selected = Boolean(item.selected);
+      const selectedIndex = this.resolveSelectedIndex(snapshot);
+      const selected = index === selectedIndex;
       card.currentIndex = index;
       card.container.setPosition(x, y);
-      card.bg.width = cardW;
-      card.bg.height = cardH;
-      card.bg.radius = 16;
-      card.descPanel.setSize(Math.max(130, cardW - 28), Math.max(126, cardH - 172));
-      card.bg.setFillStyle(selected ? CARD_STYLE.fillSelected : CARD_STYLE.fill, selected ? 0.98 : 0.92);
-      card.bg.setStrokeStyle(2.1, selected ? CARD_STYLE.borderSelected : CARD_STYLE.border, selected ? 0.82 : 0.5);
+      card.bg.clear();
+      card.bg.fillStyle(this.toBrownThemeColorNumber(selected ? CARD_STYLE.fillSelected : CARD_STYLE.fill), selected ? 0.98 : 0.9);
+      card.bg.fillRoundedRect(0, 0, cardW, cardH, 24);
+      card.bg.fillStyle(0xffffff, selected ? 0.06 : 0.03);
+      card.bg.fillRoundedRect(1, 1, cardW - 2, Math.max(36, Math.round(cardH * 0.16)), 24);
+      card.descPanel.setSize(Math.max(130, cardW - 28), Math.max(126, cardH - 174));
+      card.descPanel.setFillStyle(this.toBrownThemeColorNumber(0x0b1622), selected ? 0.26 : 0.2);
       card.type.setText(String(item.type || "SERVICE").toUpperCase());
       card.name.setText(item.name || "Item");
       card.desc.setText(item.description || "");
       card.desc.setWordWrapWidth(Math.max(130, cardW - 34));
-      card.cost.setText(`COST ${item.cost || 0}`);
+      card.cost.setText(`${item.cost || 0}`);
 
       const purchaseLocked = Boolean(snapshot.run?.shopPurchaseMade);
       const sold = Boolean(item.sold);
       const buyEnabled = Boolean(item.canBuy);
       card.buyEnabled = buyEnabled;
       const buyButtonWidth = Math.max(130, cardW - 26);
-      setGradientButtonSize(card.buyButton, buyButtonWidth, 44);
-      card.buyButton.container.setPosition(cardW * 0.5, cardH - 28);
-      card.cost.setPosition(cardW * 0.5, cardH - 68);
+      const buyButtonHeight = 44;
+      setGradientButtonSize(card.buyButton, buyButtonWidth, buyButtonHeight);
+      card.buyButton.container.setPosition(cardW * 0.5, cardH - 30);
+      card.cost.setPosition(cardW * 0.5, cardH - 80);
 
       if (sold) {
         card.buyButton.enabled = false;
         card.buyButton.text.setText("SOLD");
-        this.applyBuyButtonStyle(card.buyButton, "sold");
+        this.applyBuyButtonStyle(card.buyButton, "disabled");
       } else if (purchaseLocked) {
         card.buyButton.enabled = false;
         card.buyButton.text.setText("LOCKED");
-        this.applyBuyButtonStyle(card.buyButton, "locked");
+        this.applyBuyButtonStyle(card.buyButton, "disabled");
       } else if (buyEnabled) {
         card.buyButton.enabled = true;
         card.buyButton.text.setText("BUY");
@@ -341,18 +553,33 @@ export class ShopScene extends Phaser.Scene {
       } else {
         card.buyButton.enabled = false;
         card.buyButton.text.setText("NEED CHIPS");
-        this.applyBuyButtonStyle(card.buyButton, "warn");
+        this.applyBuyButtonStyle(card.buyButton, "disabled");
       }
-      card.type.setColor(selected ? "#f8e7b8" : "#cde4f6");
-      card.name.setColor(sold ? "#9aa8b7" : selected ? "#f1f8ff" : "#dceefe");
-      card.desc.setColor(sold ? "#a0afbe" : selected ? "#eef7ff" : "#d9ecfb");
-      card.cost.setColor(sold ? "#aab6c4" : "#f8e7b8");
-      card.descPanel.setFillStyle(0x0a1520, selected ? 0.42 : 0.34);
+      card.buyButton.container.setAlpha(card.buyButton.enabled ? 1 : 0.86);
+      card.buyButton.text.setFontSize(20);
+      card.buyButton.text.setOrigin(0, 0.5);
+      card.buyButton.text.setAlign("left");
+      card.buyButton.text.setPosition(-buyButtonWidth * 0.5 + 56, 0);
+      if (card.buyIcon) {
+        card.buyIcon.setTexture(this.resolveDarkIconTexture(SHOP_BUY_ICON_KEY));
+        card.buyIcon.setDisplaySize(36, 36);
+        card.buyIcon.setPosition(-buyButtonWidth * 0.5 + 28, 0);
+        card.buyIcon.setVisible(true);
+      }
+      if (card.buyShortcut) {
+        card.buyShortcut.setText("Z");
+        card.buyShortcut.setPosition(buyButtonWidth * 0.5 - 14, 0);
+        card.buyShortcut.setVisible(true);
+      }
+      card.type.setColor(this.toBrownThemeColorString(selected ? "#f8e7b8" : "#cde4f6"));
+      card.name.setColor(this.toBrownThemeColorString(sold ? "#9aa8b7" : selected ? "#f1f8ff" : "#dceefe"));
+      card.desc.setColor(this.toBrownThemeColorString(sold ? "#a0afbe" : selected ? "#eef7ff" : "#d9ecfb"));
+      card.cost.setColor(this.toBrownThemeColorString(sold ? "#aab6c4" : "#f8e7b8"));
+      if (card.hitZone) {
+        card.hitZone.setPosition(0, 0);
+        card.hitZone.setSize(cardW, cardH);
+      }
       card.container.setVisible(true);
-
-      const accent = item.type === "RELIC" ? 0x6d9fce : 0x6ca57f;
-      this.graphics.fillStyle(accent, selected ? 0.82 : 0.5);
-      this.graphics.fillRoundedRect(x + 12, y + 14, cardW - 24, 8, 4);
     });
 
     this.cards.forEach((card, id) => {
@@ -364,19 +591,12 @@ export class ShopScene extends Phaser.Scene {
   }
 
   renderButtons(snapshot, width, height) {
-    const hasItems = Array.isArray(snapshot.items) && snapshot.items.length > 0;
     const actions = [
-      { id: "prev", label: "LEFT", enabled: hasItems },
-      { id: "next", label: "RIGHT", enabled: hasItems },
-      { id: "buy", label: "BUY", enabled: Boolean(snapshot.canBuySelected) },
       { id: "continueRun", label: "CONTINUE", enabled: true },
     ];
     this.rebuildButtons(actions);
-    const buttonW = Math.max(150, Math.min(220, Math.round(width * 0.16)));
+    const buttonW = Math.max(180, Math.min(300, Math.round(width * 0.24)));
     const buttonH = Math.max(56, Math.min(68, Math.round(height * 0.09)));
-    const gap = Math.max(12, Math.round(width * 0.015));
-    const totalW = actions.length * buttonW + (actions.length - 1) * gap;
-    const startX = width * 0.5 - totalW * 0.5 + buttonW * 0.5;
     const y = Math.min(height - 36, height * 0.91);
 
     actions.forEach((action, index) => {
@@ -384,12 +604,38 @@ export class ShopScene extends Phaser.Scene {
       if (!button) {
         return;
       }
-      button.container.setPosition(startX + index * (buttonW + gap), y);
+      button.container.setPosition(width * 0.5, y);
       setGradientButtonSize(button, buttonW, buttonH);
-      button.text.setFontSize(Math.max(22, Math.round(buttonH * 0.4)));
+      button.text.setFontSize(Math.max(20, Math.round(buttonH * 0.34)));
       button.text.setText(action.label);
+      const showIcon = action.id !== "continueRun";
+      if (showIcon) {
+        button.text.setOrigin(0, 0.5);
+        button.text.setAlign("left");
+        button.text.setPosition(-buttonW * 0.5 + 48, 0);
+      } else {
+        button.text.setOrigin(0.5, 0.5);
+        button.text.setAlign("center");
+        button.text.setPosition(0, 0);
+      }
+      if (button.icon) {
+        if (showIcon) {
+          button.icon.setTexture(this.resolveDarkIconTexture(SHOP_DEAL_ICON_KEY));
+          button.icon.setDisplaySize(22, 22);
+          button.icon.setPosition(-buttonW * 0.5 + 24, 0);
+          button.icon.setVisible(true);
+        } else {
+          button.icon.setVisible(false);
+        }
+      }
+      if (button.shortcut) {
+        button.shortcut.setText("ENTER");
+        button.shortcut.setPosition(buttonW * 0.5 - 16, 0);
+        button.shortcut.setVisible(true);
+      }
       button.enabled = action.enabled;
       this.applyButtonStyle(button, action.enabled ? "idle" : "disabled");
+      button.container.setAlpha(action.enabled ? 1 : 0.86);
       button.container.setVisible(true);
     });
   }
@@ -405,46 +651,40 @@ export class ShopScene extends Phaser.Scene {
 
     items.forEach((item, index) => {
       const container = this.add.container(0, 0);
-      const bg = this.add.rectangle(0, 0, 250, 340, CARD_STYLE.fill, 0.94).setOrigin(0, 0);
-      bg.setStrokeStyle(2, CARD_STYLE.border, 0.52);
+      const bg = this.add.graphics();
+      this.applyBrownThemeToGraphics(bg);
       const type = this.add
         .text(14, 24, "SERVICE", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "17px",
-          color: "#cde4f6",
-          stroke: "#09121a",
-          strokeThickness: 2,
+          color: this.toBrownThemeColorString("#cde4f6"),
         })
         .setOrigin(0, 0.5);
       const name = this.add
         .text(14, 58, item.name || "Item", {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: "29px",
-          color: "#dceefe",
-          stroke: "#08131d",
-          strokeThickness: 3,
+          color: this.toBrownThemeColorString("#dceefe"),
         })
         .setOrigin(0, 0.5);
-      const descPanel = this.add.rectangle(14, 92, 222, 174, 0x0a1520, 0.34).setOrigin(0, 0);
-      descPanel.setStrokeStyle(1.2, 0x88acc4, 0.24);
+      const descPanel = this.add
+        .rectangle(14, 92, 222, 174, this.toBrownThemeColorNumber(0x0a1520), 0.34)
+        .setOrigin(0, 0);
       const desc = this.add
         .text(14, 96, item.description || "", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "20px",
-          color: "#d9ecfb",
-          stroke: "#08121a",
-          strokeThickness: 1,
+          color: this.toBrownThemeColorString("#d9ecfb"),
           wordWrap: { width: 220 },
           lineSpacing: 7,
         })
         .setOrigin(0, 0);
       const cost = this.add
-        .text(125, 270, `COST ${item.cost || 0}`, {
+        .text(125, 270, `${item.cost || 0}`, {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
-          fontSize: "18px",
-          color: "#f8e7b8",
-          stroke: "#09121a",
-          strokeThickness: 2,
+          fontSize: "20px",
+          color: this.toBrownThemeColorString("#f8e7b8"),
+          fontStyle: "700",
         })
         .setOrigin(0.5, 0.5);
       const card = {
@@ -458,12 +698,14 @@ export class ShopScene extends Phaser.Scene {
         desc,
         cost,
         buyButton: null,
+        buyIcon: null,
+        buyShortcut: null,
         buyEnabled: false,
       };
       const buyButton = createGradientButton(this, {
         id: `buy-${item.id}`,
         label: "BUY",
-        styleSet: CARD_BUY_BUTTON_STYLE,
+        styleSet: BUTTON_STYLE,
         onPress: () => {
           if (!card.buyEnabled) {
             return;
@@ -475,12 +717,36 @@ export class ShopScene extends Phaser.Scene {
         fontSize: 20,
       });
       buyButton.container.setPosition(125, 310);
+      const buyIcon = this.add
+        .image(0, 0, this.resolveDarkIconTexture(SHOP_BUY_ICON_KEY))
+        .setDisplaySize(36, 36)
+        .setAlpha(0.92);
+      const buyShortcut = this.add
+        .text(0, 0, "Z", {
+          fontFamily: '"Sora", "Segoe UI", sans-serif',
+          fontSize: "12px",
+          color: "#000000",
+          fontStyle: "700",
+        })
+        .setOrigin(1, 0.5)
+        .setAlpha(0.5);
+      buyButton.container.add([buyIcon, buyShortcut]);
+      card.buyIcon = buyIcon;
+      card.buyShortcut = buyShortcut;
       card.buyButton = buyButton;
 
       container.add([bg, type, name, descPanel, desc, cost, buyButton.container]);
 
-      bg.setInteractive({ useHandCursor: true });
-      bg.on("pointerdown", () => this.invokeAction("selectIndex", card.currentIndex));
+      const cardHit = this.add.zone(0, 0, 1, 1).setOrigin(0, 0).setInteractive({ useHandCursor: true });
+      cardHit.on("pointerover", () => this.handleCardHover(card.currentIndex));
+      cardHit.on("pointerdown", () => this.invokeAction("selectIndex", card.currentIndex));
+      cardHit.on("pointerout", () => {
+        if (this.hoveredCardIndex === card.currentIndex) {
+          this.hoveredCardIndex = null;
+        }
+      });
+      container.add(cardHit);
+      card.hitZone = cardHit;
 
       this.cards.set(item.id, card);
     });
@@ -508,6 +774,19 @@ export class ShopScene extends Phaser.Scene {
         height: 64,
         fontSize: 28,
       });
+      const icon = this.add.image(0, 0, this.resolveDarkIconTexture(SHOP_DEAL_ICON_KEY)).setDisplaySize(20, 20).setAlpha(0.92);
+      const shortcut = this.add
+        .text(0, 0, "ENTER", {
+          fontFamily: '"Sora", "Segoe UI", sans-serif',
+          fontSize: "12px",
+          color: "#000000",
+          fontStyle: "700",
+        })
+        .setOrigin(1, 0.5)
+        .setAlpha(0.5);
+      button.container.add([icon, shortcut]);
+      button.icon = icon;
+      button.shortcut = shortcut;
       this.buttons.set(action.id, button);
     });
   }
@@ -525,12 +804,13 @@ export class ShopScene extends Phaser.Scene {
   }
 
   drawText(key, value, x, y, style, origin = { x: 0.5, y: 0.5 }) {
+    const themedStyle = this.toBrownThemeTextStyle(style);
     let node = this.textNodes.get(key);
     if (!node) {
-      node = this.add.text(x, y, value, style).setOrigin(origin.x, origin.y);
+      node = this.add.text(x, y, value, themedStyle).setOrigin(origin.x, origin.y);
       this.textNodes.set(key, node);
     } else {
-      node.setStyle(style);
+      node.setStyle(themedStyle);
       node.setOrigin(origin.x, origin.y);
     }
     node.setPosition(x, y);

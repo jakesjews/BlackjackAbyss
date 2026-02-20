@@ -2993,6 +2993,45 @@
     playTone(base, 0.05, { type: "square", gain: 0.04, release: 0.03 });
   }
 
+  function playFireballLaunchSfx(attacker = "player", target = "enemy", amount = 1) {
+    const power = Math.max(1, Number(amount) || 1);
+    const towardEnemy = target === "enemy";
+    const now = state.audio.context?.currentTime || 0;
+    const base = towardEnemy ? 412 : 332;
+    playTone(base + (attacker === "enemy" ? -24 : 24), 0.08, {
+      type: "sawtooth",
+      gain: Math.min(0.13, 0.055 + power * 0.002),
+      release: 0.06,
+      when: now,
+      detune: towardEnemy ? 14 : -14,
+    });
+    playTone(base * 1.52, 0.12, {
+      type: "triangle",
+      gain: Math.min(0.11, 0.045 + power * 0.0015),
+      release: 0.1,
+      when: now + 0.03,
+      detune: towardEnemy ? 8 : -8,
+    });
+  }
+
+  function playFireballImpactSfx(amount = 1, target = "enemy") {
+    const power = Math.max(1, Number(amount) || 1);
+    const now = state.audio.context?.currentTime || 0;
+    playImpactSfx(power, target);
+    playTone(target === "enemy" ? 148 : 132, Math.min(0.22, 0.1 + power * 0.004), {
+      type: "square",
+      gain: Math.min(0.16, 0.055 + power * 0.0024),
+      release: 0.1,
+      when: now + 0.01,
+    });
+    playTone(target === "enemy" ? 220 : 196, Math.min(0.3, 0.12 + power * 0.005), {
+      type: "triangle",
+      gain: Math.min(0.12, 0.04 + power * 0.0018),
+      release: 0.18,
+      when: now + 0.05,
+    });
+  }
+
   function playUiSfx(kind) {
     if (kind === "select") {
       playTone(820, 0.045, { type: "sine", gain: 0.034, release: 0.025 });
@@ -3040,11 +3079,13 @@
       return;
     }
 
-    if (outgoing > 0) {
-      playImpactSfx(outgoing, "enemy");
-    }
-    if (incoming > 0) {
-      playImpactSfx(incoming, "player");
+    if (!isExternalModeRendering()) {
+      if (outgoing > 0) {
+        playImpactSfx(outgoing, "enemy");
+      }
+      if (incoming > 0) {
+        playImpactSfx(incoming, "player");
+      }
     }
 
     if (outcome === "push") {
@@ -4160,6 +4201,7 @@
     }
 
     playOutcomeSfx(outcome, outgoing, incoming);
+    const useLegacyHandTackle = !isExternalModeRendering("playing");
 
     if (outgoing > 0) {
       const outgoingPayload = {
@@ -4168,9 +4210,11 @@
         color: outcome === "blackjack" ? "#f8d37b" : "#ff916e",
         crit: encounter.critTriggered,
       };
-      if (!triggerHandTackle("player", outgoing, outgoingPayload)) {
+      if (!(useLegacyHandTackle && triggerHandTackle("player", outgoing, outgoingPayload))) {
         applyImpactDamage(outgoingPayload);
-        triggerImpactBurst("enemy", outgoing, outgoingPayload.color);
+        if (useLegacyHandTackle) {
+          triggerImpactBurst("enemy", outgoing, outgoingPayload.color);
+        }
       }
     }
 
@@ -4180,9 +4224,11 @@
         amount: incoming,
         color: "#ff86aa",
       };
-      if (!triggerHandTackle("enemy", incoming, incomingPayload)) {
+      if (!(useLegacyHandTackle && triggerHandTackle("enemy", incoming, incomingPayload))) {
         applyImpactDamage(incomingPayload);
-        triggerImpactBurst("player", incoming, incomingPayload.color);
+        if (useLegacyHandTackle) {
+          triggerImpactBurst("player", incoming, incomingPayload.color);
+        }
       }
     } else if (outgoing > 0) {
       run.player.streak += 1;
@@ -7182,13 +7228,7 @@
     ctx.fillText(`HP ${run.player.hp}/${run.player.maxHp}`, hpPillX + hpPillW * 0.5, hpPillY + 24);
 
     const statusY = Math.max(chipPillY, hpPillY) + pillH + (portrait ? 14 : 18);
-    if (run.shopPurchaseMade) {
-      ctx.fillStyle = "#f2cf91";
-      setFont(portrait ? 12 : 13, 600, false);
-      ctx.fillText("Purchase complete. Leave market.", layout.centerX, statusY);
-    }
-
-    const viewportTop = Math.max(layout.viewportY, statusY + (run.shopPurchaseMade ? (portrait ? 12 : 14) : 0) + (portrait ? 14 : 16));
+    const viewportTop = Math.max(layout.viewportY, statusY + (portrait ? 14 : 16));
     const viewportBottom = layout.panelY + layout.panelH - (portrait ? 52 : 58);
     const viewportH = Math.max(portrait ? 156 : 186, viewportBottom - viewportTop);
     const shopLayout = {
@@ -8780,6 +8820,14 @@
       confirmIntro: () => {
         unlockAudio();
         advanceEncounterIntro();
+      },
+      fireballLaunch: (attacker, target, amount) => {
+        unlockAudio();
+        playFireballLaunchSfx(attacker, target, amount);
+      },
+      fireballImpact: (amount, target) => {
+        unlockAudio();
+        playFireballImpactSfx(amount, target);
       },
       goHome: () => {
         unlockAudio();

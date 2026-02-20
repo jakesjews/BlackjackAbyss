@@ -30,6 +30,11 @@ const REWARD_TOP_ACTION_ICONS = Object.freeze({
   logs: "/images/icons/log.png",
   home: "/images/icons/home.png",
 });
+const REWARD_THEME_BLUE_HUE_MIN = 170;
+const REWARD_THEME_BLUE_HUE_MAX = 255;
+const REWARD_THEME_BROWN_HUE = 30 / 360;
+const REWARD_THEME_SATURATION_FLOOR = 0.18;
+const REWARD_THEME_SATURATION_SCALE = 0.8;
 
 export class RewardScene extends Phaser.Scene {
   constructor() {
@@ -62,10 +67,12 @@ export class RewardScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.setBackgroundColor("#081420");
+    this.cameras.main.setBackgroundColor("#171006");
     this.cameras.main.setAlpha(1);
     this.graphics = this.add.graphics();
+    this.applyBrownThemeToGraphics(this.graphics);
     this.overlayGraphics = this.add.graphics().setDepth(REWARD_MODAL_BASE_DEPTH);
+    this.applyBrownThemeToGraphics(this.overlayGraphics);
     this.modalBlocker = this.add
       .zone(0, 0, 1, 1)
       .setOrigin(0, 0)
@@ -177,6 +184,126 @@ export class RewardScene extends Phaser.Scene {
     if (typeof action === "function") {
       action(value);
     }
+  }
+
+  applyBrownThemeToGraphics(graphics) {
+    if (!graphics || graphics.__brownThemePatched) {
+      return;
+    }
+    const fillStyle = graphics.fillStyle;
+    const lineStyle = graphics.lineStyle;
+    const fillGradientStyle = graphics.fillGradientStyle;
+    graphics.fillStyle = (color, alpha) => fillStyle.call(graphics, this.toBrownThemeColorNumber(color), alpha);
+    graphics.lineStyle = (lineWidth, color, alpha) => {
+      lineStyle.call(graphics, lineWidth, this.toBrownThemeColorNumber(color), alpha);
+    };
+    graphics.fillGradientStyle = (topLeft, topRight, bottomLeft, bottomRight, alpha) => {
+      fillGradientStyle.call(
+        graphics,
+        this.toBrownThemeColorNumber(topLeft),
+        this.toBrownThemeColorNumber(topRight),
+        this.toBrownThemeColorNumber(bottomLeft),
+        this.toBrownThemeColorNumber(bottomRight),
+        alpha
+      );
+    };
+    graphics.__brownThemePatched = true;
+  }
+
+  toBrownThemeTextStyle(style) {
+    if (!style || typeof style !== "object") {
+      return style;
+    }
+    const themed = { ...style };
+    if (typeof themed.color === "string") {
+      themed.color = this.toBrownThemeColorString(themed.color);
+    }
+    if (typeof themed.stroke === "string") {
+      themed.stroke = this.toBrownThemeColorString(themed.stroke);
+    }
+    if (typeof themed.backgroundColor === "string") {
+      themed.backgroundColor = this.toBrownThemeColorString(themed.backgroundColor);
+    }
+    return themed;
+  }
+
+  toBrownThemeColorString(value) {
+    if (typeof value !== "string" || !value.startsWith("#")) {
+      return value;
+    }
+    const input = Number.parseInt(value.slice(1), 16);
+    if (!Number.isFinite(input)) {
+      return value;
+    }
+    const output = this.toBrownThemeColorNumber(input);
+    return `#${output.toString(16).padStart(6, "0")}`;
+  }
+
+  toBrownThemeColorNumber(value) {
+    if (!Number.isFinite(value)) {
+      return value;
+    }
+    const r = (value >> 16) & 0xff;
+    const g = (value >> 8) & 0xff;
+    const b = value & 0xff;
+    const [hue, sat, light] = this.rgbToHsl(r, g, b);
+    const hueDeg = hue * 360;
+    if (sat < 0.08 || hueDeg < REWARD_THEME_BLUE_HUE_MIN || hueDeg > REWARD_THEME_BLUE_HUE_MAX) {
+      return value;
+    }
+    const shiftedSat = Phaser.Math.Clamp(
+      sat * REWARD_THEME_SATURATION_SCALE + REWARD_THEME_SATURATION_FLOOR,
+      0,
+      1
+    );
+    const shifted = this.hslToRgb(REWARD_THEME_BROWN_HUE, shiftedSat, light);
+    return (shifted[0] << 16) | (shifted[1] << 8) | shifted[2];
+  }
+
+  rgbToHsl(r, g, b) {
+    const rn = r / 255;
+    const gn = g / 255;
+    const bn = b / 255;
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    let h = 0;
+    let s = 0;
+    const l = (max + min) * 0.5;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === rn) {
+        h = (gn - bn) / d + (gn < bn ? 6 : 0);
+      } else if (max === gn) {
+        h = (bn - rn) / d + 2;
+      } else {
+        h = (rn - gn) / d + 4;
+      }
+      h /= 6;
+    }
+    return [h, s, l];
+  }
+
+  hslToRgb(h, s, l) {
+    if (s === 0) {
+      const value = Math.round(l * 255);
+      return [value, value, value];
+    }
+    const hue2rgb = (p, q, t) => {
+      let tl = t;
+      if (tl < 0) tl += 1;
+      if (tl > 1) tl -= 1;
+      if (tl < 1 / 6) return p + (q - p) * 6 * tl;
+      if (tl < 1 / 2) return q;
+      if (tl < 2 / 3) return p + (q - p) * (2 / 3 - tl) * 6;
+      return p;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const r = hue2rgb(p, q, h + 1 / 3);
+    const g = hue2rgb(p, q, h);
+    const b = hue2rgb(p, q, h - 1 / 3);
+    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
   }
 
   ensureRewardThumbTexture(option) {
@@ -678,7 +805,9 @@ export class RewardScene extends Phaser.Scene {
       const y = compact ? startY + index * (cardH + gapY) : startY;
       card.container.setPosition(x, y);
       const selected = Boolean(option.selected);
-      const accentColor = Phaser.Display.Color.HexStringToColor(option.color || "#9ec3df").color;
+      const accentColor = this.toBrownThemeColorNumber(
+        Phaser.Display.Color.HexStringToColor(option.color || "#9ec3df").color
+      );
       const claimEnabled = Boolean(snapshot.canClaim);
       card.bg.clear();
       card.bg.fillStyle(selected ? CARD_STYLE.fillSelected : CARD_STYLE.fill, selected ? 0.97 : 0.9);
@@ -711,7 +840,7 @@ export class RewardScene extends Phaser.Scene {
         card.thumbImage.setVisible(false);
         card.thumbGlyph.setVisible(true);
         card.thumbGlyph.setPosition(thumbX + thumbSize * 0.5, thumbY + thumbSize * 0.5);
-        card.thumbGlyph.setColor(selected ? "#d8ecfd" : "#a9c1d4");
+        card.thumbGlyph.setColor(this.toBrownThemeColorString(selected ? "#d8ecfd" : "#a9c1d4"));
       }
 
       const textLeft = thumbX + thumbSize + 12;
@@ -741,9 +870,9 @@ export class RewardScene extends Phaser.Scene {
       card.desc.setText(compactDesc);
       card.desc.setFontSize(descFontSize);
       card.desc.setWordWrapWidth(descW, true);
-      card.name.setColor(selected ? "#f3f9ff" : "#dbeefd");
-      card.rarity.setColor(selected ? "#d9ecfb" : "#bfd7ea");
-      card.desc.setColor(selected ? "#d8e8f5" : "#c3d7ea");
+      card.name.setColor(this.toBrownThemeColorString(selected ? "#f3f9ff" : "#dbeefd"));
+      card.rarity.setColor(this.toBrownThemeColorString(selected ? "#d9ecfb" : "#bfd7ea"));
+      card.desc.setColor(this.toBrownThemeColorString(selected ? "#d8e8f5" : "#c3d7ea"));
       card.rarityPill.clear();
       card.rarityPill.fillStyle(selected ? CARD_STYLE.pillSelected : CARD_STYLE.pill, selected ? 0.9 : 0.75);
       const rarityW = Phaser.Math.Clamp(Math.round(card.rarity.width + 16), 64, compact ? 108 : 122);
@@ -766,7 +895,7 @@ export class RewardScene extends Phaser.Scene {
       card.claimPill.strokeRoundedRect(claimX, claimY, claimW, claimH, claimRadius);
       card.claimText.setPosition(claimX + claimW * 0.5, claimY + claimH * 0.5);
       card.claimText.setFontSize(compact ? 14 : 21);
-      card.claimText.setColor(claimEnabled ? "#2b1f11" : "#6f5f48");
+      card.claimText.setColor(this.toBrownThemeColorString(claimEnabled ? "#2b1f11" : "#6f5f48"));
       card.claimText.setText(claimEnabled ? "CLAIM" : "LOCKED");
       card.claimHit.setPosition(claimX, claimY);
       card.claimHit.setSize(claimW, claimH);
@@ -801,13 +930,15 @@ export class RewardScene extends Phaser.Scene {
     options.forEach((option, index) => {
       const container = this.add.container(0, 0);
       const bg = this.add.graphics();
+      this.applyBrownThemeToGraphics(bg);
       const thumbFrame = this.add.graphics();
+      this.applyBrownThemeToGraphics(thumbFrame);
       const thumbImage = this.add.image(0, 0, "__WHITE").setVisible(false);
       const thumbGlyph = this.add
         .text(0, 0, "◆", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "18px",
-          color: "#cde4f6",
+          color: this.toBrownThemeColorString("#cde4f6"),
           fontStyle: "700",
         })
         .setOrigin(0.5, 0.5);
@@ -817,16 +948,17 @@ export class RewardScene extends Phaser.Scene {
         .text(14, 24, "COMMON", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "12px",
-          color: "#cde4f6",
+          color: this.toBrownThemeColorString("#cde4f6"),
           fontStyle: "700",
         })
         .setOrigin(0, 0.5);
       const rarityPill = this.add.graphics();
+      this.applyBrownThemeToGraphics(rarityPill);
       const name = this.add
         .text(14, 56, option.name || "Relic", {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: "24px",
-          color: "#dbeefd",
+          color: this.toBrownThemeColorString("#dbeefd"),
           fontStyle: "700",
         })
         .setOrigin(0, 0.5);
@@ -834,19 +966,20 @@ export class RewardScene extends Phaser.Scene {
         .text(14, 98, option.description || "", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "16px",
-          color: "#d9ecfb",
+          color: this.toBrownThemeColorString("#d9ecfb"),
           wordWrap: { width: 220 },
           lineSpacing: 3,
         })
         .setOrigin(0, 0);
       const claimPill = this.add.graphics();
+      this.applyBrownThemeToGraphics(claimPill);
       const claimHit = this.add.zone(0, 0, 1, 1).setOrigin(0, 0);
       claimHit.setInteractive({ useHandCursor: true });
       const claimText = this.add
         .text(0, 0, "CLAIM", {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: "21px",
-          color: "#2b1f11",
+          color: this.toBrownThemeColorString("#2b1f11"),
           fontStyle: "700",
         })
         .setOrigin(0.5, 0.5);
@@ -914,12 +1047,13 @@ export class RewardScene extends Phaser.Scene {
   }
 
   drawText(key, value, x, y, style, origin = { x: 0.5, y: 0.5 }) {
+    const themedStyle = this.toBrownThemeTextStyle(style);
     let node = this.textNodes.get(key);
     if (!node) {
-      node = this.add.text(x, y, value, style).setOrigin(origin.x, origin.y);
+      node = this.add.text(x, y, value, themedStyle).setOrigin(origin.x, origin.y);
       this.textNodes.set(key, node);
     } else {
-      node.setStyle(style);
+      node.setStyle(themedStyle);
       node.setOrigin(origin.x, origin.y);
     }
     node.setPosition(x, y);

@@ -6,15 +6,25 @@ import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeM
 
 const BUTTON_STYLES = ACTION_BUTTON_STYLE;
 const RUN_PARTICLE_KEY = "__run-particle__";
+const RUN_FIRE_CORE_PARTICLE_KEY = "__run-fire-core-particle__";
+const RUN_FIRE_GLOW_PARTICLE_KEY = "__run-fire-glow-particle__";
+const RUN_CARD_SHADOW_KEY = "__run-card-shadow__";
 const ENEMY_AVATAR_TEXTURE_PREFIX = "__enemy-avatar__";
 const RUN_TOP_BAR_HEIGHT = 74;
 const RUN_BOTTOM_BAR_HEIGHT = 106;
 const RUN_CHIPS_ICON_KEY = "__run-chips-icon__";
 const RUN_CHIPS_ICON_TRIM_KEY = "__run-chips-icon-trim__";
 const RUN_RELIC_ICON_KEY = "__run-relic-icon__";
+const RUN_PLAYER_AVATAR_KEY = "__run-player-avatar__";
 const RUN_WATERMARK_KEY = "__run-watermark__";
-const RUN_WATERMARK_RENDER_KEY = "__run-watermark-render__";
+const RUN_WATERMARK_ALPHA = 0.75;
+const RUN_WATERMARK_RENDER_KEY = `__run-watermark-render-v9-a${Math.round(RUN_WATERMARK_ALPHA * 1000)}__`;
 const RUN_PRIMARY_GOLD = 0xf2cd88;
+const RUN_THEME_BLUE_HUE_MIN = 170;
+const RUN_THEME_BLUE_HUE_MAX = 255;
+const RUN_THEME_BROWN_HUE = 30 / 360;
+const RUN_THEME_SATURATION_FLOOR = 0.18;
+const RUN_THEME_SATURATION_SCALE = 0.74;
 const RUN_MODAL_BASE_DEPTH = 300;
 const RUN_MODAL_LAYER_STEP = 24;
 const RUN_MODAL_CONTENT_OFFSET = 8;
@@ -57,6 +67,11 @@ const RUN_TOP_ACTION_ICON_KEYS = Object.freeze({
   logs: "__run-top-action-logs__",
   home: "__run-top-action-home__",
 });
+const RUN_TOP_ACTION_TOOLTIPS = Object.freeze({
+  logs: "Current run logs",
+  home: "Return to title screen",
+});
+const RUN_LOG_RESOLUTION_RE = /(?:\bhand\b|\bblackjack\b|\bbust\b|\bdouble\b|\bsplit\b|\bhit\b|\bstand\b|\bdeal\b|\bpush\b|\bwin\b|\blose\b|\bresolved?\b)/i;
 
 const ENEMY_AVATAR_KEY_BY_NAME = Object.freeze({
   "Pit Croupier": "pit-croupier",
@@ -98,6 +113,9 @@ export class RunScene extends Phaser.Scene {
     this.enemyPortrait = null;
     this.enemyPortraitMaskShape = null;
     this.enemyPortraitMask = null;
+    this.playerPortrait = null;
+    this.playerPortraitMaskShape = null;
+    this.playerPortraitMask = null;
     this.introPortrait = null;
     this.introPortraitMaskShape = null;
     this.introPortraitMask = null;
@@ -121,8 +139,24 @@ export class RunScene extends Phaser.Scene {
     this.hudChipsIcon = null;
     this.darkIconTextureBySource = new Map();
     this.watermarkBackground = null;
+    this.watermarkMaskShape = null;
+    this.watermarkMask = null;
     this.fireTrailEmitter = null;
+    this.fireImpactEmitter = null;
     this.lastHpState = null;
+    this.pointerHandlers = [];
+    this.logsScrollIndex = 0;
+    this.logsScrollMax = 0;
+    this.logsLastCount = 0;
+    this.logsPinnedToBottom = true;
+    this.logsViewport = null;
+    this.topActionTooltip = null;
+    this.buttonEnabledState = new Map();
+    this.buttonPulseTweens = new Map();
+    this.avatarShake = {
+      enemy: { until: 0, start: 0, duration: 0, magnitude: 0 },
+      player: { until: 0, start: 0, duration: 0, magnitude: 0 },
+    };
   }
 
   preload() {
@@ -149,24 +183,30 @@ export class RunScene extends Phaser.Scene {
     if (!this.textures.exists(RUN_RELIC_ICON_KEY)) {
       this.load.image(RUN_RELIC_ICON_KEY, "/images/icons/relic.png");
     }
+    if (!this.textures.exists(RUN_PLAYER_AVATAR_KEY)) {
+      this.load.image(RUN_PLAYER_AVATAR_KEY, "/images/avatars/player.png");
+    }
     if (!this.textures.exists(RUN_WATERMARK_KEY)) {
       this.load.image(RUN_WATERMARK_KEY, "/images/watermark.png");
     }
   }
 
   create() {
-    this.cameras.main.setBackgroundColor("#081420");
+    this.cameras.main.setBackgroundColor("#171006");
     this.cameras.main.setAlpha(1);
-    this.graphics = this.add.graphics();
-    this.overlayGraphics = this.add.graphics().setDepth(RUN_MODAL_BASE_DEPTH);
+    this.graphics = this.applyBrownThemeToGraphics(this.add.graphics());
+    this.overlayGraphics = this.applyBrownThemeToGraphics(this.add.graphics().setDepth(RUN_MODAL_BASE_DEPTH));
     if (this.textures.exists(RUN_WATERMARK_KEY)) {
       const watermarkTexture = this.resolveWatermarkTexture(RUN_WATERMARK_KEY, RUN_WATERMARK_RENDER_KEY);
       this.watermarkBackground = this.add
         .image(this.scale.gameSize.width * 0.5, this.scale.gameSize.height * 0.5, watermarkTexture || RUN_WATERMARK_KEY)
         .setVisible(false)
-        .setAlpha(0.26)
-        .setBlendMode(Phaser.BlendModes.SCREEN)
-        .setDepth(0);
+        .setAlpha(1)
+        .setBlendMode(Phaser.BlendModes.NORMAL)
+        .setDepth(3);
+      this.watermarkMaskShape = this.make.graphics({ x: 0, y: 0, add: false });
+      this.watermarkMask = this.watermarkMaskShape.createGeometryMask();
+      this.watermarkBackground.setMask(this.watermarkMask);
     }
     const chipsIconKey = this.resolveGoldIconTexture(this.resolveTightTexture(RUN_CHIPS_ICON_KEY, RUN_CHIPS_ICON_TRIM_KEY));
     this.hudChipsIcon = this.add.image(0, 0, chipsIconKey).setVisible(false).setDepth(26);
@@ -178,13 +218,21 @@ export class RunScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: false });
     this.modalBlocker.on("pointerdown", () => {});
     this.ensureRunParticleTexture();
+    this.ensureCardShadowTexture();
 
     this.enemyPortrait = this.add.image(0, 0, RUN_PARTICLE_KEY).setVisible(false).setDepth(16);
-    this.enemyPortraitMaskShape = this.make.graphics({ x: 0, y: 0, add: false });
+    this.enemyPortraitMaskShape = this.applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }));
     this.enemyPortraitMask = this.enemyPortraitMaskShape.createGeometryMask();
     this.enemyPortrait.setMask(this.enemyPortraitMask);
+    this.playerPortrait = this.add
+      .image(0, 0, this.textures.exists(RUN_PLAYER_AVATAR_KEY) ? RUN_PLAYER_AVATAR_KEY : RUN_PARTICLE_KEY)
+      .setVisible(false)
+      .setDepth(16);
+    this.playerPortraitMaskShape = this.applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }));
+    this.playerPortraitMask = this.playerPortraitMaskShape.createGeometryMask();
+    this.playerPortrait.setMask(this.playerPortraitMask);
     this.introPortrait = this.add.image(0, 0, RUN_PARTICLE_KEY).setVisible(false).setDepth(116);
-    this.introPortraitMaskShape = this.make.graphics({ x: 0, y: 0, add: false });
+    this.introPortraitMaskShape = this.applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }));
     this.introPortraitMask = this.introPortraitMaskShape.createGeometryMask();
     this.introPortrait.setMask(this.introPortraitMask);
 
@@ -203,21 +251,36 @@ export class RunScene extends Phaser.Scene {
       .setBlendMode(Phaser.BlendModes.ADD);
     this.resultEmitter.stop();
     this.fireTrailEmitter = this.add
-      .particles(0, 0, RUN_PARTICLE_KEY, {
+      .particles(0, 0, RUN_FIRE_CORE_PARTICLE_KEY, {
         frequency: -1,
-        quantity: 4,
-        lifespan: { min: 140, max: 260 },
-        speed: { min: 16, max: 90 },
+        quantity: 10,
+        lifespan: { min: 190, max: 360 },
+        speed: { min: 24, max: 220 },
         angle: { min: 0, max: 360 },
-        scale: { start: 0.5, end: 0.05 },
-        alpha: { start: 0.72, end: 0 },
-        tint: [0xffe3a6, 0xffa156, 0xff6b3d],
+        scale: { start: 0.94, end: 0.08 },
+        alpha: { start: 0.9, end: 0 },
+        tint: [0xffebbd, 0xffbe63, 0xff7f2a, 0xff4a14],
       })
       .setDepth(118)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.fireTrailEmitter.stop();
+    this.fireImpactEmitter = this.add
+      .particles(0, 0, RUN_FIRE_GLOW_PARTICLE_KEY, {
+        frequency: -1,
+        quantity: 126,
+        lifespan: { min: 340, max: 1080 },
+        speed: { min: 170, max: 640 },
+        angle: { min: 0, max: 360 },
+        scale: { start: 0.68, end: 0.06 },
+        alpha: { start: 0.96, end: 0 },
+        tint: [0xffedc2, 0xffcb75, 0xff8f36, 0xff4d17],
+      })
+      .setDepth(131)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.fireImpactEmitter.stop();
 
     this.bindKeyboardInput();
+    this.bindPointerInput();
     this.scale.on("resize", this.onResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
   }
@@ -228,6 +291,10 @@ export class RunScene extends Phaser.Scene {
       this.input.keyboard?.off(eventName, handler);
     });
     this.keyboardHandlers = [];
+    this.pointerHandlers.forEach(({ eventName, handler }) => {
+      this.input.off(eventName, handler);
+    });
+    this.pointerHandlers = [];
     this.buttons.forEach((button) => button.container.destroy());
     this.buttons.clear();
     this.buttonSignature = "";
@@ -276,9 +343,18 @@ export class RunScene extends Phaser.Scene {
       this.watermarkBackground.destroy();
       this.watermarkBackground = null;
     }
+    if (this.watermarkMaskShape) {
+      this.watermarkMaskShape.destroy();
+      this.watermarkMaskShape = null;
+      this.watermarkMask = null;
+    }
     if (this.fireTrailEmitter) {
       this.fireTrailEmitter.destroy();
       this.fireTrailEmitter = null;
+    }
+    if (this.fireImpactEmitter) {
+      this.fireImpactEmitter.destroy();
+      this.fireImpactEmitter = null;
     }
     this.lastHpState = null;
     this.darkIconTextureBySource.clear();
@@ -290,6 +366,15 @@ export class RunScene extends Phaser.Scene {
       this.enemyPortraitMaskShape.destroy();
       this.enemyPortraitMaskShape = null;
       this.enemyPortraitMask = null;
+    }
+    if (this.playerPortrait) {
+      this.playerPortrait.destroy();
+      this.playerPortrait = null;
+    }
+    if (this.playerPortraitMaskShape) {
+      this.playerPortraitMaskShape.destroy();
+      this.playerPortraitMaskShape = null;
+      this.playerPortraitMask = null;
     }
     if (this.introPortrait) {
       this.introPortrait.destroy();
@@ -305,10 +390,33 @@ export class RunScene extends Phaser.Scene {
       this.resultEmitter.destroy();
       this.resultEmitter = null;
     }
+    this.logsScrollIndex = 0;
+    this.logsScrollMax = 0;
+    this.logsLastCount = 0;
+    this.logsPinnedToBottom = true;
+    this.logsViewport = null;
+    this.topActionTooltip = null;
+    this.buttonEnabledState.clear();
+    this.buttonPulseTweens.forEach((tween) => tween?.stop?.());
+    this.buttonPulseTweens.clear();
   }
 
   ensureRunParticleTexture() {
     if (this.textures.exists(RUN_PARTICLE_KEY)) {
+      this.ensureRadialParticleTexture(RUN_FIRE_CORE_PARTICLE_KEY, 40, [
+        [0, "rgba(255,255,255,1)"],
+        [0.18, "rgba(255,242,205,0.98)"],
+        [0.45, "rgba(255,170,78,0.85)"],
+        [0.72, "rgba(255,98,38,0.46)"],
+        [1, "rgba(255,84,32,0)"],
+      ]);
+      this.ensureRadialParticleTexture(RUN_FIRE_GLOW_PARTICLE_KEY, 68, [
+        [0, "rgba(255,250,228,1)"],
+        [0.2, "rgba(255,214,140,0.92)"],
+        [0.44, "rgba(255,146,54,0.66)"],
+        [0.72, "rgba(255,86,26,0.35)"],
+        [1, "rgba(255,64,18,0)"],
+      ]);
       return;
     }
     const gfx = this.make.graphics({ x: 0, y: 0, add: false });
@@ -316,6 +424,104 @@ export class RunScene extends Phaser.Scene {
     gfx.fillCircle(8, 8, 8);
     gfx.generateTexture(RUN_PARTICLE_KEY, 16, 16);
     gfx.destroy();
+    this.ensureRadialParticleTexture(RUN_FIRE_CORE_PARTICLE_KEY, 40, [
+      [0, "rgba(255,255,255,1)"],
+      [0.18, "rgba(255,242,205,0.98)"],
+      [0.45, "rgba(255,170,78,0.85)"],
+      [0.72, "rgba(255,98,38,0.46)"],
+      [1, "rgba(255,84,32,0)"],
+    ]);
+    this.ensureRadialParticleTexture(RUN_FIRE_GLOW_PARTICLE_KEY, 68, [
+      [0, "rgba(255,250,228,1)"],
+      [0.2, "rgba(255,214,140,0.92)"],
+      [0.44, "rgba(255,146,54,0.66)"],
+      [0.72, "rgba(255,86,26,0.35)"],
+      [1, "rgba(255,64,18,0)"],
+    ]);
+  }
+
+  ensureRadialParticleTexture(key, size, stops) {
+    if (!key || this.textures.exists(key) || typeof this.textures.createCanvas !== "function") {
+      return;
+    }
+    const safeSize = Math.max(8, Math.round(size || 32));
+    const canvasTexture = this.textures.createCanvas(key, safeSize, safeSize);
+    const ctx = canvasTexture?.getContext?.();
+    if (!ctx) {
+      return;
+    }
+    const center = safeSize * 0.5;
+    const gradient = ctx.createRadialGradient(center, center, 1, center, center, center);
+    const colorStops = Array.isArray(stops) ? stops : [];
+    if (colorStops.length === 0) {
+      gradient.addColorStop(0, "rgba(255,255,255,1)");
+      gradient.addColorStop(1, "rgba(255,255,255,0)");
+    } else {
+      colorStops.forEach(([offset, color]) => {
+        gradient.addColorStop(Phaser.Math.Clamp(Number(offset) || 0, 0, 1), String(color || "rgba(255,255,255,1)"));
+      });
+    }
+    ctx.clearRect(0, 0, safeSize, safeSize);
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(center, center, center, 0, Math.PI * 2);
+    ctx.fill();
+    canvasTexture.refresh();
+  }
+
+  ensureCardShadowTexture() {
+    if (this.textures.exists(RUN_CARD_SHADOW_KEY) || typeof this.textures.createCanvas !== "function") {
+      return;
+    }
+    const texW = 240;
+    const texH = 332;
+    const canvasTexture = this.textures.createCanvas(RUN_CARD_SHADOW_KEY, texW, texH);
+    const ctx = canvasTexture?.getContext?.();
+    if (!ctx) {
+      return;
+    }
+    const baseX = 52;
+    const baseY = 18;
+    const baseW = texW - 78;
+    const baseH = texH - 36;
+    const baseRadius = 24;
+    const drawRoundRect = (x, y, w, h, r) => {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    };
+    ctx.clearRect(0, 0, texW, texH);
+    const passes = [
+      { blur: 42, offsetX: -24, alpha: 0.2, inset: 0 },
+      { blur: 28, offsetX: -18, alpha: 0.17, inset: 4 },
+      { blur: 16, offsetX: -10, alpha: 0.13, inset: 8 },
+    ];
+    passes.forEach((pass) => {
+      const inset = pass.inset;
+      const x = baseX + inset;
+      const y = baseY + inset * 0.22;
+      const w = Math.max(24, baseW - inset * 1.2);
+      const h = Math.max(24, baseH - inset * 0.55);
+      const r = Math.max(10, baseRadius - inset * 0.28);
+      ctx.save();
+      ctx.shadowColor = `rgba(0,0,0,${pass.alpha.toFixed(3)})`;
+      ctx.shadowBlur = pass.blur;
+      ctx.shadowOffsetX = pass.offsetX;
+      ctx.shadowOffsetY = 0;
+      ctx.fillStyle = "rgba(0,0,0,0.05)";
+      drawRoundRect(x, y, w, h, r);
+      ctx.fill();
+      ctx.restore();
+    });
+    canvasTexture.refresh();
   }
 
   update(time, delta) {
@@ -375,6 +581,35 @@ export class RunScene extends Phaser.Scene {
       }
       this.toggleModal("relics");
     });
+  }
+
+  bindPointerInput() {
+    const bind = (eventName, handler) => {
+      this.input.on(eventName, handler);
+      this.pointerHandlers.push({ eventName, handler });
+    };
+    bind("wheel", (pointer, gameObjects, deltaX, deltaY) => {
+      if (!this.logsModalOpen || !this.logsViewport) {
+        return;
+      }
+      if (!this.pointInRect(pointer.worldX, pointer.worldY, this.logsViewport)) {
+        return;
+      }
+      this.logsPinnedToBottom = false;
+      this.setLogsScroll(this.logsScrollIndex + Math.sign(deltaY || 0) * 2);
+    });
+  }
+
+  pointInRect(x, y, rect) {
+    if (!rect) {
+      return false;
+    }
+    return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+  }
+
+  setLogsScroll(next) {
+    this.logsScrollIndex = Phaser.Math.Clamp(Math.round(next), 0, this.logsScrollMax);
+    this.logsPinnedToBottom = this.logsScrollIndex >= this.logsScrollMax;
   }
 
   isModalOpen(modalId) {
@@ -454,6 +689,58 @@ export class RunScene extends Phaser.Scene {
     return bridge.getRunApi();
   }
 
+  getEncounterTypeLabel(type) {
+    const normalized = String(type || "normal").trim().toLowerCase();
+    if (!normalized) {
+      return "Normal Encounter";
+    }
+    return `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)} Encounter`;
+  }
+
+  playRunSfx(methodName, ...args) {
+    const api = this.getRunApi();
+    const fn = api?.[methodName];
+    if (typeof fn === "function") {
+      fn(...args);
+    }
+  }
+
+  triggerAvatarShake(side, magnitude = 6.5, duration = 220) {
+    const key = side === "enemy" ? "enemy" : "player";
+    const shake = this.avatarShake?.[key];
+    if (!shake) {
+      return;
+    }
+    const now = this.time.now;
+    shake.start = now;
+    shake.duration = Math.max(80, Math.round(duration || 0));
+    shake.until = now + shake.duration;
+    shake.magnitude = Math.max(0, Number(magnitude) || 0);
+  }
+
+  getAvatarShakeOffset(side) {
+    const key = side === "enemy" ? "enemy" : "player";
+    const shake = this.avatarShake?.[key];
+    if (!shake) {
+      return { x: 0, y: 0 };
+    }
+    const now = this.time.now;
+    if (!Number.isFinite(shake.until) || now >= shake.until || !Number.isFinite(shake.magnitude) || shake.magnitude <= 0) {
+      shake.magnitude = 0;
+      return { x: 0, y: 0 };
+    }
+    const elapsed = Math.max(0, now - (Number.isFinite(shake.start) ? shake.start : now));
+    const life = Math.max(80, Number(shake.duration) || 180);
+    const lifeT = Phaser.Math.Clamp(elapsed / life, 0, 1);
+    const damping = 1 - lifeT;
+    const mag = shake.magnitude * damping;
+    const wiggle = Math.sin(now * 0.11) * 0.7 + Math.sin(now * 0.21) * 0.3;
+    return {
+      x: Phaser.Math.Between(-1000, 1000) / 1000 * mag * 0.55 + wiggle * mag * 0.24,
+      y: Phaser.Math.Between(-1000, 1000) / 1000 * mag * 0.28,
+    };
+  }
+
   getSnapshot() {
     const api = this.getRunApi();
     if (!api || typeof api.getSnapshot !== "function") {
@@ -478,22 +765,148 @@ export class RunScene extends Phaser.Scene {
     return width < 760;
   }
 
+  applyBrownThemeToGraphics(graphics) {
+    if (!graphics || graphics.__runBrownThemePatched) {
+      return graphics;
+    }
+    const fillStyle = graphics.fillStyle;
+    graphics.fillStyle = (color, alpha) => fillStyle.call(graphics, this.toBrownThemeColorNumber(color), alpha);
+    const lineStyle = graphics.lineStyle;
+    graphics.lineStyle = (lineWidth, color, alpha) =>
+      lineStyle.call(graphics, lineWidth, this.toBrownThemeColorNumber(color), alpha);
+    if (typeof graphics.fillGradientStyle === "function") {
+      const fillGradientStyle = graphics.fillGradientStyle;
+      graphics.fillGradientStyle = (topLeft, topRight, bottomLeft, bottomRight, alphaTopLeft, alphaTopRight, alphaBottomLeft, alphaBottomRight) =>
+        fillGradientStyle.call(
+          graphics,
+          this.toBrownThemeColorNumber(topLeft),
+          this.toBrownThemeColorNumber(topRight),
+          this.toBrownThemeColorNumber(bottomLeft),
+          this.toBrownThemeColorNumber(bottomRight),
+          alphaTopLeft,
+          alphaTopRight,
+          alphaBottomLeft,
+          alphaBottomRight
+        );
+    }
+    graphics.__runBrownThemePatched = true;
+    return graphics;
+  }
+
+  toBrownThemeTextStyle(style) {
+    if (!style || typeof style !== "object") {
+      return style;
+    }
+    const themed = { ...style };
+    if (typeof themed.color === "string") {
+      themed.color = this.toBrownThemeColorString(themed.color);
+    }
+    if (typeof themed.stroke === "string") {
+      themed.stroke = this.toBrownThemeColorString(themed.stroke);
+    }
+    if (typeof themed.backgroundColor === "string") {
+      themed.backgroundColor = this.toBrownThemeColorString(themed.backgroundColor);
+    }
+    return themed;
+  }
+
+  toBrownThemeColorString(value) {
+    if (typeof value !== "string") {
+      return value;
+    }
+    const match = value.trim().match(/^#([0-9a-fA-F]{6})$/);
+    if (!match) {
+      return value;
+    }
+    const input = parseInt(match[1], 16);
+    const output = this.toBrownThemeColorNumber(input);
+    return `#${output.toString(16).padStart(6, "0")}`;
+  }
+
+  toBrownThemeColorNumber(value) {
+    if (!Number.isFinite(value)) {
+      return value;
+    }
+    const color = Phaser.Display.Color.IntegerToColor(value);
+    const hsl = this.rgbToHsl(color.red, color.green, color.blue);
+    const hueDeg = (Number(hsl.h) || 0) * 360;
+    const sat = Number(hsl.s) || 0;
+    const light = Number(hsl.l) || 0;
+    if (sat < 0.08 || hueDeg < RUN_THEME_BLUE_HUE_MIN || hueDeg > RUN_THEME_BLUE_HUE_MAX) {
+      return value;
+    }
+    const shiftedSat = Phaser.Math.Clamp(Math.max(RUN_THEME_SATURATION_FLOOR, sat * RUN_THEME_SATURATION_SCALE), 0, 1);
+    const shiftedLight = Phaser.Math.Clamp(light * 0.98 + 0.02, 0, 1);
+    const shifted = this.hslToRgb(RUN_THEME_BROWN_HUE, shiftedSat, shiftedLight);
+    return Phaser.Display.Color.GetColor(shifted.r, shifted.g, shifted.b);
+  }
+
+  rgbToHsl(r, g, b) {
+    const rn = Phaser.Math.Clamp((Number(r) || 0) / 255, 0, 1);
+    const gn = Phaser.Math.Clamp((Number(g) || 0) / 255, 0, 1);
+    const bn = Phaser.Math.Clamp((Number(b) || 0) / 255, 0, 1);
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    const delta = max - min;
+    let h = 0;
+    let s = 0;
+    const l = (max + min) * 0.5;
+    if (delta > 0) {
+      s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+      if (max === rn) {
+        h = (gn - bn) / delta + (gn < bn ? 6 : 0);
+      } else if (max === gn) {
+        h = (bn - rn) / delta + 2;
+      } else {
+        h = (rn - gn) / delta + 4;
+      }
+      h /= 6;
+    }
+    return { h, s, l };
+  }
+
+  hslToRgb(h, s, l) {
+    const hue = ((Number(h) || 0) % 1 + 1) % 1;
+    const sat = Phaser.Math.Clamp(Number(s) || 0, 0, 1);
+    const light = Phaser.Math.Clamp(Number(l) || 0, 0, 1);
+    if (sat === 0) {
+      const v = Math.round(light * 255);
+      return { r: v, g: v, b: v };
+    }
+    const q = light < 0.5 ? light * (1 + sat) : light + sat - light * sat;
+    const p = 2 * light - q;
+    const hue2rgb = (t) => {
+      let tt = t;
+      if (tt < 0) tt += 1;
+      if (tt > 1) tt -= 1;
+      if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+      if (tt < 1 / 2) return q;
+      if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+      return p;
+    };
+    return {
+      r: Math.round(hue2rgb(hue + 1 / 3) * 255),
+      g: Math.round(hue2rgb(hue) * 255),
+      b: Math.round(hue2rgb(hue - 1 / 3) * 255),
+    };
+  }
+
   getRunLayout(width, height) {
     const compact = this.isCompactLayout(width);
     const topBarH = compact ? 92 : RUN_TOP_BAR_HEIGHT;
     const bottomBarH = compact ? 98 : RUN_BOTTOM_BAR_HEIGHT;
-    const sidePad = Math.max(12, Math.round(width * 0.0125));
-    const arenaTop = topBarH + 6;
-    const arenaBottom = Math.max(arenaTop + 180, height - bottomBarH - 8);
+    const sidePad = Math.max(compact ? 16 : 22, Math.round(width * (compact ? 0.016 : 0.02)));
+    const arenaTop = topBarH;
+    const arenaBottom = Math.max(arenaTop + 180, height - bottomBarH);
     const arenaH = Math.max(160, arenaBottom - arenaTop);
     return {
       compact,
       topBarH,
       bottomBarH,
       sidePad,
-      arenaX: sidePad,
+      arenaX: 0,
       arenaY: arenaTop,
-      arenaW: Math.max(1, width - sidePad * 2),
+      arenaW: Math.max(1, width),
       arenaH,
       arenaBottom,
     };
@@ -540,6 +953,9 @@ export class RunScene extends Phaser.Scene {
       if (this.enemyPortrait) {
         this.enemyPortrait.setVisible(false);
       }
+      if (this.playerPortrait) {
+        this.playerPortrait.setVisible(false);
+      }
       if (this.introPortrait) {
         this.introPortrait.setVisible(false);
       }
@@ -575,31 +991,52 @@ export class RunScene extends Phaser.Scene {
   drawBackground(width, height, runLayout) {
     const watermarkTexture = this.watermarkBackground?.texture?.key || "";
     if (this.watermarkBackground && watermarkTexture && this.textures.exists(watermarkTexture)) {
-      const cover = this.coverSizeForTexture(watermarkTexture, width, height);
+      const cover = this.coverSizeForTexture(watermarkTexture, runLayout.arenaW, runLayout.arenaH);
       this.watermarkBackground
-        .setPosition(width * 0.5, height * 0.5)
+        .setPosition(runLayout.arenaX + runLayout.arenaW * 0.5, runLayout.arenaY + runLayout.arenaH * 0.5)
         .setDisplaySize(cover.width, cover.height)
+        .setAlpha(1)
         .setVisible(true);
+      if (this.watermarkMaskShape) {
+        this.watermarkMaskShape.clear();
+        this.watermarkMaskShape.fillStyle(0xffffff, 1);
+        this.watermarkMaskShape.fillRect(runLayout.arenaX, runLayout.arenaY, runLayout.arenaW, runLayout.arenaH);
+      }
+    } else if (this.watermarkBackground) {
+      this.watermarkBackground.setVisible(false);
     }
-    this.graphics.fillGradientStyle(0x0f2238, 0x0f2238, 0x061524, 0x061524, 0.38);
+    this.graphics.fillGradientStyle(0x0f2238, 0x0f2238, 0x061524, 0x061524, 0.48);
     this.graphics.fillRect(0, 0, width, height);
     this.graphics.fillStyle(0x081726, 0.96);
     this.graphics.fillRect(0, 0, width, runLayout.topBarH);
     this.graphics.fillStyle(0x081726, 0.96);
     this.graphics.fillRect(0, height - runLayout.bottomBarH, width, runLayout.bottomBarH);
-    this.graphics.fillStyle(0x050f1b, 0.58);
-    this.graphics.fillRoundedRect(runLayout.arenaX, runLayout.arenaY, runLayout.arenaW, runLayout.arenaH, 20);
-    this.graphics.lineStyle(1.4, 0x3d6282, 0.48);
-    this.graphics.beginPath();
-    this.graphics.moveTo(0, runLayout.topBarH + 0.5);
-    this.graphics.lineTo(width, runLayout.topBarH + 0.5);
-    this.graphics.strokePath();
-    this.graphics.beginPath();
-    this.graphics.moveTo(0, height - runLayout.bottomBarH - 0.5);
-    this.graphics.lineTo(width, height - runLayout.bottomBarH - 0.5);
-    this.graphics.strokePath();
-    this.graphics.lineStyle(1.2, 0x3c5f7c, 0.26);
-    this.graphics.strokeRoundedRect(runLayout.arenaX, runLayout.arenaY, runLayout.arenaW, runLayout.arenaH, 20);
+    const centerX = runLayout.arenaX + runLayout.arenaW * 0.5;
+    const centerY = runLayout.arenaY + runLayout.arenaH * 0.5;
+    const glowMaxW = runLayout.arenaW * 1.28;
+    const glowMaxH = runLayout.arenaH * 1.22;
+    const glowMinW = runLayout.arenaW * 0.14;
+    const glowMinH = runLayout.arenaH * 0.12;
+    const glowLayers = 96;
+    for (let i = glowLayers - 1; i >= 0; i -= 1) {
+      const t = i / (glowLayers - 1);
+      const falloff = 1 - t;
+      const alpha = 0.033 * Math.pow(falloff, 2.25);
+      const glowW = glowMinW + (glowMaxW - glowMinW) * t;
+      const glowH = glowMinH + (glowMaxH - glowMinH) * t;
+      this.graphics.fillStyle(0x7b4e29, alpha);
+      this.graphics.fillEllipse(centerX, centerY, glowW, glowH);
+    }
+    const innerLayers = 56;
+    for (let i = innerLayers - 1; i >= 0; i -= 1) {
+      const t = i / (innerLayers - 1);
+      const falloff = 1 - t;
+      const alpha = 0.017 * Math.pow(falloff, 1.9);
+      const glowW = runLayout.arenaW * (0.08 + t * 0.46);
+      const glowH = runLayout.arenaH * (0.08 + t * 0.44);
+      this.graphics.fillStyle(0xa56f3c, alpha);
+      this.graphics.fillEllipse(centerX, centerY, glowW, glowH);
+    }
   }
 
   drawHud(snapshot, width, runLayout) {
@@ -902,17 +1339,22 @@ export class RunScene extends Phaser.Scene {
     ctx.drawImage(sourceImage, 0, 0);
     const image = ctx.getImageData(0, 0, sourceW, sourceH);
     const pixels = image.data;
+    const alphaScale = Phaser.Math.Clamp(RUN_WATERMARK_ALPHA, 0, 1);
+    const targetPeakAlpha = Math.round(255 * alphaScale);
     for (let i = 0; i < pixels.length; i += 4) {
       const alpha = pixels[i + 3];
-      if (alpha === 0) {
+      if (alpha <= 0) {
         continue;
       }
-      const boosted = Math.min(255, Math.round(alpha * 9 + 18));
-      const strength = boosted / 255;
-      pixels[i] = Math.round(188 + strength * 56);
-      pixels[i + 1] = Math.round(208 + strength * 44);
-      pixels[i + 2] = Math.round(234 + strength * 20);
-      pixels[i + 3] = boosted;
+      // Recolor dark source marks into warm light marks; keep source alpha unchanged.
+      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
+      const strength = 0.45 + luminance * 0.55;
+      pixels[i] = Math.round(214 * strength + 26);
+      pixels[i + 1] = Math.round(182 * strength + 22);
+      pixels[i + 2] = Math.round(140 * strength + 18);
+      // Boost faint source pixels so the configured opacity reads closer to the requested value.
+      const normalized = Phaser.Math.Clamp(alpha / 255, 0, 1);
+      pixels[i + 3] = Math.round(targetPeakAlpha * Math.pow(normalized, 0.4));
     }
     ctx.putImageData(image, 0, 0);
     canvasTexture.refresh();
@@ -948,7 +1390,7 @@ export class RunScene extends Phaser.Scene {
     }, { x: 1, y: 0.5 });
     this.drawText(
       "enemy-type",
-      `${String(enemy.type || "normal").toLowerCase()} encounter`,
+      this.getEncounterTypeLabel(enemy.type),
       enemyInfoRight,
       enemyTypeY,
       {
@@ -978,8 +1420,9 @@ export class RunScene extends Phaser.Scene {
     );
     this.drawEnemyAvatar(enemy, enemyAvatarX, enemyAvatarY, enemyAvatarW, enemyAvatarH);
 
-    const playerAvatarW = compact ? 78 : 104;
-    const playerAvatarH = compact ? 92 : 122;
+    const playerAvatarSize = compact ? 84 : 110;
+    const playerAvatarW = playerAvatarSize;
+    const playerAvatarH = playerAvatarSize;
     const playerAvatarX = runLayout.sidePad;
     const playerAvatarY = runLayout.arenaBottom - playerAvatarH - (compact ? 12 : 14);
     this.drawPlayerAvatar(playerAvatarX, playerAvatarY, playerAvatarW, playerAvatarH);
@@ -1160,16 +1603,39 @@ export class RunScene extends Phaser.Scene {
   }
 
   drawPlayerAvatar(x, y, width, height) {
+    const shake = this.getAvatarShakeOffset("player");
+    const drawX = x + shake.x;
+    const drawY = y + shake.y;
     this.graphics.fillStyle(0x2a2017, 1);
-    this.graphics.fillRoundedRect(x, y, width, height, 18);
+    this.graphics.fillRoundedRect(drawX, drawY, width, height, 18);
     this.graphics.lineStyle(1.8, 0x8a6940, 1);
-    this.graphics.strokeRoundedRect(x, y, width, height, 18);
+    this.graphics.strokeRoundedRect(drawX, drawY, width, height, 18);
 
-    const inset = 10;
-    const innerX = x + inset;
-    const innerY = y + inset;
+    const inset = 8;
+    const innerX = drawX + inset;
+    const innerY = drawY + inset;
     const innerW = width - inset * 2;
     const innerH = height - inset * 2;
+    const playerTextureKey = this.textures.exists(RUN_PLAYER_AVATAR_KEY) ? RUN_PLAYER_AVATAR_KEY : "";
+    if (playerTextureKey && this.playerPortrait) {
+      if (this.playerPortraitMaskShape) {
+        this.playerPortraitMaskShape.clear();
+        this.playerPortraitMaskShape.fillStyle(0xffffff, 1);
+        this.playerPortraitMaskShape.fillRoundedRect(innerX, innerY, innerW, innerH, 10);
+      }
+      const cover = this.coverSizeForTexture(playerTextureKey, innerW, innerH);
+      this.playerPortrait
+        .setTexture(playerTextureKey)
+        .setDisplaySize(cover.width, cover.height)
+        .setPosition(drawX + width * 0.5, drawY + height * 0.5)
+        .setVisible(true);
+      this.graphics.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.08, 0.08, 0.02, 0.12);
+      this.graphics.fillRoundedRect(innerX, innerY, innerW, innerH, 10);
+      return;
+    }
+    if (this.playerPortrait) {
+      this.playerPortrait.setVisible(false);
+    }
     this.graphics.fillStyle(0xcfc0a7, 1);
     this.graphics.fillCircle(innerX + innerW * 0.5, innerY + innerH * 0.3, innerW * 0.2);
     this.graphics.fillRoundedRect(innerX + innerW * 0.17, innerY + innerH * 0.48, innerW * 0.66, innerH * 0.44, 10);
@@ -1209,18 +1675,21 @@ export class RunScene extends Phaser.Scene {
   }
 
   drawEnemyAvatar(enemy, x, y, width, height) {
+    const shake = this.getAvatarShakeOffset("enemy");
+    const drawX = x + shake.x;
+    const drawY = y + shake.y;
     this.graphics.fillStyle(0x1c2f43, 0.95);
-    this.graphics.fillRoundedRect(x, y, width, height, 14);
+    this.graphics.fillRoundedRect(drawX, drawY, width, height, 14);
     this.graphics.lineStyle(1.8, 0x516f8f, 0.5);
-    this.graphics.strokeRoundedRect(x, y, width, height, 14);
+    this.graphics.strokeRoundedRect(drawX, drawY, width, height, 14);
 
     const pulse = Math.sin(this.time.now * 0.004) * 0.5 + 0.5;
     this.graphics.lineStyle(2.1, this.enemyAccent(enemy?.type), 0.26 + pulse * 0.22);
-    this.graphics.strokeRoundedRect(x - 1, y - 1, width + 2, height + 2, 15);
+    this.graphics.strokeRoundedRect(drawX - 1, drawY - 1, width + 2, height + 2, 15);
 
     const innerPad = 6;
-    const innerX = x + innerPad;
-    const innerY = y + innerPad;
+    const innerX = drawX + innerPad;
+    const innerY = drawY + innerPad;
     const innerW = Math.max(12, width - innerPad * 2);
     const innerH = Math.max(12, height - innerPad * 2);
 
@@ -1242,7 +1711,7 @@ export class RunScene extends Phaser.Scene {
       }
       this.graphics.fillStyle(0x1a3146, 0.92);
       this.graphics.fillRoundedRect(innerX, innerY, innerW, innerH, 10);
-      this.drawText("enemy-avatar-fallback", "?", x + width * 0.5, y + height * 0.56, {
+      this.drawText("enemy-avatar-fallback", "?", drawX + width * 0.5, drawY + height * 0.56, {
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
         fontSize: "52px",
         color: "#bed6eb",
@@ -1254,7 +1723,7 @@ export class RunScene extends Phaser.Scene {
     this.enemyPortrait.setTexture(textureKey);
     const cover = this.coverSizeForTexture(textureKey, innerW, innerH);
     this.enemyPortrait.setDisplaySize(cover.width, cover.height);
-    this.enemyPortrait.setPosition(x + width * 0.5, y + height * 0.5 + bob);
+    this.enemyPortrait.setPosition(drawX + width * 0.5, drawY + height * 0.5 + bob);
     this.enemyPortrait.setVisible(true);
 
     this.graphics.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.1, 0.1, 0.02, 0.13);
@@ -1455,19 +1924,48 @@ export class RunScene extends Phaser.Scene {
     const toY = targetSide === "enemy"
       ? layout.enemyAvatarY + layout.enemyAvatarH * 0.5
       : layout.playerAvatarY + layout.playerAvatarH * 0.5;
-    const controlX = Phaser.Math.Linear(fromX, toX, 0.5) + Phaser.Math.Between(-56, 56);
-    const controlY = Math.min(fromY, toY) - Phaser.Math.Between(52, 128);
+    const controlX = Phaser.Math.Linear(fromX, toX, 0.5) + Phaser.Math.Between(-88, 88);
+    const controlY = Math.min(fromY, toY) - Phaser.Math.Between(84, 176);
     const compact = this.isCompactLayout(width);
+    const travelDuration = compact ? 430 : 540;
+    this.playRunSfx("fireballLaunch", attackerSide, targetSide, safeAmount);
 
-    const halo = this.add.circle(0, 0, compact ? 11 : 14, 0xffa54d, 0.38).setBlendMode(Phaser.BlendModes.ADD);
-    const shell = this.add.circle(0, 0, compact ? 7 : 9, 0xff6a2c, 0.96).setBlendMode(Phaser.BlendModes.ADD);
-    const core = this.add.circle(0, 0, compact ? 3 : 4, 0xfff3c2, 1).setBlendMode(Phaser.BlendModes.ADD);
-    const fireball = this.add.container(fromX, fromY, [halo, shell, core]).setDepth(120);
+    const glow = this.add
+      .image(0, 0, RUN_FIRE_GLOW_PARTICLE_KEY)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xff9d34)
+      .setAlpha(0.92)
+      .setScale(compact ? 1.06 : 1.32);
+    const flame = this.add
+      .image(0, 0, RUN_FIRE_CORE_PARTICLE_KEY)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xff6a22)
+      .setAlpha(0.98)
+      .setScale(compact ? 1.24 : 1.56);
+    const hotCore = this.add
+      .image(0, 0, RUN_FIRE_CORE_PARTICLE_KEY)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xffd65a)
+      .setAlpha(0.96)
+      .setScale(compact ? 0.72 : 0.9);
+    const ember = this.add
+      .image(-(compact ? 14 : 18), compact ? 0 : 1, RUN_FIRE_CORE_PARTICLE_KEY)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xff3d12)
+      .setAlpha(0.7)
+      .setScale(compact ? 1 : 1.22);
+    const streak = this.add
+      .image(-(compact ? 26 : 34), 0, RUN_FIRE_GLOW_PARTICLE_KEY)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setTint(0xff6a1f)
+      .setAlpha(0.62)
+      .setScale(compact ? 0.95 : 1.18);
+    const fireball = this.add.container(fromX, fromY, [streak, glow, flame, hotCore, ember]).setDepth(122);
     this.tweens.add({
-      targets: halo,
-      scaleX: 1.34,
-      scaleY: 1.34,
-      duration: 92,
+      targets: [glow, flame, hotCore],
+      scaleX: compact ? 1.22 : 1.34,
+      scaleY: compact ? 1.22 : 1.34,
+      duration: 96,
       yoyo: true,
       repeat: -1,
       ease: "Sine.easeInOut",
@@ -1476,58 +1974,100 @@ export class RunScene extends Phaser.Scene {
     this.tweens.addCounter({
       from: 0,
       to: 1,
-      duration: compact ? 360 : 430,
-      ease: "Cubic.easeInOut",
+      duration: travelDuration,
+      ease: "Cubic.easeIn",
       onUpdate: (tween) => {
         const t = tween.getValue();
         const inv = 1 - t;
         const x = inv * inv * fromX + 2 * inv * t * controlX + t * t * toX;
         const y = inv * inv * fromY + 2 * inv * t * controlY + t * t * toY;
         fireball.setPosition(x, y);
-        const pulse = 1 + Math.sin(t * Math.PI * 12) * 0.06;
-        fireball.setScale((1.12 - t * 0.26) * pulse);
+        const pulse = 1 + Math.sin(t * Math.PI * 18) * 0.1;
+        fireball.setScale((compact ? 1.88 : 2.28) * (1 - t * 0.2) * pulse);
+        fireball.setRotation(Phaser.Math.Angle.Between(fromX, fromY, x, y) + Math.sin(t * Math.PI * 9) * 0.14);
         if (this.fireTrailEmitter) {
-          if (typeof this.fireTrailEmitter.setParticleTint === "function") {
-            this.fireTrailEmitter.setParticleTint(0xffe5b8);
-          }
-          this.fireTrailEmitter.explode(2, x, y);
+          this.fireTrailEmitter.explode(compact ? 8 : 14, x, y);
         }
       },
       onComplete: () => {
         if (this.fireTrailEmitter) {
-          if (typeof this.fireTrailEmitter.setParticleTint === "function") {
-            this.fireTrailEmitter.setParticleTint(0xffc982);
-          }
-          this.fireTrailEmitter.explode(compact ? 24 : 34, toX, toY);
+          this.fireTrailEmitter.explode(compact ? 52 : 88, toX, toY);
+        }
+        if (this.fireImpactEmitter) {
+          this.fireImpactEmitter.explode(compact ? 120 : 186, toX, toY);
         }
         if (this.resultEmitter) {
-          if (typeof this.resultEmitter.setParticleTint === "function") {
-            this.resultEmitter.setParticleTint(0xffc982);
-          }
-          this.resultEmitter.explode(compact ? 16 : 22, toX, toY);
+          this.resultEmitter.explode(compact ? 52 : 76, toX, toY);
         }
-        const ring = this.add.circle(toX, toY, compact ? 14 : 18, 0xffc982, 0.36).setDepth(119).setBlendMode(Phaser.BlendModes.ADD);
-        ring.setStrokeStyle(compact ? 2 : 3, 0xfff0c5, 0.82);
+        this.playRunSfx("fireballImpact", safeAmount, targetSide);
+        this.triggerAvatarShake(targetSide, compact ? 7.5 : 10, compact ? 220 : 280);
+        const blast = this.add
+          .image(toX, toY, RUN_FIRE_GLOW_PARTICLE_KEY)
+          .setDepth(130)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(0xff9f2f)
+          .setAlpha(0.94)
+          .setScale(compact ? 0.72 : 0.94);
+        const coreBlast = this.add
+          .image(toX, toY, RUN_FIRE_CORE_PARTICLE_KEY)
+          .setDepth(131)
+          .setBlendMode(Phaser.BlendModes.ADD)
+          .setTint(0xffe16e)
+          .setAlpha(0.88)
+          .setScale(compact ? 0.58 : 0.74);
+        const ring = this.add.circle(toX, toY, compact ? 22 : 30, 0xffad46, 0.24).setDepth(129).setBlendMode(Phaser.BlendModes.ADD);
+        ring.setStrokeStyle(compact ? 3.2 : 4.2, 0xffca74, 0.8);
+        const ringInner = this.add.circle(toX, toY, compact ? 10 : 14, 0xffdd9b, 0.34).setDepth(130).setBlendMode(Phaser.BlendModes.ADD);
+        ringInner.setStrokeStyle(compact ? 2 : 2.8, 0xfff0ca, 0.74);
+        this.tweens.add({
+          targets: blast,
+          scaleX: compact ? 3.7 : 4.8,
+          scaleY: compact ? 3.7 : 4.8,
+          alpha: 0,
+          duration: compact ? 260 : 340,
+          ease: "Cubic.easeOut",
+          onComplete: () => blast.destroy(),
+        });
+        this.tweens.add({
+          targets: coreBlast,
+          scaleX: compact ? 2.6 : 3.4,
+          scaleY: compact ? 2.6 : 3.4,
+          alpha: 0,
+          duration: compact ? 220 : 280,
+          ease: "Cubic.easeOut",
+          onComplete: () => coreBlast.destroy(),
+        });
         this.tweens.add({
           targets: ring,
-          scaleX: compact ? 2.2 : 2.5,
-          scaleY: compact ? 2.2 : 2.5,
+          scaleX: compact ? 3.8 : 4.8,
+          scaleY: compact ? 3.8 : 4.8,
           alpha: 0,
-          duration: 220,
+          duration: compact ? 240 : 300,
           ease: "Cubic.easeOut",
           onComplete: () => ring.destroy(),
         });
-        this.cameras.main.shake(compact ? 70 : 100, compact ? 0.0015 : 0.0021, true);
+        this.tweens.add({
+          targets: ringInner,
+          scaleX: compact ? 3 : 3.9,
+          scaleY: compact ? 3 : 3.9,
+          alpha: 0,
+          duration: compact ? 220 : 280,
+          ease: "Cubic.easeOut",
+          onComplete: () => ringInner.destroy(),
+        });
+        this.cameras.main.shake(compact ? 180 : 240, compact ? 0.0033 : 0.0043, true);
+        this.cameras.main.flash(compact ? 140 : 180, 255, 140, 42, false);
         fireball.destroy();
 
         const damageXRaw = targetSide === "enemy"
-          ? layout.enemyHpX + layout.enemyHpW + (compact ? 14 : 20)
-          : layout.playerInfoLeft + layout.playerInfoWidth + (compact ? 14 : 20);
-        const damageY = targetSide === "enemy"
-          ? layout.enemyHpY + layout.enemyHpH * 0.5
-          : layout.playerHpY + layout.playerHpH * 0.5;
+          ? layout.enemyHpX + layout.enemyHpW * 0.5
+          : layout.playerHpX + layout.playerHpW * 0.5;
+        const damageYRaw = targetSide === "enemy"
+          ? layout.enemyHpY - (compact ? 12 : 16)
+          : layout.playerHpY - (compact ? 12 : 16);
         const damageX = Phaser.Math.Clamp(Math.round(damageXRaw), 44, width - 44);
-        this.spawnDamageNumber(targetSide, safeAmount, damageX, Math.round(damageY));
+        const damageY = Phaser.Math.Clamp(Math.round(damageYRaw), 24, height - 24);
+        this.spawnDamageNumber(targetSide, safeAmount, damageX, damageY);
       },
     });
   }
@@ -1542,7 +2082,7 @@ export class RunScene extends Phaser.Scene {
       fontStyle: "700",
     });
     node.setOrigin(0.5, 0.5);
-    node.setDepth(125);
+    node.setDepth(460);
     node.setStroke("#1d0a0d", compact ? 4 : 6);
     node.setShadow(0, 0, "#000000", compact ? 6 : 9, true, true);
     node.setScale(0.72);
@@ -1603,34 +2143,9 @@ export class RunScene extends Phaser.Scene {
       const node = this.getCardNode(key);
       node.container.setDepth((prefix.startsWith("enemy") ? 44 : 56) + idx);
       node.container.setPosition(drawCenterX, drawCenterY);
-      node.shadow.clear();
-      const shadowRadius = Math.max(8, 10 * scale);
-      const shadowSpread = Math.max(5, 7 * scale);
-      const shadowOffsetX = -Math.max(2, Math.round(4 * scale));
-      node.shadow.fillStyle(0x000000, 0.03);
-      node.shadow.fillRoundedRect(
-        -drawW * 0.5 - shadowSpread * 1.8 + shadowOffsetX,
-        -drawH * 0.5 - shadowSpread * 0.34,
-        drawW + shadowSpread * 2.7,
-        drawH + shadowSpread * 0.68,
-        shadowRadius + shadowSpread * 0.42
-      );
-      node.shadow.fillStyle(0x000000, 0.045);
-      node.shadow.fillRoundedRect(
-        -drawW * 0.5 - shadowSpread * 1.2 + shadowOffsetX,
-        -drawH * 0.5 - shadowSpread * 0.24,
-        drawW + shadowSpread * 2.05,
-        drawH + shadowSpread * 0.48,
-        shadowRadius + shadowSpread * 0.32
-      );
-      node.shadow.fillStyle(0x000000, 0.06);
-      node.shadow.fillRoundedRect(
-        -drawW * 0.5 - shadowSpread * 0.72 + shadowOffsetX,
-        -drawH * 0.5 - shadowSpread * 0.12,
-        drawW + shadowSpread * 1.3,
-        drawH + shadowSpread * 0.24,
-        shadowRadius + shadowSpread * 0.22
-      );
+      node.shadow.setDisplaySize(drawW * 1.1, drawH * 1.08);
+      node.shadow.setPosition(-drawW * 0.25, 0);
+      node.shadow.setAlpha(0.26);
       node.face.clear();
       node.face.fillStyle(card.hidden ? 0x2a445c : 0xf7fbff, 1);
       node.face.fillRoundedRect(-drawW * 0.5, -drawH * 0.5, drawW, drawH, Math.max(8, 10 * scale));
@@ -1651,7 +2166,7 @@ export class RunScene extends Phaser.Scene {
       const red = suit === "H" || suit === "D";
       const color = card.hidden ? "#d6e9f8" : red ? "#b44c45" : "#231f1b";
       node.label.setText(text);
-      node.label.setColor(color);
+      node.label.setColor(this.toBrownThemeColorString(color));
     });
 
     this.cardNodes.forEach((node, key) => {
@@ -1667,8 +2182,12 @@ export class RunScene extends Phaser.Scene {
       return node;
     }
     const container = this.add.container(0, 0);
-    const shadow = this.add.graphics();
-    const face = this.add.graphics();
+    const shadow = this.add
+      .image(0, 0, RUN_CARD_SHADOW_KEY)
+      .setOrigin(0.5, 0.5)
+      .setBlendMode(Phaser.BlendModes.NORMAL)
+      .setAlpha(0.24);
+    const face = this.applyBrownThemeToGraphics(this.add.graphics());
     const label = this.add
       .text(0, 0, "", {
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
@@ -1785,7 +2304,7 @@ export class RunScene extends Phaser.Scene {
       const textX = avatarOuterX + avatarOuter + (compact ? 8 : 14);
       const textW = Math.max(70, modalW - (textX - x) - (compact ? 10 : 16));
       const title = String(enemy.name || "ENEMY").toUpperCase();
-      const encounterType = `${String(enemy.type || "normal").toLowerCase()} encounter`;
+      const encounterType = this.getEncounterTypeLabel(enemy.type);
       const bodyText = intro.text || "";
       const typeCursor = !intro.ready && Math.floor(this.time.now / 220) % 2 === 0 ? "|" : "";
       const titleSize = Math.round((compact ? 10 : 24) * introScale);
@@ -2128,12 +2647,13 @@ export class RunScene extends Phaser.Scene {
   }
 
   drawText(key, value, x, y, style, origin = { x: 0.5, y: 0.5 }) {
+    const themedStyle = this.toBrownThemeTextStyle(style);
     let node = this.textNodes.get(key);
     if (!node) {
-      node = this.add.text(x, y, value, style).setOrigin(origin.x, origin.y);
+      node = this.add.text(x, y, value, themedStyle).setOrigin(origin.x, origin.y);
       this.textNodes.set(key, node);
     } else {
-      node.setStyle(style);
+      node.setStyle(themedStyle);
       node.setOrigin(origin.x, origin.y);
     }
     node.setPosition(x, y);

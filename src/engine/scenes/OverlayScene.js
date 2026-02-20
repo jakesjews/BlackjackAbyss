@@ -7,6 +7,11 @@ import { createModalCloseButton, drawModalBackdrop, placeModalCloseButton } from
 const BUTTON_STYLE = ACTION_BUTTON_STYLE;
 const COLLECTION_ROW_GAP = 9;
 const COLLECTION_ROW_HEIGHT = 56;
+const OVERLAY_THEME_BLUE_HUE_MIN = 170;
+const OVERLAY_THEME_BLUE_HUE_MAX = 255;
+const OVERLAY_THEME_BROWN_HUE = 30 / 360;
+const OVERLAY_THEME_SATURATION_FLOOR = 0.18;
+const OVERLAY_THEME_SATURATION_SCALE = 0.74;
 
 export class OverlayScene extends Phaser.Scene {
   constructor() {
@@ -34,11 +39,11 @@ export class OverlayScene extends Phaser.Scene {
   }
 
   create() {
-    this.cameras.main.setBackgroundColor("#081420");
+    this.cameras.main.setBackgroundColor("#171006");
     this.cameras.main.setAlpha(1);
-    this.graphics = this.add.graphics();
+    this.graphics = this.applyBrownThemeToGraphics(this.add.graphics());
     this.collectionListContainer = this.add.container(0, 0);
-    this.collectionMaskShape = this.make.graphics({ x: 0, y: 0, add: false });
+    this.collectionMaskShape = this.applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }));
     this.collectionMask = this.collectionMaskShape.createGeometryMask();
     this.collectionListContainer.setMask(this.collectionMask);
     this.collectionListContainer.setVisible(false);
@@ -260,6 +265,132 @@ export class OverlayScene extends Phaser.Scene {
     return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
   }
 
+  applyBrownThemeToGraphics(graphics) {
+    if (!graphics || graphics.__overlayBrownThemePatched) {
+      return graphics;
+    }
+    const fillStyle = graphics.fillStyle;
+    graphics.fillStyle = (color, alpha) => fillStyle.call(graphics, this.toBrownThemeColorNumber(color), alpha);
+    const lineStyle = graphics.lineStyle;
+    graphics.lineStyle = (lineWidth, color, alpha) =>
+      lineStyle.call(graphics, lineWidth, this.toBrownThemeColorNumber(color), alpha);
+    if (typeof graphics.fillGradientStyle === "function") {
+      const fillGradientStyle = graphics.fillGradientStyle;
+      graphics.fillGradientStyle = (topLeft, topRight, bottomLeft, bottomRight, alphaTopLeft, alphaTopRight, alphaBottomLeft, alphaBottomRight) =>
+        fillGradientStyle.call(
+          graphics,
+          this.toBrownThemeColorNumber(topLeft),
+          this.toBrownThemeColorNumber(topRight),
+          this.toBrownThemeColorNumber(bottomLeft),
+          this.toBrownThemeColorNumber(bottomRight),
+          alphaTopLeft,
+          alphaTopRight,
+          alphaBottomLeft,
+          alphaBottomRight
+        );
+    }
+    graphics.__overlayBrownThemePatched = true;
+    return graphics;
+  }
+
+  toBrownThemeTextStyle(style) {
+    if (!style || typeof style !== "object") {
+      return style;
+    }
+    const themed = { ...style };
+    if (typeof themed.color === "string") {
+      themed.color = this.toBrownThemeColorString(themed.color);
+    }
+    if (typeof themed.stroke === "string") {
+      themed.stroke = this.toBrownThemeColorString(themed.stroke);
+    }
+    if (typeof themed.backgroundColor === "string") {
+      themed.backgroundColor = this.toBrownThemeColorString(themed.backgroundColor);
+    }
+    return themed;
+  }
+
+  toBrownThemeColorString(value) {
+    if (typeof value !== "string") {
+      return value;
+    }
+    const match = value.trim().match(/^#([0-9a-fA-F]{6})$/);
+    if (!match) {
+      return value;
+    }
+    const input = parseInt(match[1], 16);
+    const output = this.toBrownThemeColorNumber(input);
+    return `#${output.toString(16).padStart(6, "0")}`;
+  }
+
+  toBrownThemeColorNumber(value) {
+    if (!Number.isFinite(value)) {
+      return value;
+    }
+    const color = Phaser.Display.Color.IntegerToColor(value);
+    const hsl = this.rgbToHsl(color.red, color.green, color.blue);
+    const hueDeg = (Number(hsl.h) || 0) * 360;
+    const sat = Number(hsl.s) || 0;
+    const light = Number(hsl.l) || 0;
+    if (sat < 0.08 || hueDeg < OVERLAY_THEME_BLUE_HUE_MIN || hueDeg > OVERLAY_THEME_BLUE_HUE_MAX) {
+      return value;
+    }
+    const shiftedSat = Phaser.Math.Clamp(Math.max(OVERLAY_THEME_SATURATION_FLOOR, sat * OVERLAY_THEME_SATURATION_SCALE), 0, 1);
+    const shiftedLight = Phaser.Math.Clamp(light * 0.98 + 0.02, 0, 1);
+    const shifted = this.hslToRgb(OVERLAY_THEME_BROWN_HUE, shiftedSat, shiftedLight);
+    return Phaser.Display.Color.GetColor(shifted.r, shifted.g, shifted.b);
+  }
+
+  rgbToHsl(r, g, b) {
+    const rn = Phaser.Math.Clamp((Number(r) || 0) / 255, 0, 1);
+    const gn = Phaser.Math.Clamp((Number(g) || 0) / 255, 0, 1);
+    const bn = Phaser.Math.Clamp((Number(b) || 0) / 255, 0, 1);
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    const delta = max - min;
+    let h = 0;
+    let s = 0;
+    const l = (max + min) * 0.5;
+    if (delta > 0) {
+      s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+      if (max === rn) {
+        h = (gn - bn) / delta + (gn < bn ? 6 : 0);
+      } else if (max === gn) {
+        h = (bn - rn) / delta + 2;
+      } else {
+        h = (rn - gn) / delta + 4;
+      }
+      h /= 6;
+    }
+    return { h, s, l };
+  }
+
+  hslToRgb(h, s, l) {
+    const hue = ((Number(h) || 0) % 1 + 1) % 1;
+    const sat = Phaser.Math.Clamp(Number(s) || 0, 0, 1);
+    const light = Phaser.Math.Clamp(Number(l) || 0, 0, 1);
+    if (sat === 0) {
+      const v = Math.round(light * 255);
+      return { r: v, g: v, b: v };
+    }
+    const q = light < 0.5 ? light * (1 + sat) : light + sat - light * sat;
+    const p = 2 * light - q;
+    const hue2rgb = (t) => {
+      let tt = t;
+      if (tt < 0) tt += 1;
+      if (tt > 1) tt -= 1;
+      if (tt < 1 / 6) return p + (q - p) * 6 * tt;
+      if (tt < 1 / 2) return q;
+      if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
+      return p;
+    };
+    return {
+      r: Math.round(hue2rgb(hue + 1 / 3) * 255),
+      g: Math.round(hue2rgb(hue) * 255),
+      b: Math.round(hue2rgb(hue - 1 / 3) * 255),
+    };
+  }
+
   setCollectionScroll(next) {
     this.collectionScrollTarget = Phaser.Math.Clamp(Number(next) || 0, 0, this.collectionScrollMax);
   }
@@ -405,7 +536,9 @@ export class OverlayScene extends Phaser.Scene {
       card.thumbFrame.clear();
       card.thumbFrame.fillStyle(0x0f1f2d, 0.95);
       card.thumbFrame.fillRoundedRect(12, 7, 34, 42, 10);
-      const thumbBorderColor = Phaser.Display.Color.HexStringToColor(entry.rarityColor || "#8ca4ba").color;
+      const thumbBorderColor = this.toBrownThemeColorNumber(
+        Phaser.Display.Color.HexStringToColor(entry.rarityColor || "#8ca4ba").color
+      );
       card.thumbFrame.lineStyle(1, thumbBorderColor, entry.unlocked ? 0.42 : 0.22);
       card.thumbFrame.strokeRoundedRect(12, 7, 34, 42, 10);
 
@@ -444,7 +577,7 @@ export class OverlayScene extends Phaser.Scene {
       card.rarityChip.fillStyle(0x123046, entry.unlocked ? 0.88 : 0.58);
       card.rarityChip.fillRoundedRect(rarityChipLeft, badgeTop, rarityChipW, 18, 9);
       card.rarity.setPosition(rarityChipLeft + rarityChipW * 0.5, badgeTop + 9);
-      card.rarity.setColor(entry.unlocked ? (entry.rarityColor || "#b7c9d8") : "#96a7b5");
+      card.rarity.setColor(this.toBrownThemeColorString(entry.unlocked ? (entry.rarityColor || "#b7c9d8") : "#96a7b5"));
 
       const nameX = 58;
       const nameSpace = Math.max(100, ownedChipLeft - 10 - nameX);
@@ -461,10 +594,10 @@ export class OverlayScene extends Phaser.Scene {
       card.desc.setText(compactDesc);
       card.desc.setWordWrapWidth(descW, false);
       card.desc.setPosition(58, 36);
-      card.name.setColor(entry.unlocked ? "#eef6ff" : "#b5c2cf");
-      card.desc.setColor(entry.unlocked ? "#c6d8e8" : "#96a8b7");
-      card.owned.setColor(entry.copies > 0 ? "#f4d598" : "#8ea4b8");
-      card.thumbGlyph.setColor(entry.unlocked ? "#f0f8ff" : "#8ea3b7");
+      card.name.setColor(this.toBrownThemeColorString(entry.unlocked ? "#eef6ff" : "#b5c2cf"));
+      card.desc.setColor(this.toBrownThemeColorString(entry.unlocked ? "#c6d8e8" : "#96a8b7"));
+      card.owned.setColor(this.toBrownThemeColorString(entry.copies > 0 ? "#f4d598" : "#8ea4b8"));
+      card.thumbGlyph.setColor(this.toBrownThemeColorString(entry.unlocked ? "#f0f8ff" : "#8ea3b7"));
       card.container.setVisible(visible);
     });
 
@@ -583,44 +716,44 @@ export class OverlayScene extends Phaser.Scene {
 
     entries.forEach((entry) => {
       const container = this.add.container(0, 0);
-      const bg = this.add.graphics();
-      const thumbFrame = this.add.graphics();
+      const bg = this.applyBrownThemeToGraphics(this.add.graphics());
+      const thumbFrame = this.applyBrownThemeToGraphics(this.add.graphics());
       const thumbImage = this.add.image(29, 28, "__WHITE").setVisible(false);
       thumbImage.setDisplaySize(32, 40);
       thumbImage.setAlpha(0.98);
       const thumbGlyph = this.add
-        .text(29, 28, "◆", {
+        .text(29, 28, "◆", this.toBrownThemeTextStyle({
           fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
           fontSize: "14px",
           color: "#f0f8ff",
           stroke: "#0d1520",
           strokeThickness: 2,
           fontStyle: "700",
-        })
+        }))
         .setOrigin(0.5, 0.5);
       const rarity = this.add
-        .text(0, 0, "", {
+        .text(0, 0, "", this.toBrownThemeTextStyle({
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "9px",
           color: "#9aa9b8",
           stroke: "#0b121a",
           strokeThickness: 1,
           fontStyle: "700",
-        })
+        }))
         .setOrigin(0.5, 0.5);
-      const rarityChip = this.add.graphics();
+      const rarityChip = this.applyBrownThemeToGraphics(this.add.graphics());
       const name = this.add
-        .text(0, 0, "", {
+        .text(0, 0, "", this.toBrownThemeTextStyle({
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: "14px",
           color: "#ecf4ff",
           stroke: "#0a121a",
           strokeThickness: 1,
-        })
+        }))
         .setOrigin(0, 0.5)
         .setFontStyle("700");
       const desc = this.add
-        .text(0, 0, "", {
+        .text(0, 0, "", this.toBrownThemeTextStyle({
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "10px",
           color: "#e2f1ff",
@@ -628,18 +761,18 @@ export class OverlayScene extends Phaser.Scene {
           strokeThickness: 1,
           align: "left",
           wordWrap: { width: 260 },
-        })
+        }))
         .setOrigin(0, 0.5);
-      const ownedChip = this.add.graphics();
+      const ownedChip = this.applyBrownThemeToGraphics(this.add.graphics());
       const owned = this.add
-        .text(0, 0, "", {
+        .text(0, 0, "", this.toBrownThemeTextStyle({
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "10px",
           color: "#90a9bf",
           stroke: "#0a121a",
           strokeThickness: 1,
           fontStyle: "700",
-        })
+        }))
         .setOrigin(0.5, 0.5);
 
       rarity.setPosition(96, 15);
@@ -699,12 +832,13 @@ export class OverlayScene extends Phaser.Scene {
   }
 
   drawText(key, value, x, y, style, origin = { x: 0.5, y: 0.5 }) {
+    const themedStyle = this.toBrownThemeTextStyle(style);
     let node = this.textNodes.get(key);
     if (!node) {
-      node = this.add.text(x, y, value, style).setOrigin(origin.x, origin.y);
+      node = this.add.text(x, y, value, themedStyle).setOrigin(origin.x, origin.y);
       this.textNodes.set(key, node);
     } else {
-      node.setStyle(style);
+      node.setStyle(themedStyle);
       node.setOrigin(origin.x, origin.y);
     }
     node.setPosition(x, y);

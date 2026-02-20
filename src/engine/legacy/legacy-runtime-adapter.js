@@ -1,3 +1,5 @@
+const EXTERNAL_RENDER_MODES = new Set(["menu", "playing", "reward", "shop", "collection", "gameover", "victory"]);
+
 export class LegacyRuntimeAdapter {
   constructor() {
     this.game = null;
@@ -10,16 +12,14 @@ export class LegacyRuntimeAdapter {
     this.rewardApi = null;
     this.shopApi = null;
     this.overlayApi = null;
-    this.externalRenderModes = new Set();
+    this.externalRenderModes = new Set(EXTERNAL_RENDER_MODES);
     this.renderCanvas = null;
-    this.renderContext = null;
     this.canvasProxy = null;
     this.bridge = {
       setStepHandler: (handler) => {
         this.stepHandler = typeof handler === "function" ? handler : null;
       },
       getCanvas: () => this.canvasProxy || this.game?.canvas || null,
-      getRenderCanvas: () => this.renderCanvas || this.game?.canvas || null,
       setInputHandlers: (handlers) => {
         if (!handlers || typeof handlers !== "object") {
           this.inputHandlers = null;
@@ -68,6 +68,8 @@ export class LegacyRuntimeAdapter {
           split: typeof api.split === "function" ? api.split : null,
           deal: typeof api.deal === "function" ? api.deal : null,
           confirmIntro: typeof api.confirmIntro === "function" ? api.confirmIntro : null,
+          fireballLaunch: typeof api.fireballLaunch === "function" ? api.fireballLaunch : null,
+          fireballImpact: typeof api.fireballImpact === "function" ? api.fireballImpact : null,
           goHome: typeof api.goHome === "function" ? api.goHome : null,
         };
       },
@@ -118,17 +120,6 @@ export class LegacyRuntimeAdapter {
         };
       },
       getOverlayApi: () => this.overlayApi,
-      setExternalRenderModes: (modes) => {
-        const next = new Set();
-        if (Array.isArray(modes)) {
-          modes.forEach((mode) => {
-            if (typeof mode === "string" && mode.length > 0) {
-              next.add(mode);
-            }
-          });
-        }
-        this.externalRenderModes = next;
-      },
       isExternalRendererActive: (mode) => {
         return typeof mode === "string" && this.externalRenderModes.has(mode);
       },
@@ -250,13 +241,11 @@ export class LegacyRuntimeAdapter {
     const context = surface.getContext("2d");
     if (!context) {
       this.renderCanvas = visibleCanvas;
-      this.renderContext = visibleCanvas.getContext("2d");
       this.canvasProxy = visibleCanvas;
       return;
     }
 
     this.renderCanvas = surface;
-    this.renderContext = context;
     this.canvasProxy = this.createCanvasProxy(visibleCanvas, surface);
   }
 

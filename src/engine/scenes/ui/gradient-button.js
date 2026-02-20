@@ -142,25 +142,31 @@ function redrawButton(button, styleName) {
 
   button.text.setColor(style.text || "#f2f8ff");
   button.currentStyle = styleName;
-  if (bg.input) {
-    bg.input.cursor = button.enabled ? "pointer" : "default";
+  if (button.hitZone?.input) {
+    button.hitZone.input.cursor = button.enabled ? "pointer" : "default";
   }
 }
 
 function syncHitArea(button) {
   const w = Math.max(24, Number(button.width) || 24);
   const h = Math.max(16, Number(button.height) || 16);
-  const area = button.bg.input?.hitArea;
-  if (area && typeof area.setTo === "function") {
-    // Phaser hit areas are in local texture space (top-left origin).
-    area.setTo(0, 0, w, h);
+  if (!button.hitZone) {
     return;
   }
-  button.bg.setInteractive({
-    hitArea: new Phaser.Geom.Rectangle(0, 0, w, h),
-    hitAreaCallback: Phaser.Geom.Rectangle.Contains,
-    useHandCursor: true,
-  });
+  button.hitZone.setPosition(-w * 0.5, -h * 0.5);
+  button.hitZone.setSize(w, h);
+  if (!button.hitZone.input) {
+    button.hitZone.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(0, 0, w, h),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
+    return;
+  }
+  const area = button.hitZone.input.hitArea;
+  if (area && typeof area.setTo === "function") {
+    area.setTo(0, 0, w, h);
+  }
 }
 
 export function createGradientButton(
@@ -183,6 +189,10 @@ export function createGradientButton(
   const container = scene.add.container(0, 0);
   const shadow = scene.add.graphics();
   const bg = scene.add.image(0, 0, "__WHITE");
+  const safeW = Math.max(24, Number(width) || 24);
+  const safeH = Math.max(16, Number(height) || 16);
+  const hitZone = scene.add.zone(-safeW * 0.5, -safeH * 0.5, safeW, safeH);
+  hitZone.setOrigin(0, 0);
   const text = scene.add
     .text(0, 0, label, {
       fontFamily,
@@ -191,7 +201,7 @@ export function createGradientButton(
       color: "#f2f8ff",
     })
     .setOrigin(0.5, 0.5);
-  container.add([shadow, bg, text]);
+  container.add([shadow, bg, text, hitZone]);
 
   const button = {
     scene,
@@ -199,6 +209,7 @@ export function createGradientButton(
     container,
     shadow,
     bg,
+    hitZone,
     text,
     width,
     height,
@@ -217,7 +228,7 @@ export function createGradientButton(
   redrawButton(button, "idle");
   applyButtonScale(button, 1);
 
-  bg.on("pointerover", () => {
+  hitZone.on("pointerover", () => {
     if (!button.enabled) {
       return;
     }
@@ -226,14 +237,14 @@ export function createGradientButton(
       applyButtonScale(button, button.hoverScale);
     }
   });
-  bg.on("pointerout", () => {
+  hitZone.on("pointerout", () => {
     if (!button.enabled) {
       return;
     }
     redrawButton(button, "idle");
     applyButtonScale(button, 1);
   });
-  bg.on("pointerdown", () => {
+  hitZone.on("pointerdown", () => {
     if (!button.enabled) {
       return;
     }
@@ -242,7 +253,7 @@ export function createGradientButton(
       applyButtonScale(button, button.pressedScale);
     }
   });
-  bg.on("pointerup", () => {
+  hitZone.on("pointerup", () => {
     if (!button.enabled) {
       return;
     }

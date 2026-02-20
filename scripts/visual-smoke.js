@@ -16,6 +16,7 @@ const outDir = argValue("--out", "artifacts/visual-smoke/latest");
 const stepMs = Math.max(70, Number.parseInt(argValue("--step-ms", "180"), 10) || 180);
 const maxModeSteps = Math.max(120, Number.parseInt(argValue("--max-steps", "260"), 10) || 260);
 const forceReward = args.includes("--force-reward");
+const debugPage = args.includes("--debug-page");
 const RUN_SNAPSHOT_KEY = "blackjack-abyss.run.v1";
 const FORCED_REWARD_IDS = ["bunker-chip", "chipped-edge", "coin-magnet"];
 
@@ -225,6 +226,16 @@ async function runViewport(browser, viewportConfig) {
 
   const context = await browser.newContext({ viewport: viewportConfig.viewport });
   const page = await context.newPage();
+  if (debugPage) {
+    page.on("pageerror", (error) => {
+      console.error(`[${viewportConfig.id}] pageerror: ${error?.message || error}`);
+    });
+    page.on("console", (msg) => {
+      if (msg.type() === "error" || msg.type() === "warning") {
+        console.error(`[${viewportConfig.id}] console.${msg.type()}: ${msg.text()}`);
+      }
+    });
+  }
 
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await page.evaluate(() => {
