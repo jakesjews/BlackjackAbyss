@@ -54,6 +54,8 @@
   const MENU_DESKTOP_SCALE_BOOST = 1.25;
   const MENU_SCALE_CLASSES = ["menu-ui-scale-sm", "menu-ui-scale-md", "menu-ui-scale-lg", "menu-ui-scale-xl"];
   const MAX_SPLIT_HANDS = 4;
+  const ENEMY_DEFEAT_TRANSITION_SECONDS = 1.9;
+  const PLAYER_DEFEAT_TRANSITION_SECONDS = 1.02;
   const CARD_W = 88;
   const CARD_H = 124;
   const FONT_UI = '"Sora", "Segoe UI", sans-serif';
@@ -90,6 +92,7 @@
     "/audio/soundbites/grunt.wav",
     "/audio/soundbites/grunt.ogg",
   ];
+  const CARD_SOURCES = ["/audio/soundbites/card.wav"];
   const menuArtImage = new window.Image();
   menuArtImage.decoding = "async";
   const chipIconImage = new window.Image();
@@ -1293,6 +1296,9 @@
       sfxGain: null,
       gruntElement: null,
       gruntSourceIndex: 0,
+      cardElements: [],
+      cardSourceIndex: 0,
+      cardNextIndex: 0,
       stepTimer: MUSIC_STEP_SECONDS,
       stepIndex: 0,
       lastMusicMode: "menu",
@@ -1720,7 +1726,8 @@
       return false;
     }
 
-    const validMode = ["playing", "reward", "shop", "gameover", "victory"].includes(snapshot.mode) ? snapshot.mode : "playing";
+    const rawMode = ["playing", "reward", "shop", "gameover", "victory"].includes(snapshot.mode) ? snapshot.mode : "playing";
+    const validMode = rawMode === "reward" ? "shop" : rawMode;
 
     state.run = run;
     state.encounter = encounter;
@@ -1729,6 +1736,9 @@
       ? snapshot.rewardOptionIds.map((id) => RELIC_BY_ID.get(id)).filter(Boolean)
       : [];
     state.shopStock = hydrateShopStock(snapshot.shopStock);
+    if (state.mode === "shop" && !state.shopStock.length && state.rewardOptions.length) {
+      state.shopStock = generateCampRelicDraftStock(state.rewardOptions);
+    }
     state.selectionIndex = nonNegInt(snapshot.selectionIndex, 0);
     if (encounter.intro?.active) {
       state.announcement = "";
@@ -3033,6 +3043,10 @@
   }
 
   function playUiSfx(kind) {
+    if (kind === "card") {
+      playCardSfx();
+      return;
+    }
     if (kind === "select") {
       playTone(820, 0.045, { type: "sine", gain: 0.034, release: 0.025 });
       return;
@@ -3108,6 +3122,50 @@
     });
     state.audio.gruntElement = clip;
     return clip;
+  }
+
+  function ensureCardElements() {
+    if (Array.isArray(state.audio.cardElements) && state.audio.cardElements.length > 0) {
+      return state.audio.cardElements;
+    }
+    const poolSize = 3;
+    const clips = [];
+    for (let i = 0; i < poolSize; i += 1) {
+      const clip = new Audio();
+      clip.preload = "auto";
+      clip.src = CARD_SOURCES[state.audio.cardSourceIndex] || CARD_SOURCES[0];
+      clip.addEventListener("error", () => {
+        if (state.audio.cardSourceIndex < CARD_SOURCES.length - 1) {
+          state.audio.cardSourceIndex += 1;
+          clip.src = CARD_SOURCES[state.audio.cardSourceIndex];
+        }
+      });
+      clips.push(clip);
+    }
+    state.audio.cardElements = clips;
+    return clips;
+  }
+
+  function playCardSfx() {
+    if (!canPlayAudio()) {
+      return;
+    }
+    const clips = ensureCardElements();
+    if (!Array.isArray(clips) || clips.length === 0) {
+      return;
+    }
+    const index = Math.max(0, Math.floor(state.audio.cardNextIndex || 0)) % clips.length;
+    const clip = clips[index];
+    state.audio.cardNextIndex = (index + 1) % clips.length;
+    if (!clip) {
+      return;
+    }
+    clip.currentTime = 0;
+    clip.volume = 0.62;
+    const playPromise = clip.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {});
+    }
   }
 
   function playGruntSfx() {
@@ -3411,7 +3469,11 @@
     }
 
     if (enemy.hp <= 0) {
-      startDefeatTransition("enemy");
+      if (isExternalModeRendering("playing")) {
+        queueEnemyDefeatTransition();
+      } else {
+        startDefeatTransition("enemy");
+      }
       setAnnouncement(`${enemy.name} down!`, 1.2);
       addLog(`${enemy.name} is down.`);
       saveRunSnapshot();
@@ -3477,12 +3539,47 @@
       const yJitter = (Math.random() * 2 - 1) * 18;
       spawnSparkBurst(bounds.centerX + xJitter, bounds.centerY + yJitter, color, 24 + i * 12, 210 + i * 70);
     }
+    if (target === "enemy") {
+      state.encounter.resultText = "Defeated Opponent";
+      state.encounter.resultTone = "win";
+    }
     triggerScreenShake(12, 0.46);
     triggerFlash(color, 0.14, 0.28);
     playImpactSfx(16, target === "enemy" ? "enemy" : "player");
-    state.pendingTransition = { target, timer: 1.02 };
+    const transitionDuration = target === "enemy" ? ENEMY_DEFEAT_TRANSITION_SECONDS : PLAYER_DEFEAT_TRANSITION_SECONDS;
+    state.pendingTransition = { target, timer: transitionDuration, duration: transitionDuration };
     state.encounter.phase = "done";
     state.encounter.resolveTimer = 0;
+  }
+
+  function queueEnemyDefeatTransition() {
+    if (!state.encounter || state.pendingTransition) {
+      return;
+    }
+    const transitionDuration = ENEMY_DEFEAT_TRANSITION_SECONDS;
+    state.pendingTransition = {
+      target: "enemy",
+      timer: 0,
+      duration: transitionDuration,
+      waiting: true,
+    };
+    state.encounter.phase = "done";
+    state.encounter.resolveTimer = 0;
+    state.encounter.resultText = "Defeated Opponent";
+    state.encounter.resultTone = "win";
+  }
+
+  function beginQueuedEnemyDefeatTransition() {
+    const transition = state.pendingTransition;
+    if (!transition || transition.target !== "enemy" || !transition.waiting) {
+      return false;
+    }
+    transition.waiting = false;
+    transition.timer = Math.max(0.001, Number(transition.duration) || ENEMY_DEFEAT_TRANSITION_SECONDS);
+    triggerScreenShake(12, 0.46);
+    triggerFlash("#ffb07a", 0.14, 0.28);
+    playImpactSfx(16, "enemy");
+    return true;
   }
 
   function currentShakeOffset() {
@@ -3587,6 +3684,9 @@
       fromX: spawnX,
       fromY: spawnY,
     });
+    if (!isExternalModeRendering("playing")) {
+      playUiSfx("card");
+    }
 
     const pos = handCardPosition(target, hand.length - 1, hand.length);
     state.cardBursts.push({
@@ -4339,10 +4439,15 @@
       run.room = 1;
       const heal = 8;
       run.player.hp = Math.min(run.player.maxHp, run.player.hp + heal);
-      state.mode = "reward";
-      state.selectionIndex = 0;
       state.rewardOptions = generateRewardOptions(3, true);
-      setAnnouncement(`Floor cleared. Restored ${heal} HP.`, 2.4);
+      state.mode = "shop";
+      run.shopPurchaseMade = false;
+      state.selectionIndex = 0;
+      state.shopStock = generateCampRelicDraftStock(state.rewardOptions);
+      if (!state.shopStock.length) {
+        state.shopStock = generateShopStock(3);
+      }
+      setAnnouncement(`Floor cleared. Restored ${heal} HP. Camp opened.`, 2.4);
       saveRunSnapshot();
       return;
     }
@@ -4350,16 +4455,22 @@
     run.room += 1;
 
     if (run.room % 2 === 0) {
-      state.mode = "reward";
+      state.mode = "shop";
+      run.shopPurchaseMade = false;
       state.selectionIndex = 0;
       state.rewardOptions = generateRewardOptions(3, false);
-      setAnnouncement("Relic draft unlocked.", 2);
+      state.shopStock = generateCampRelicDraftStock(state.rewardOptions);
+      if (!state.shopStock.length) {
+        state.shopStock = generateShopStock(3);
+      }
+      setAnnouncement("Relics are available at camp.", 2);
     } else {
       state.mode = "shop";
       run.shopPurchaseMade = false;
       state.selectionIndex = 0;
+      state.rewardOptions = [];
       state.shopStock = generateShopStock(3);
-      setAnnouncement("Black market table unlocked.", 2);
+      setAnnouncement("Camp opened.", 2);
     }
     saveRunSnapshot();
   }
@@ -4462,6 +4573,21 @@
     return options;
   }
 
+  function generateCampRelicDraftStock(rewardOptions) {
+    const floorScale = state.run ? state.run.floor * 2 : 0;
+    if (!Array.isArray(rewardOptions)) {
+      return [];
+    }
+    return rewardOptions
+      .filter(Boolean)
+      .map((relic) => ({
+        type: "relic",
+        relic,
+        cost: nonNegInt(relic.shopCost, 0) + floorScale + relicRarityMeta(relic).shopMarkup,
+        sold: false,
+      }));
+  }
+
   function generateShopStock(count) {
     const floorScale = state.run ? state.run.floor * 2 : 0;
     const floor = state.run ? state.run.floor : 1;
@@ -4509,19 +4635,20 @@
   }
 
   function claimReward() {
-    if (state.mode !== "reward" || state.rewardOptions.length === 0) {
+    if (state.mode !== "reward" || state.rewardOptions.length === 0 || !state.run) {
       return;
     }
 
-    const relic = state.rewardOptions[state.selectionIndex] || state.rewardOptions[0];
-    applyRelic(relic);
-    playUiSfx("confirm");
-    addLog(`Relic claimed: ${relic.name}.`);
-    addLog(passiveDescription(relic.description));
-
-    state.rewardOptions = [];
+    state.mode = "shop";
+    state.run.shopPurchaseMade = false;
     state.selectionIndex = 0;
-    beginEncounter();
+    state.shopStock = generateCampRelicDraftStock(state.rewardOptions);
+    if (!state.shopStock.length) {
+      state.shopStock = generateShopStock(3);
+    }
+    playUiSfx("confirm");
+    setAnnouncement("Relics moved to camp. Spend chips to buy one.", 2);
+    saveRunSnapshot();
   }
 
   function buyShopItem(index = state.selectionIndex) {
@@ -4535,8 +4662,8 @@
     const item = state.shopStock[targetIndex];
     if (run.shopPurchaseMade) {
       playUiSfx("error");
-      setAnnouncement("Only one purchase per market.", 1.35);
-      addLog("Black market allows one purchase only.");
+      setAnnouncement("Only one purchase per camp.", 1.35);
+      addLog("Camp allows one purchase only.");
       return;
     }
     if (!item || item.sold) {
@@ -4546,8 +4673,8 @@
 
     if (item.type === "relic" && state.shopStock.some((entry) => entry.type === "relic" && entry.sold)) {
       playUiSfx("error");
-      addLog("Only one relic can be bought per shop.");
-      setAnnouncement("Only one relic per shop visit.", 1.2);
+      addLog("Only one relic can be bought per camp.");
+      setAnnouncement("Only one relic per camp visit.", 1.2);
       return;
     }
 
@@ -4586,7 +4713,7 @@
       return;
     }
     playUiSfx("confirm");
-    addLog("Left black market.");
+    addLog("Left camp.");
     beginEncounter();
   }
 
@@ -5771,8 +5898,10 @@
     }
 
     if (state.pendingTransition) {
-      state.pendingTransition.timer -= dt;
-      if (state.pendingTransition.timer <= 0) {
+      if (!state.pendingTransition.waiting) {
+        state.pendingTransition.timer -= dt;
+      }
+      if (!state.pendingTransition.waiting && state.pendingTransition.timer <= 0) {
         const transition = state.pendingTransition;
         state.pendingTransition = null;
         if (transition.target === "enemy") {
@@ -7168,11 +7297,11 @@
     const portrait = Boolean(state.viewport?.portraitZoomed);
     ctx.fillStyle = "#f2c587";
     setFont(portrait ? 34 : 40, 700, true);
-    ctx.fillText("Black Market", WIDTH * 0.5, layout.panelY + 48);
+    ctx.fillText("Camp", WIDTH * 0.5, layout.panelY + 48);
 
     ctx.fillStyle = "#9fc2dc";
     setFont(portrait ? 12 : 13, 600, false);
-    ctx.fillText("One purchase per market. Choose carefully.", WIDTH * 0.5, layout.panelY + (portrait ? 70 : 76));
+    ctx.fillText("One purchase per camp. Choose carefully.", WIDTH * 0.5, layout.panelY + (portrait ? 70 : 76));
 
     const pillY = layout.panelY + (portrait ? 92 : 98);
     const pillH = 36;
@@ -8439,12 +8568,43 @@
     const viewportHeight = Math.floor(
       window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT
     );
+    const compactViewport = viewportWidth <= 980;
+    const coarsePointer = window.matchMedia ? window.matchMedia("(pointer: coarse)").matches : false;
+    const fullscreenMobileViewport = compactViewport || coarsePointer;
     const menuScreen = state.mode === "menu" || state.mode === "collection";
     MENU_SCALE_CLASSES.forEach((cls) => document.body.classList.remove(cls));
     if (!menuScreen || !state.compactControls) {
       document.body.style.removeProperty("--menu-mobile-ui-scale");
     }
     if (menuScreen) {
+      const mobileMenuFullscreen = state.mode === "menu" && fullscreenMobileViewport;
+      if (mobileMenuFullscreen) {
+        const shellW = Math.max(1, viewportWidth);
+        const shellH = Math.max(120, viewportHeight);
+        gameShell.style.width = `${shellW}px`;
+        gameShell.style.height = `${shellH}px`;
+        canvas.style.width = `${shellW}px`;
+        canvas.style.height = `${shellH}px`;
+        canvas.style.left = "0px";
+        canvas.style.top = "0px";
+        const phaserGame = window.__ABYSS_PHASER_GAME__;
+        if (phaserGame?.scale && typeof phaserGame.scale.resize === "function") {
+          const currentW = Math.round(phaserGame.scale.gameSize?.width || 0);
+          const currentH = Math.round(phaserGame.scale.gameSize?.height || 0);
+          if (currentW !== shellW || currentH !== shellH) {
+            phaserGame.scale.resize(shellW, shellH);
+          }
+        }
+
+        state.viewport = {
+          width: shellW,
+          height: shellH,
+          scale: 1,
+          cropWorldX: 0,
+          portraitZoomed: false,
+        };
+        return;
+      }
       if (state.compactControls) {
         const baseMenuW = 360;
         const baseMenuH = 380;
@@ -8726,6 +8886,26 @@
         rarityLabel: rarity.label,
       };
     });
+    const transition = state.pendingTransition && typeof state.pendingTransition === "object"
+      ? (() => {
+          const target = state.pendingTransition.target === "player" ? "player" : "enemy";
+          const waiting = Boolean(state.pendingTransition.waiting);
+          const duration = Math.max(
+            0.001,
+            Number(state.pendingTransition.duration) || Number(state.pendingTransition.timer) || 0.001
+          );
+          const remaining = waiting
+            ? duration
+            : Math.max(0, Math.min(duration, Number(state.pendingTransition.timer) || 0));
+          return {
+            target,
+            remaining,
+            duration,
+            waiting,
+            progress: waiting ? 0 : Math.max(0, Math.min(1, 1 - remaining / duration)),
+          };
+        })()
+      : null;
 
     return {
       mode: state.mode,
@@ -8749,17 +8929,20 @@
         type: encounter.enemy?.type || "normal",
         avatarKey: encounter.enemy?.avatarKey || "",
       },
+      handIndex: Math.max(1, Number(encounter.handIndex) || 1),
       phase: encounter.phase,
       cards: {
         player: encounter.playerHand.map((card) => ({
           rank: card.rank,
           suit: card.suit,
           hidden: false,
+          dealtAt: Number.isFinite(card.dealtAt) ? Math.floor(card.dealtAt) : 0,
         })),
         dealer: encounter.dealerHand.map((card, index) => ({
           rank: card.rank,
           suit: card.suit,
           hidden: Boolean(encounter.hideDealerHole && index === 1),
+          dealtAt: Number.isFinite(card.dealtAt) ? Math.floor(card.dealtAt) : 0,
         })),
       },
       totals: {
@@ -8772,6 +8955,7 @@
       resultText: encounter.resultText || "",
       resultTone: encounter.resultTone || "neutral",
       announcement: state.announcement || "",
+      transition,
       intro: {
         active: introActive,
         ready: Boolean(intro?.ready),
@@ -8828,6 +9012,14 @@
       fireballImpact: (amount, target) => {
         unlockAudio();
         playFireballImpactSfx(amount, target);
+      },
+      startEnemyDefeatTransition: () => {
+        unlockAudio();
+        beginQueuedEnemyDefeatTransition();
+      },
+      card: () => {
+        unlockAudio();
+        playUiSfx("card");
       },
       goHome: () => {
         unlockAudio();
@@ -8961,6 +9153,8 @@
         room: run?.room || 1,
         roomsPerFloor: run?.roomsPerFloor || 5,
         chips: run?.player?.gold || 0,
+        streak: run?.player?.streak || 0,
+        bustGuardsLeft: run?.player?.bustGuardsLeft || 0,
         hp: run?.player?.hp || 0,
         maxHp: run?.player?.maxHp || 1,
         shopPurchaseMade: purchaseLocked,

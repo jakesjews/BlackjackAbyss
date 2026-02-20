@@ -6,6 +6,7 @@ export const SCENE_KEYS = Object.freeze({
   menu: "menu",
   run: "run",
   reward: "reward",
-  shop: "shop",
+  shop: "camp",
+  camp: "camp",
   overlay: "overlay",
 });

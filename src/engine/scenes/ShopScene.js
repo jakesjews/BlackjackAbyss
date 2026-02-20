@@ -16,6 +16,7 @@ const SHOP_CHIPS_ICON_KEY = "__shop-chips-icon__";
 const SHOP_CHIPS_ICON_TRIM_KEY = "__shop-chips-icon-trim__";
 const SHOP_BUY_ICON_KEY = "__shop-buy-icon__";
 const SHOP_DEAL_ICON_KEY = "__shop-deal-icon__";
+const SHOP_CAMP_BACKGROUND_KEY = "__shop-camp-background__";
 const SHOP_PRIMARY_GOLD = 0xf2cd88;
 const SHOP_MODAL_BASE_DEPTH = 300;
 const SHOP_MODAL_CONTENT_DEPTH = 310;
@@ -33,6 +34,14 @@ const SHOP_THEME_BLUE_HUE_MAX = 255;
 const SHOP_THEME_BROWN_HUE = 30 / 360;
 const SHOP_THEME_SATURATION_FLOOR = 0.18;
 const SHOP_THEME_SATURATION_SCALE = 0.8;
+const SHOPKEEPER_DIALOGUE_VARIANTS = Object.freeze([
+  "Welcome back, traveler. Browse slow, buy smart.",
+  "Camp prices are fair. The odds are not.",
+  "I've got relics with stories and scars. Pick one.",
+  "Spend chips here, save regrets for the next room.",
+  "Everything on this rack survived someone else first.",
+  "Take your time. Leave camp stronger than you arrived.",
+]);
 
 export class ShopScene extends Phaser.Scene {
   constructor() {
@@ -48,8 +57,15 @@ export class ShopScene extends Phaser.Scene {
     this.topButtons = new Map();
     this.logsModalOpen = false;
     this.logsCloseButton = null;
+    this.shopCloseButton = null;
     this.modalBlocker = null;
     this.chipsIcon = null;
+    this.campBackground = null;
+    this.shopOpen = false;
+    this.shopDialogueIndex = -1;
+    this.shopDialogueText = "";
+    this.bottomBarRect = null;
+    this.visitSignature = "";
     this.darkIconTextureBySource = new Map();
     this.hoveredCardIndex = null;
     this.focusedCardIndex = 0;
@@ -59,6 +75,8 @@ export class ShopScene extends Phaser.Scene {
     this.logsLastCount = 0;
     this.logsPinnedToBottom = true;
     this.logsViewport = null;
+    this.shopListMaskShape = null;
+    this.shopListMask = null;
   }
 
   preload() {
@@ -76,6 +94,9 @@ export class ShopScene extends Phaser.Scene {
     if (!this.textures.exists(SHOP_DEAL_ICON_KEY)) {
       this.load.image(SHOP_DEAL_ICON_KEY, "/images/icons/deal.png");
     }
+    if (!this.textures.exists(SHOP_CAMP_BACKGROUND_KEY)) {
+      this.load.image(SHOP_CAMP_BACKGROUND_KEY, "/images/scenes/camp.png");
+    }
   }
 
   create() {
@@ -83,6 +104,9 @@ export class ShopScene extends Phaser.Scene {
     this.cameras.main.setAlpha(1);
     this.graphics = this.add.graphics();
     this.applyBrownThemeToGraphics(this.graphics);
+    this.campBackground = this.textures.exists(SHOP_CAMP_BACKGROUND_KEY)
+      ? this.add.image(0, 0, SHOP_CAMP_BACKGROUND_KEY).setOrigin(0.5, 0.5).setDepth(-10).setVisible(false)
+      : null;
     this.overlayGraphics = this.add.graphics().setDepth(SHOP_MODAL_BASE_DEPTH);
     this.applyBrownThemeToGraphics(this.overlayGraphics);
     this.modalBlocker = this.add
@@ -95,6 +119,11 @@ export class ShopScene extends Phaser.Scene {
     const chipsTextureKey = this.resolveGoldIconTexture(this.resolveTightTexture(SHOP_CHIPS_ICON_KEY, SHOP_CHIPS_ICON_TRIM_KEY));
     this.chipsIcon = this.add.image(0, 0, chipsTextureKey).setVisible(false);
     this.chipsIcon.setDisplaySize(20, 20);
+    this.shopOpen = false;
+    this.bottomBarRect = null;
+    this.visitSignature = "";
+    this.shopListMaskShape = this.make.graphics({ x: 0, y: 0, add: false });
+    this.shopListMask = this.shopListMaskShape.createGeometryMask();
     this.bindKeyboardInput();
     this.bindPointerInput();
     this.scale.on("resize", this.onResize, this);
@@ -117,9 +146,17 @@ export class ShopScene extends Phaser.Scene {
       this.logsCloseButton.container.destroy();
       this.logsCloseButton = null;
     }
+    if (this.shopCloseButton) {
+      this.shopCloseButton.container.destroy();
+      this.shopCloseButton = null;
+    }
     if (this.chipsIcon) {
       this.chipsIcon.destroy();
       this.chipsIcon = null;
+    }
+    if (this.campBackground) {
+      this.campBackground.destroy();
+      this.campBackground = null;
     }
     if (this.modalBlocker) {
       this.modalBlocker.destroy();
@@ -132,6 +169,11 @@ export class ShopScene extends Phaser.Scene {
     this.textNodes.forEach((text) => text.destroy());
     this.textNodes.clear();
     this.lastCardSignature = "";
+    this.visitSignature = "";
+    this.shopOpen = false;
+    this.shopDialogueIndex = -1;
+    this.shopDialogueText = "";
+    this.bottomBarRect = null;
     this.logsModalOpen = false;
     this.darkIconTextureBySource.clear();
     this.pointerHandlers.forEach(({ eventName, handler }) => {
@@ -145,6 +187,11 @@ export class ShopScene extends Phaser.Scene {
     this.logsLastCount = 0;
     this.logsPinnedToBottom = true;
     this.logsViewport = null;
+    if (this.shopListMaskShape) {
+      this.shopListMaskShape.destroy();
+      this.shopListMaskShape = null;
+      this.shopListMask = null;
+    }
   }
 
   update(time, delta) {
@@ -174,6 +221,9 @@ export class ShopScene extends Phaser.Scene {
     };
 
     bind("keydown-TAB", (event) => {
+      if (!this.shopOpen) {
+        return;
+      }
       event.preventDefault();
       const count = Array.isArray(this.lastSnapshot?.items) ? this.lastSnapshot.items.length : 0;
       if (count <= 0) {
@@ -187,8 +237,15 @@ export class ShopScene extends Phaser.Scene {
       this.invokeAction("selectIndex", nextIndex);
     });
     bind("keydown-Z", () => {
+      if (!this.shopOpen) {
+        return;
+      }
       const selectedIndex = this.resolveSelectedIndex(this.lastSnapshot);
       this.invokeAction("buy", selectedIndex);
+    });
+    bind("keydown-S", (event) => {
+      event.preventDefault();
+      this.setShopOpen(!this.shopOpen);
     });
     bind("keydown-ENTER", (event) => {
       event.preventDefault();
@@ -196,7 +253,39 @@ export class ShopScene extends Phaser.Scene {
     });
     bind("keydown-ESC", () => {
       this.logsModalOpen = false;
+      if (this.shopOpen) {
+        this.setShopOpen(false);
+      }
     });
+  }
+
+  setShopOpen(open) {
+    const next = Boolean(open);
+    if (next === this.shopOpen) {
+      return;
+    }
+    this.shopOpen = next;
+    if (next) {
+      this.pickShopDialogue();
+    } else {
+      this.hoveredCardIndex = null;
+    }
+  }
+
+  pickShopDialogue() {
+    const variants = SHOPKEEPER_DIALOGUE_VARIANTS;
+    if (!Array.isArray(variants) || variants.length === 0) {
+      this.shopDialogueText = "";
+      this.shopDialogueIndex = -1;
+      return;
+    }
+    const previous = Number.isFinite(this.shopDialogueIndex) ? this.shopDialogueIndex : -1;
+    let next = Phaser.Math.Between(0, variants.length - 1);
+    if (variants.length > 1 && next === previous) {
+      next = (next + 1 + Phaser.Math.Between(0, variants.length - 2)) % variants.length;
+    }
+    this.shopDialogueIndex = next;
+    this.shopDialogueText = String(variants[next] || "");
   }
 
   bindPointerInput() {
@@ -221,6 +310,18 @@ export class ShopScene extends Phaser.Scene {
       return false;
     }
     return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+  }
+
+  isCompactLayout(width) {
+    return width < 760;
+  }
+
+  shouldShowKeyboardHints(width) {
+    const viewportWidth = Number(width) || 0;
+    const coarsePointer = typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(pointer: coarse)").matches;
+    return viewportWidth >= 1100 && !coarsePointer;
   }
 
   setLogsScroll(next) {
@@ -409,6 +510,12 @@ export class ShopScene extends Phaser.Scene {
     }
     this.hideAllText();
     if (!snapshot) {
+      if (this.campBackground) {
+        this.campBackground.setVisible(false);
+      }
+      this.setShopOpen(false);
+      this.visitSignature = "";
+      this.bottomBarRect = null;
       this.rebuildCards([]);
       this.rebuildButtons([]);
       this.logsViewport = null;
@@ -417,8 +524,22 @@ export class ShopScene extends Phaser.Scene {
       if (this.logsCloseButton) {
         this.logsCloseButton.container.setVisible(false);
       }
+      if (this.shopCloseButton) {
+        this.shopCloseButton.container.setVisible(false);
+      }
       this.syncModalBlocker(width, height);
       return;
+    }
+
+    const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+    const visitSignature = [
+      snapshot.run?.floor || 0,
+      snapshot.run?.room || 0,
+      items.map((item) => item.id).join("|"),
+    ].join(":");
+    if (visitSignature !== this.visitSignature) {
+      this.visitSignature = visitSignature;
+      this.setShopOpen(false);
     }
 
     this.drawBackground(width, height);
@@ -442,101 +563,227 @@ export class ShopScene extends Phaser.Scene {
   }
 
   drawBackground(width, height) {
-    this.graphics.fillGradientStyle(0x081420, 0x081420, 0x040b12, 0x040b12, 1);
+    if (this.campBackground && this.textures.exists(SHOP_CAMP_BACKGROUND_KEY)) {
+      const cover = this.coverSizeForTexture(SHOP_CAMP_BACKGROUND_KEY, width, height);
+      this.campBackground
+        .setPosition(width * 0.5, height * 0.5)
+        .setDisplaySize(cover.width, cover.height)
+        .setAlpha(0.82)
+        .setVisible(true);
+    } else if (this.campBackground) {
+      this.campBackground.setVisible(false);
+    }
+    this.graphics.fillStyle(0x060303, 0.62);
+    this.graphics.fillRect(0, 0, width, height);
+    this.graphics.fillGradientStyle(0x120c07, 0x120c07, 0x060403, 0x060403, 0.78);
     this.graphics.fillRect(0, 0, width, height);
     this.graphics.fillStyle(0x000000, 0.3);
     this.graphics.fillRoundedRect(12, 10, width - 24, height - 20, 16);
+    const bottomBarH = Math.max(74, Math.round(height * 0.115));
+    const bottomBarY = height - bottomBarH - 12;
+    this.graphics.fillStyle(0x120b07, 0.94);
+    this.graphics.fillRoundedRect(12, bottomBarY, width - 24, bottomBarH, 16);
+    this.graphics.lineStyle(1.2, 0x5d4a34, 0.42);
+    this.graphics.strokeRoundedRect(12, bottomBarY, width - 24, bottomBarH, 16);
+    this.bottomBarRect = {
+      x: 12,
+      y: bottomBarY,
+      width: width - 24,
+      height: bottomBarH,
+    };
   }
 
   drawHeader(snapshot, width) {
-    this.drawText("shop-title", "BLACK MARKET", width * 0.5, 52, {
+    const run = snapshot.run || {};
+    const compact = this.isCompactLayout(width);
+    const topBarH = compact ? 76 : 74;
+    const sidePad = Math.max(compact ? 16 : 22, Math.round(width * (compact ? 0.016 : 0.02)));
+    this.graphics.fillStyle(0x140d07, 0.94);
+    this.graphics.fillRect(0, 0, width, topBarH);
+    this.graphics.fillStyle(0x000000, 0.24);
+    this.graphics.fillRect(0, topBarH - 1, width, 1);
+    const topY = compact ? Math.round(topBarH * 0.5) : Math.round(topBarH * 0.48);
+    const leftStartX = sidePad + 8;
+    if (this.chipsIcon) {
+      this.chipsIcon.setPosition(leftStartX, topY);
+      this.chipsIcon.setDisplaySize(compact ? 18 : 20, compact ? 18 : 20);
+      this.chipsIcon.clearTint();
+      this.chipsIcon.setVisible(true);
+    }
+    const chipsNode = this.drawText("shop-top-chips", `${run.chips || 0}`, leftStartX + (compact ? 20 : 22), topY, {
+      fontFamily: '"Chakra Petch", "Sora", sans-serif',
+      fontSize: compact ? "16px" : "17px",
+      color: "#f6e6a6",
+      fontStyle: "700",
+    }, { x: 0, y: 0.5 });
+    const progressLabel = `Floor ${run.floor || 1}/${run.roomsPerFloor || 5}  Room ${run.room || 1}`;
+    const progressX = compact ? chipsNode.x + chipsNode.width + 26 : width * 0.5;
+    this.drawText("shop-top-progress", progressLabel, progressX, topY, {
+      fontFamily: '"Sora", "Segoe UI", sans-serif',
+      fontSize: compact ? "15px" : "16px",
+      color: "#e0cfb0",
+      fontStyle: "700",
+    }, { x: compact ? 0 : 0.5, y: 0.5 });
+
+    this.drawText("shop-title", "CAMP", width * 0.5, 108, {
       fontFamily: '"Chakra Petch", "Sora", sans-serif',
       fontSize: "38px",
       color: "#f6e6a6",
       stroke: "#0f1b28",
       strokeThickness: 5,
     });
-    this.drawText("shop-subtitle", "ONE PURCHASE PER MARKET. CHOOSE CAREFULLY.", width * 0.5, 90, {
-      fontFamily: '"Sora", "Segoe UI", sans-serif',
-      fontSize: "18px",
-      color: "#d7e6f3",
-    });
-
-    const run = snapshot.run || {};
-    this.graphics.fillStyle(0x10263a, 0.9);
-    this.graphics.fillRoundedRect(width * 0.5 - 250, 108, 500, 48, 12);
-    const chipValueNode = this.drawText("shop-chips", `${run.chips || 0}`, width * 0.5 - 112, 132, {
-      fontFamily: '"Chakra Petch", "Sora", sans-serif',
-      fontSize: "22px",
-      color: "#f6e6a6",
-      fontStyle: "700",
-    }, { x: 0, y: 0.5 });
-    const chipIconSize = 18;
-    const chipIconX = width * 0.5 - 228;
-    const chipTextX = chipIconX + chipIconSize * 0.5 + 10;
-    let chipFont = 22;
-    chipValueNode.setFontSize(chipFont);
-    const maxChipTextW = 150;
-    while (chipValueNode.width > maxChipTextW && chipFont > 14) {
-      chipFont -= 1;
-      chipValueNode.setFontSize(chipFont);
+    if (this.shopOpen) {
+      this.drawText("shop-subtitle", "ONE PURCHASE PER CAMP. CHOOSE CAREFULLY.", width * 0.5, 142, {
+        fontFamily: '"Sora", "Segoe UI", sans-serif',
+        fontSize: "18px",
+        color: "#d7e6f3",
+      });
     }
-    chipValueNode.setPosition(chipTextX, 132);
-    if (this.chipsIcon) {
-      this.chipsIcon.setPosition(chipIconX, 132);
-      this.chipsIcon.setDisplaySize(chipIconSize, chipIconSize);
-      this.chipsIcon.clearTint();
-      this.chipsIcon.setVisible(true);
-    }
-    this.drawText("shop-hp", `HP ${run.hp || 0}/${run.maxHp || 1}`, width * 0.5 + 112, 132, {
-      fontFamily: '"Sora", "Segoe UI", sans-serif',
-      fontSize: "22px",
-      color: "#c8f0d7",
-    });
   }
 
   renderCards(snapshot, width, height) {
     const items = Array.isArray(snapshot.items) ? snapshot.items : [];
     this.rebuildCards(items);
-    const cardW = Math.max(216, Math.min(320, Math.round(width * 0.24)));
-    const cardH = Math.max(312, Math.min(410, Math.round(height * 0.56)));
-    const gap = Math.max(20, Math.round(width * 0.024));
-    const totalW = items.length * cardW + Math.max(0, items.length - 1) * gap;
-    const startX = width * 0.5 - totalW * 0.5;
-    const y = Math.max(190, Math.round(height * 0.26));
+    const showKeyboardHints = this.shouldShowKeyboardHints(width);
+    if (!this.shopOpen) {
+      this.cards.forEach((card) => card.container.setVisible(false));
+      if (this.shopCloseButton) {
+        this.shopCloseButton.container.setVisible(false);
+      }
+      if (this.shopListMaskShape) {
+        this.shopListMaskShape.clear();
+      }
+      this.cards.forEach((card) => {
+        card.container.clearMask();
+      });
+      return;
+    }
+
+    if (!this.shopDialogueText) {
+      this.pickShopDialogue();
+    }
+
+    const bottomLimit = (this.bottomBarRect?.y || (height - 90)) - 10;
+    const panelX = 16;
+    const panelY = Math.max(154, Math.round(height * 0.205));
+    const maxPanelW = Math.max(220, width - 32);
+    const panelW = Phaser.Math.Clamp(Math.round(width * 0.335), Math.min(308, maxPanelW), Math.min(460, maxPanelW));
+    const panelH = Math.max(120, bottomLimit - panelY);
+    const panelRadius = 18;
+
+    this.graphics.fillStyle(0x100906, 0.94);
+    this.graphics.fillRoundedRect(panelX, panelY, panelW, panelH, panelRadius);
+    this.graphics.lineStyle(1.35, 0x6a5238, 0.56);
+    this.graphics.strokeRoundedRect(panelX, panelY, panelW, panelH, panelRadius);
+    this.graphics.fillStyle(0x000000, 0.22);
+    this.graphics.fillRoundedRect(panelX + 1, panelY + 1, panelW - 2, 46, panelRadius - 2);
+    this.drawText("shop-panel-title", "CAMP STORE", panelX + 16, panelY + 24, {
+      fontFamily: '"Chakra Petch", "Sora", sans-serif',
+      fontSize: "27px",
+      color: "#f6e6a6",
+      fontStyle: "700",
+    }, { x: 0, y: 0.5 });
+
+    const shopCloseButton = this.ensureShopCloseButton();
+    placeModalCloseButton(shopCloseButton, {
+      x: panelX + panelW - 20,
+      y: panelY + 24,
+      depth: 130,
+      width: 34,
+      height: 30,
+      iconSize: 13,
+      enabled: true,
+      visible: true,
+      styleName: "idle",
+      applyStyle: (button, styleName) => this.applyButtonStyle(button, styleName),
+    });
+
+    const dialogueX = Math.min(panelX + panelW + 16, width - 136);
+    const dialogueW = Phaser.Math.Clamp(width - dialogueX - 16, 120, 420);
+    const dialogueY = panelY + 10;
+    const dialogueH = Math.min(124, Math.max(90, Math.round(panelH * 0.25)));
+    this.graphics.fillStyle(0x110a07, 0.9);
+    this.graphics.fillRoundedRect(dialogueX, dialogueY, dialogueW, dialogueH, 14);
+    this.graphics.lineStyle(1.2, 0x614b34, 0.5);
+    this.graphics.strokeRoundedRect(dialogueX, dialogueY, dialogueW, dialogueH, 14);
+    this.drawText("shopkeeper-label", "SHOPKEEPER", dialogueX + 14, dialogueY + 18, {
+      fontFamily: '"Chakra Petch", "Sora", sans-serif',
+      fontSize: "16px",
+      color: "#f2cd88",
+      fontStyle: "700",
+    }, { x: 0, y: 0.5 });
+    this.drawText("shopkeeper-dialogue", this.shopDialogueText || SHOPKEEPER_DIALOGUE_VARIANTS[0], dialogueX + 14, dialogueY + 32, {
+      fontFamily: '"Sora", "Segoe UI", sans-serif',
+      fontSize: "16px",
+      color: "#dcc7a6",
+      lineSpacing: 4,
+      wordWrap: { width: Math.max(120, dialogueW - 28) },
+    }, { x: 0, y: 0 });
+
+    const listPadX = 12;
+    const listTop = panelY + 56;
+    const listBottom = panelY + panelH - 12;
+    const listH = Math.max(120, listBottom - listTop);
+    const cardW = panelW - listPadX * 2;
+    const listX = panelX + listPadX;
+    if (this.shopListMaskShape) {
+      this.shopListMaskShape.clear();
+      this.shopListMaskShape.fillStyle(0xffffff, 1);
+      this.shopListMaskShape.fillRect(listX, listTop, cardW, listH);
+    }
+    let gap = 10;
+    const count = Math.max(1, items.length);
+    let cardH = Math.floor((listH - gap * Math.max(0, count - 1)) / count);
+    if (cardH < 118) {
+      gap = 6;
+      cardH = Math.floor((listH - gap * Math.max(0, count - 1)) / count);
+    }
+    cardH = Phaser.Math.Clamp(cardH, 104, 182);
+    const stackH = count * cardH + Math.max(0, count - 1) * gap;
+    const startY = listTop + Math.max(0, Math.round((listH - stackH) * 0.5));
 
     items.forEach((item, index) => {
       const card = this.cards.get(item.id);
       if (!card) {
         return;
       }
-      const x = startX + index * (cardW + gap);
+      const x = listX;
+      const y = startY + index * (cardH + gap);
       const selectedIndex = this.resolveSelectedIndex(snapshot);
       const selected = index === selectedIndex;
       card.currentIndex = index;
       card.container.setPosition(x, y);
       card.bg.clear();
       card.bg.fillStyle(this.toBrownThemeColorNumber(selected ? CARD_STYLE.fillSelected : CARD_STYLE.fill), selected ? 0.98 : 0.9);
-      card.bg.fillRoundedRect(0, 0, cardW, cardH, 24);
+      card.bg.fillRoundedRect(0, 0, cardW, cardH, 18);
       card.bg.fillStyle(0xffffff, selected ? 0.06 : 0.03);
-      card.bg.fillRoundedRect(1, 1, cardW - 2, Math.max(36, Math.round(cardH * 0.16)), 24);
-      card.descPanel.setSize(Math.max(130, cardW - 28), Math.max(126, cardH - 174));
+      card.bg.fillRoundedRect(1, 1, cardW - 2, Math.max(30, Math.round(cardH * 0.22)), 18);
+      const buttonH = Math.max(42, Math.min(50, Math.round(cardH * 0.3)));
+      const buttonY = cardH - Math.round(buttonH * 0.5) - 8;
+      const costY = buttonY - Math.round(buttonH * 0.5) - 16;
+      const descTop = 70;
+      const descHeight = Math.max(28, costY - descTop - 8);
+      card.descPanel.setPosition(14, descTop);
+      card.descPanel.setSize(Math.max(130, cardW - 28), descHeight);
       card.descPanel.setFillStyle(this.toBrownThemeColorNumber(0x0b1622), selected ? 0.26 : 0.2);
+      card.desc.setPosition(14, descTop + 4);
       card.type.setText(String(item.type || "SERVICE").toUpperCase());
+      card.type.setPosition(14, 20);
       card.name.setText(item.name || "Item");
+      card.name.setPosition(14, 44);
       card.desc.setText(item.description || "");
       card.desc.setWordWrapWidth(Math.max(130, cardW - 34));
       card.cost.setText(`${item.cost || 0}`);
+      card.cost.setPosition(cardW * 0.5, costY);
 
       const purchaseLocked = Boolean(snapshot.run?.shopPurchaseMade);
       const sold = Boolean(item.sold);
       const buyEnabled = Boolean(item.canBuy);
       card.buyEnabled = buyEnabled;
-      const buyButtonWidth = Math.max(130, cardW - 26);
-      const buyButtonHeight = 44;
+      const buyButtonWidth = Math.max(140, cardW - 22);
+      const buyButtonHeight = buttonH;
       setGradientButtonSize(card.buyButton, buyButtonWidth, buyButtonHeight);
-      card.buyButton.container.setPosition(cardW * 0.5, cardH - 30);
-      card.cost.setPosition(cardW * 0.5, cardH - 80);
+      card.buyButton.container.setPosition(cardW * 0.5, buttonY);
 
       if (sold) {
         card.buyButton.enabled = false;
@@ -556,20 +803,23 @@ export class ShopScene extends Phaser.Scene {
         this.applyBuyButtonStyle(card.buyButton, "disabled");
       }
       card.buyButton.container.setAlpha(card.buyButton.enabled ? 1 : 0.86);
-      card.buyButton.text.setFontSize(20);
+      card.buyButton.text.setFontSize(18);
       card.buyButton.text.setOrigin(0, 0.5);
       card.buyButton.text.setAlign("left");
-      card.buyButton.text.setPosition(-buyButtonWidth * 0.5 + 56, 0);
+      card.buyButton.text.setPosition(-buyButtonWidth * 0.5 + 46, 0);
       if (card.buyIcon) {
         card.buyIcon.setTexture(this.resolveDarkIconTexture(SHOP_BUY_ICON_KEY));
-        card.buyIcon.setDisplaySize(36, 36);
-        card.buyIcon.setPosition(-buyButtonWidth * 0.5 + 28, 0);
+        card.buyIcon.setDisplaySize(33, 33);
+        card.buyIcon.setPosition(-buyButtonWidth * 0.5 + 22, 0);
         card.buyIcon.setVisible(true);
       }
       if (card.buyShortcut) {
         card.buyShortcut.setText("Z");
-        card.buyShortcut.setPosition(buyButtonWidth * 0.5 - 14, 0);
-        card.buyShortcut.setVisible(true);
+        card.buyShortcut.setFontSize(13);
+        card.buyShortcut.setColor("#000000");
+        card.buyShortcut.setAlpha(card.buyButton.enabled ? 0.58 : 0.46);
+        card.buyShortcut.setPosition(buyButtonWidth * 0.5 - 16, 0);
+        card.buyShortcut.setVisible(showKeyboardHints);
       }
       card.type.setColor(this.toBrownThemeColorString(selected ? "#f8e7b8" : "#cde4f6"));
       card.name.setColor(this.toBrownThemeColorString(sold ? "#9aa8b7" : selected ? "#f1f8ff" : "#dceefe"));
@@ -578,6 +828,15 @@ export class ShopScene extends Phaser.Scene {
       if (card.hitZone) {
         card.hitZone.setPosition(0, 0);
         card.hitZone.setSize(cardW, cardH);
+        const hitArea = card.hitZone.input?.hitArea;
+        if (hitArea && typeof hitArea.setTo === "function") {
+          hitArea.setTo(0, 0, cardW, cardH);
+        }
+      }
+      if (this.shopListMask) {
+        card.container.setMask(this.shopListMask);
+      } else {
+        card.container.clearMask();
       }
       card.container.setVisible(true);
     });
@@ -585,6 +844,7 @@ export class ShopScene extends Phaser.Scene {
     this.cards.forEach((card, id) => {
       const exists = items.some((item) => item.id === id);
       if (!exists) {
+        card.container.clearMask();
         card.container.setVisible(false);
       }
     });
@@ -592,52 +852,64 @@ export class ShopScene extends Phaser.Scene {
 
   renderButtons(snapshot, width, height) {
     const actions = [
-      { id: "continueRun", label: "CONTINUE", enabled: true },
+      { id: "openShop", label: this.shopOpen ? "Close Shop" : "Shop", enabled: true },
+      { id: "continueRun", label: "LEAVE CAMP", enabled: true },
     ];
     this.rebuildButtons(actions);
-    const buttonW = Math.max(180, Math.min(300, Math.round(width * 0.24)));
-    const buttonH = Math.max(56, Math.min(68, Math.round(height * 0.09)));
-    const y = Math.min(height - 36, height * 0.91);
-
-    actions.forEach((action, index) => {
-      const button = this.buttons.get(action.id);
-      if (!button) {
-        return;
+    const bar = this.bottomBarRect || {
+      x: 12,
+      y: height - 88,
+      width: width - 24,
+      height: 76,
+    };
+    const buttonH = Math.max(50, Math.min(62, Math.round(bar.height * 0.72)));
+    const shopButtonW = Math.max(170, Math.min(230, Math.round(width * 0.17)));
+    const leaveButtonW = Math.max(220, Math.min(320, Math.round(width * 0.24)));
+    const y = bar.y + bar.height * 0.5;
+    const sidePad = 16;
+    const shopButton = this.buttons.get("openShop");
+    const showKeyboardHints = this.shouldShowKeyboardHints(width);
+    if (shopButton) {
+      shopButton.container.setPosition(bar.x + sidePad + shopButtonW * 0.5, y);
+      setGradientButtonSize(shopButton, shopButtonW, buttonH);
+      shopButton.text.setFontSize(Math.max(17, Math.round(buttonH * 0.34)));
+      shopButton.text.setText(this.shopOpen ? "Close Shop" : "Shop");
+      shopButton.text.setOrigin(0.5, 0.5);
+      shopButton.text.setAlign("center");
+      shopButton.text.setPosition(0, 0);
+      if (shopButton.icon) {
+        shopButton.icon.setVisible(false);
       }
-      button.container.setPosition(width * 0.5, y);
-      setGradientButtonSize(button, buttonW, buttonH);
-      button.text.setFontSize(Math.max(20, Math.round(buttonH * 0.34)));
-      button.text.setText(action.label);
-      const showIcon = action.id !== "continueRun";
-      if (showIcon) {
-        button.text.setOrigin(0, 0.5);
-        button.text.setAlign("left");
-        button.text.setPosition(-buttonW * 0.5 + 48, 0);
-      } else {
-        button.text.setOrigin(0.5, 0.5);
-        button.text.setAlign("center");
-        button.text.setPosition(0, 0);
+      if (shopButton.shortcut) {
+        shopButton.shortcut.setVisible(false);
       }
-      if (button.icon) {
-        if (showIcon) {
-          button.icon.setTexture(this.resolveDarkIconTexture(SHOP_DEAL_ICON_KEY));
-          button.icon.setDisplaySize(22, 22);
-          button.icon.setPosition(-buttonW * 0.5 + 24, 0);
-          button.icon.setVisible(true);
-        } else {
-          button.icon.setVisible(false);
-        }
+      shopButton.enabled = true;
+      this.applyButtonStyle(shopButton, "idle");
+      shopButton.container.setAlpha(1);
+      shopButton.container.setVisible(true);
+    }
+    const continueButton = this.buttons.get("continueRun");
+    if (continueButton) {
+      continueButton.container.setPosition(bar.x + bar.width - sidePad - leaveButtonW * 0.5, y);
+      setGradientButtonSize(continueButton, leaveButtonW, buttonH);
+      continueButton.text.setFontSize(Math.max(17, Math.round(buttonH * 0.34)));
+      continueButton.text.setText("LEAVE CAMP");
+      continueButton.text.setOrigin(0, 0.5);
+      continueButton.text.setAlign("left");
+      continueButton.text.setPosition(-leaveButtonW * 0.5 + 22, 0);
+      if (continueButton.icon) {
+        continueButton.icon.setVisible(false);
       }
-      if (button.shortcut) {
-        button.shortcut.setText("ENTER");
-        button.shortcut.setPosition(buttonW * 0.5 - 16, 0);
-        button.shortcut.setVisible(true);
+      if (continueButton.shortcut) {
+        continueButton.shortcut.setText("ENTER");
+        continueButton.shortcut.setPosition(leaveButtonW * 0.5 - 16, 0);
+        continueButton.shortcut.setVisible(showKeyboardHints);
       }
-      button.enabled = action.enabled;
-      this.applyButtonStyle(button, action.enabled ? "idle" : "disabled");
-      button.container.setAlpha(action.enabled ? 1 : 0.86);
-      button.container.setVisible(true);
-    });
+      continueButton.enabled = true;
+      this.applyButtonStyle(continueButton, "idle");
+      continueButton.container.setAlpha(1);
+      continueButton.container.setVisible(true);
+    }
   }
 
   rebuildCards(items) {
@@ -713,39 +985,37 @@ export class ShopScene extends Phaser.Scene {
           this.invokeAction("buy", card.currentIndex);
         },
         width: 220,
-        height: 44,
-        fontSize: 20,
+        height: 50,
+        fontSize: 18,
       });
+      buyButton.hitZone.on("pointerover", () => this.handleCardHover(card.currentIndex));
+      buyButton.hitZone.on("pointerdown", () => this.handleCardHover(card.currentIndex));
       buyButton.container.setPosition(125, 310);
       const buyIcon = this.add
         .image(0, 0, this.resolveDarkIconTexture(SHOP_BUY_ICON_KEY))
-        .setDisplaySize(36, 36)
+        .setDisplaySize(33, 33)
         .setAlpha(0.92);
       const buyShortcut = this.add
         .text(0, 0, "Z", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
-          fontSize: "12px",
+          fontSize: "13px",
           color: "#000000",
           fontStyle: "700",
         })
         .setOrigin(1, 0.5)
-        .setAlpha(0.5);
+        .setAlpha(0.58);
       buyButton.container.add([buyIcon, buyShortcut]);
       card.buyIcon = buyIcon;
       card.buyShortcut = buyShortcut;
       card.buyButton = buyButton;
 
-      container.add([bg, type, name, descPanel, desc, cost, buyButton.container]);
+      container.add([bg, type, name, descPanel, desc, cost]);
 
       const cardHit = this.add.zone(0, 0, 1, 1).setOrigin(0, 0).setInteractive({ useHandCursor: true });
       cardHit.on("pointerover", () => this.handleCardHover(card.currentIndex));
       cardHit.on("pointerdown", () => this.invokeAction("selectIndex", card.currentIndex));
-      cardHit.on("pointerout", () => {
-        if (this.hoveredCardIndex === card.currentIndex) {
-          this.hoveredCardIndex = null;
-        }
-      });
       container.add(cardHit);
+      container.add(buyButton.container);
       card.hitZone = cardHit;
 
       this.cards.set(item.id, card);
@@ -769,7 +1039,13 @@ export class ShopScene extends Phaser.Scene {
         id: action.id,
         label: action.label,
         styleSet: BUTTON_STYLE,
-        onPress: () => this.invokeAction(action.id),
+        onPress: () => {
+          if (action.id === "openShop") {
+            this.setShopOpen(!this.shopOpen);
+            return;
+          }
+          this.invokeAction(action.id);
+        },
         width: 210,
         height: 64,
         fontSize: 28,
@@ -797,6 +1073,18 @@ export class ShopScene extends Phaser.Scene {
 
   applyBuyButtonStyle(button, styleName) {
     applyGradientButtonStyle(button, styleName);
+  }
+
+  coverSizeForTexture(textureKey, boundsW, boundsH) {
+    const texture = this.textures.get(textureKey);
+    const source = texture?.source?.[0];
+    const sourceW = Math.max(1, Number(source?.width) || Number(texture?.getSourceImage?.()?.width) || 1);
+    const sourceH = Math.max(1, Number(source?.height) || Number(texture?.getSourceImage?.()?.height) || 1);
+    const scale = Math.max(boundsW / sourceW, boundsH / sourceH);
+    return {
+      width: sourceW * scale,
+      height: sourceH * scale,
+    };
   }
 
   hideAllText() {
@@ -1062,6 +1350,22 @@ export class ShopScene extends Phaser.Scene {
       iconSize: 15,
     });
     return this.logsCloseButton;
+  }
+
+  ensureShopCloseButton() {
+    if (this.shopCloseButton) {
+      return this.shopCloseButton;
+    }
+    this.shopCloseButton = createModalCloseButton(this, {
+      id: "shop-panel-close",
+      styleSet: BUTTON_STYLE,
+      onPress: () => this.setShopOpen(false),
+      depth: 130,
+      width: 34,
+      height: 30,
+      iconSize: 13,
+    });
+    return this.shopCloseButton;
   }
 
   drawLogsModal(snapshot, width, height) {

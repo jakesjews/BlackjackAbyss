@@ -71,6 +71,7 @@ body {
 
 body.mobile-ui-active {
   padding-bottom: calc(136px + env(safe-area-inset-bottom));
+  padding-top: 0;
 }
 
 body.compact-controls.mobile-ui-active {
@@ -108,6 +109,8 @@ body.menu-screen.compact-controls.mobile-ui-active {
 
 body.mobile-ui-active #game-shell {
   margin-bottom: 0;
+  width: 100vw;
+  height: 100dvh;
 }
 
 body.menu-screen.mobile-ui-active #game-shell {
@@ -1198,7 +1201,7 @@ body.compact-controls #mobile-controls.single-action-only button[data-mobile-act
 @media (max-width: 980px), (pointer: coarse) {
   body {
     align-items: start;
-    padding-top: 8px;
+    padding-top: 0;
   }
 
   body.menu-screen {

@@ -68,8 +68,12 @@ export class LegacyRuntimeAdapter {
           split: typeof api.split === "function" ? api.split : null,
           deal: typeof api.deal === "function" ? api.deal : null,
           confirmIntro: typeof api.confirmIntro === "function" ? api.confirmIntro : null,
+          card: typeof api.card === "function" ? api.card : null,
           fireballLaunch: typeof api.fireballLaunch === "function" ? api.fireballLaunch : null,
           fireballImpact: typeof api.fireballImpact === "function" ? api.fireballImpact : null,
+          startEnemyDefeatTransition: typeof api.startEnemyDefeatTransition === "function"
+            ? api.startEnemyDefeatTransition
+            : null,
           goHome: typeof api.goHome === "function" ? api.goHome : null,
         };
       },

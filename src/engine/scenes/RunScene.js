@@ -16,6 +16,12 @@ const RUN_CHIPS_ICON_KEY = "__run-chips-icon__";
 const RUN_CHIPS_ICON_TRIM_KEY = "__run-chips-icon-trim__";
 const RUN_RELIC_ICON_KEY = "__run-relic-icon__";
 const RUN_PLAYER_AVATAR_KEY = "__run-player-avatar__";
+const RUN_CARD_BACKPLATE_KEY = "__run-card-backplate__";
+const RUN_CARD_HEIGHT_SCALE = 1.08;
+const RUN_DEALER_CARD_FLIP_MS = 560;
+const RUN_DEALER_CARD_FLIP_STRETCH = 0.14;
+const RUN_DEALER_CARD_ENTRY_MS = 460;
+const RUN_CARD_DEAL_GAP_MS = 90;
 const RUN_WATERMARK_KEY = "__run-watermark__";
 const RUN_WATERMARK_ALPHA = 0.75;
 const RUN_WATERMARK_RENDER_KEY = `__run-watermark-render-v9-a${Math.round(RUN_WATERMARK_ALPHA * 1000)}__`;
@@ -29,6 +35,8 @@ const RUN_MODAL_BASE_DEPTH = 300;
 const RUN_MODAL_LAYER_STEP = 24;
 const RUN_MODAL_CONTENT_OFFSET = 8;
 const RUN_MODAL_CLOSE_OFFSET = 14;
+const RUN_ENEMY_DEFEAT_PULSE_STEPS = 7;
+const RUN_ENEMY_DEFEAT_PULSE_INTERVAL_MS = 78;
 const RUN_ACTION_ICONS = Object.freeze({
   hit: "/images/icons/hit.png",
   stand: "/images/icons/stand.png",
@@ -126,6 +134,15 @@ export class RunScene extends Phaser.Scene {
     this.cardAnimStates = new Map();
     this.cardAnimSeen = new Set();
     this.cardNodes = new Map();
+    this.cardFlipStates = new Map();
+    this.cardHiddenStateBySlot = new Map();
+    this.rowCardCountByPrefix = new Map();
+    this.nextGlobalDealStartAt = 0;
+    this.cardDealSequenceId = 0;
+    this.lastOpeningDealSignature = "";
+    this.lastHandRenderSignature = "";
+    this.handOpeningDealPending = false;
+    this.prevCanDeal = false;
     this.topButtons = new Map();
     this.logsModalOpen = false;
     this.relicModalOpen = false;
@@ -143,6 +160,10 @@ export class RunScene extends Phaser.Scene {
     this.watermarkMask = null;
     this.fireTrailEmitter = null;
     this.fireImpactEmitter = null;
+    this.enemyDefeatEmitter = null;
+    this.enemyDefeatSignature = "";
+    this.enemyDefeatBurstStep = -1;
+    this.enemyDefeatLastPulseAt = 0;
     this.lastHpState = null;
     this.pointerHandlers = [];
     this.logsScrollIndex = 0;
@@ -157,6 +178,7 @@ export class RunScene extends Phaser.Scene {
       enemy: { until: 0, start: 0, duration: 0, magnitude: 0 },
       player: { until: 0, start: 0, duration: 0, magnitude: 0 },
     };
+    this.activeResolutionAnimations = 0;
   }
 
   preload() {
@@ -185,6 +207,9 @@ export class RunScene extends Phaser.Scene {
     }
     if (!this.textures.exists(RUN_PLAYER_AVATAR_KEY)) {
       this.load.image(RUN_PLAYER_AVATAR_KEY, "/images/avatars/player.png");
+    }
+    if (!this.textures.exists(RUN_CARD_BACKPLATE_KEY)) {
+      this.load.image(RUN_CARD_BACKPLATE_KEY, "/images/backplates/backplate_default.png");
     }
     if (!this.textures.exists(RUN_WATERMARK_KEY)) {
       this.load.image(RUN_WATERMARK_KEY, "/images/watermark.png");
@@ -227,6 +252,7 @@ export class RunScene extends Phaser.Scene {
     this.playerPortrait = this.add
       .image(0, 0, this.textures.exists(RUN_PLAYER_AVATAR_KEY) ? RUN_PLAYER_AVATAR_KEY : RUN_PARTICLE_KEY)
       .setVisible(false)
+      .setAlpha(0.75)
       .setDepth(16);
     this.playerPortraitMaskShape = this.applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }));
     this.playerPortraitMask = this.playerPortraitMaskShape.createGeometryMask();
@@ -278,6 +304,20 @@ export class RunScene extends Phaser.Scene {
       .setDepth(131)
       .setBlendMode(Phaser.BlendModes.ADD);
     this.fireImpactEmitter.stop();
+    this.enemyDefeatEmitter = this.add
+      .particles(0, 0, RUN_PARTICLE_KEY, {
+        frequency: -1,
+        quantity: 26,
+        lifespan: { min: 260, max: 920 },
+        speed: { min: 84, max: 340 },
+        angle: { min: 0, max: 360 },
+        scale: { start: 0.58, end: 0.04 },
+        alpha: { start: 0.94, end: 0 },
+        tint: [0xfff2ca, 0xffc579, 0xff8e47, 0xff5a2d],
+      })
+      .setDepth(134)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.enemyDefeatEmitter.stop();
 
     this.bindKeyboardInput();
     this.bindPointerInput();
@@ -302,10 +342,26 @@ export class RunScene extends Phaser.Scene {
     this.textNodes.clear();
     this.cardTextNodes.forEach((node) => node.destroy());
     this.cardTextNodes.clear();
-    this.cardNodes.forEach((node) => node.container.destroy());
+    this.cardNodes.forEach((node) => {
+      if (node.backMaskShape) {
+        node.backMaskShape.destroy();
+        node.backMaskShape = null;
+        node.backMask = null;
+      }
+      node.container.destroy();
+    });
     this.cardNodes.clear();
     this.cardAnimStates.clear();
     this.cardAnimSeen.clear();
+    this.cardFlipStates.clear();
+    this.cardHiddenStateBySlot.clear();
+    this.rowCardCountByPrefix.clear();
+    this.nextGlobalDealStartAt = 0;
+    this.cardDealSequenceId = 0;
+    this.lastOpeningDealSignature = "";
+    this.lastHandRenderSignature = "";
+    this.handOpeningDealPending = false;
+    this.prevCanDeal = false;
     this.topButtons.forEach((button) => button.container.destroy());
     this.topButtons.clear();
     if (this.relicButton) {
@@ -356,6 +412,13 @@ export class RunScene extends Phaser.Scene {
       this.fireImpactEmitter.destroy();
       this.fireImpactEmitter = null;
     }
+    if (this.enemyDefeatEmitter) {
+      this.enemyDefeatEmitter.destroy();
+      this.enemyDefeatEmitter = null;
+    }
+    this.enemyDefeatSignature = "";
+    this.enemyDefeatBurstStep = -1;
+    this.enemyDefeatLastPulseAt = 0;
     this.lastHpState = null;
     this.darkIconTextureBySource.clear();
     if (this.enemyPortrait) {
@@ -399,6 +462,7 @@ export class RunScene extends Phaser.Scene {
     this.buttonEnabledState.clear();
     this.buttonPulseTweens.forEach((tween) => tween?.stop?.());
     this.buttonPulseTweens.clear();
+    this.activeResolutionAnimations = 0;
   }
 
   ensureRunParticleTexture() {
@@ -539,6 +603,34 @@ export class RunScene extends Phaser.Scene {
     if (this.lastSnapshot) {
       this.renderSnapshot(this.lastSnapshot);
     }
+  }
+
+  beginResolutionAnimation() {
+    this.activeResolutionAnimations = Math.max(0, Math.round(this.activeResolutionAnimations || 0)) + 1;
+  }
+
+  endResolutionAnimation() {
+    this.activeResolutionAnimations = Math.max(0, Math.round(this.activeResolutionAnimations || 0) - 1);
+  }
+
+  hasActiveResolutionAnimations() {
+    return Math.max(0, Math.round(this.activeResolutionAnimations || 0)) > 0;
+  }
+
+  hasActiveCardDealAnimations() {
+    const now = this.time.now;
+    for (const state of this.cardAnimStates.values()) {
+      if (now < (Number(state?.start) || 0) + RUN_DEALER_CARD_ENTRY_MS) {
+        return true;
+      }
+    }
+    for (const state of this.cardFlipStates.values()) {
+      const duration = Math.max(120, Number(state?.duration) || RUN_DEALER_CARD_FLIP_MS);
+      if (now < (Number(state?.start) || 0) + duration) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bindKeyboardInput() {
@@ -754,6 +846,10 @@ export class RunScene extends Phaser.Scene {
   }
 
   invokeAction(actionName) {
+    const gatedActions = new Set(["hit", "stand", "doubleDown", "split", "deal", "confirmIntro"]);
+    if (gatedActions.has(actionName) && (this.hasActiveCardDealAnimations() || this.hasActiveResolutionAnimations())) {
+      return;
+    }
     const api = this.getRunApi();
     const action = api ? api[actionName] : null;
     if (typeof action === "function") {
@@ -763,6 +859,56 @@ export class RunScene extends Phaser.Scene {
 
   isCompactLayout(width) {
     return width < 760;
+  }
+
+  shouldShowKeyboardHints(width) {
+    const viewportWidth = Number(width) || 0;
+    const coarsePointer = typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(pointer: coarse)").matches;
+    return viewportWidth >= 1100 && !coarsePointer;
+  }
+
+  getTransitionState(snapshot) {
+    const transition = snapshot?.transition;
+    if (!transition || typeof transition !== "object") {
+      return null;
+    }
+    const target = transition.target === "player" ? "player" : transition.target === "enemy" ? "enemy" : "";
+    if (!target) {
+      return null;
+    }
+    const duration = Math.max(0.001, Number(transition.duration) || Number(transition.remaining) || 0.001);
+    const remaining = Phaser.Math.Clamp(Number(transition.remaining) || 0, 0, duration);
+    const rawProgress = Number(transition.progress);
+    const progress = Number.isFinite(rawProgress)
+      ? Phaser.Math.Clamp(rawProgress, 0, 1)
+      : Phaser.Math.Clamp(1 - remaining / duration, 0, 1);
+    const waiting = Boolean(transition.waiting);
+    return {
+      target,
+      duration,
+      remaining,
+      progress,
+      waiting,
+    };
+  }
+
+  tryStartQueuedEnemyDefeatTransition(snapshot, options = {}) {
+    const transitionState = this.getTransitionState(snapshot);
+    if (!transitionState || transitionState.target !== "enemy" || !transitionState.waiting) {
+      return;
+    }
+    if (snapshot?.intro?.active) {
+      return;
+    }
+    if (Boolean(options?.deferResolutionUi)) {
+      return;
+    }
+    if (this.hasActiveResolutionAnimations()) {
+      return;
+    }
+    this.playRunSfx("startEnemyDefeatTransition");
   }
 
   applyBrownThemeToGraphics(graphics) {
@@ -893,8 +1039,8 @@ export class RunScene extends Phaser.Scene {
 
   getRunLayout(width, height) {
     const compact = this.isCompactLayout(width);
-    const topBarH = compact ? 92 : RUN_TOP_BAR_HEIGHT;
-    const bottomBarH = compact ? 98 : RUN_BOTTOM_BAR_HEIGHT;
+    const topBarH = compact ? 76 : RUN_TOP_BAR_HEIGHT;
+    const bottomBarH = compact ? 158 : RUN_BOTTOM_BAR_HEIGHT;
     const sidePad = Math.max(compact ? 16 : 22, Math.round(width * (compact ? 0.016 : 0.02)));
     const arenaTop = topBarH;
     const arenaBottom = Math.max(arenaTop + 180, height - bottomBarH);
@@ -924,6 +1070,10 @@ export class RunScene extends Phaser.Scene {
     this.introButtonLayout = null;
     if (!snapshot) {
       this.lastHpState = null;
+      this.activeResolutionAnimations = 0;
+      this.enemyDefeatSignature = "";
+      this.enemyDefeatBurstStep = -1;
+      this.enemyDefeatLastPulseAt = 0;
       if (this.watermarkBackground) {
         this.watermarkBackground.setVisible(false);
       }
@@ -934,6 +1084,15 @@ export class RunScene extends Phaser.Scene {
       this.lastResultSignature = "";
       this.cardAnimStates.clear();
       this.cardAnimSeen.clear();
+      this.cardFlipStates.clear();
+      this.cardHiddenStateBySlot.clear();
+      this.rowCardCountByPrefix.clear();
+      this.nextGlobalDealStartAt = 0;
+      this.cardDealSequenceId = 0;
+      this.lastOpeningDealSignature = "";
+      this.lastHandRenderSignature = "";
+      this.handOpeningDealPending = false;
+      this.prevCanDeal = false;
       this.closeAllModals();
       this.topButtons.forEach((button) => button.container.setVisible(false));
       if (this.relicButton) {
@@ -964,12 +1123,40 @@ export class RunScene extends Phaser.Scene {
 
     this.drawBackground(width, height, runLayout);
     this.drawHud(snapshot, width, runLayout);
-    const layout = this.drawEncounterPanels(snapshot, width, height, runLayout);
+    const safeHandIndex = Math.max(1, Number(snapshot?.handIndex) || 1);
+    const handRenderSignature = [
+      String(snapshot?.run?.floor || 0),
+      String(snapshot?.run?.room || 0),
+      String(snapshot?.enemy?.name || ""),
+      `h${safeHandIndex}`,
+    ].join("|");
+    if (handRenderSignature !== this.lastHandRenderSignature) {
+      this.lastHandRenderSignature = handRenderSignature;
+      this.cardDealSequenceId += 1;
+      this.handOpeningDealPending = true;
+      this.cardAnimStates.clear();
+      this.cardAnimSeen.clear();
+      this.cardFlipStates.clear();
+      this.cardHiddenStateBySlot.clear();
+      this.rowCardCountByPrefix.clear();
+      this.nextGlobalDealStartAt = this.time.now;
+      this.cardNodes.forEach((node) => node.container.setVisible(false));
+    }
+    const canDealNow = Boolean(snapshot?.status?.canDeal);
+    if (this.prevCanDeal && !canDealNow) {
+      this.lastOpeningDealSignature = "";
+    }
+    this.prevCanDeal = canDealNow;
+    const transitionState = this.getTransitionState(snapshot);
+    const layout = this.drawEncounterPanels(snapshot, width, height, runLayout, { transitionState });
+    this.renderEnemyDefeatEffect(transitionState, layout);
     this.renderRelicButton(snapshot, layout, runLayout);
-    this.drawCards(snapshot, width, height, layout);
-    this.processHpImpacts(snapshot, layout, width, height);
-    this.drawRunMessages(snapshot, width, height, layout);
-    this.renderButtons(snapshot, width, height, runLayout);
+    const cardRenderState = this.drawCards(snapshot, width, height, layout);
+    const deferResolutionUi = Boolean(cardRenderState?.deferResolutionUi);
+    this.processHpImpacts(snapshot, layout, width, height, { deferResolutionUi });
+    this.drawRunMessages(snapshot, width, height, layout, { deferResolutionUi });
+    this.tryStartQueuedEnemyDefeatTransition(snapshot, { deferResolutionUi });
+    this.renderButtons(snapshot, width, height, runLayout, { deferResolutionUi });
     this.renderTopActions(snapshot, width, runLayout);
     if (this.logsCloseButton && !this.logsModalOpen) {
       this.logsCloseButton.container.setVisible(false);
@@ -978,13 +1165,9 @@ export class RunScene extends Phaser.Scene {
       this.relicCloseButton.container.setVisible(false);
     }
     const modalOrder = this.getModalOpenOrder();
-    modalOrder.forEach((modalId, layerIndex) => {
-      if (modalId === "logs") {
-        this.drawLogsModal(snapshot, width, height, runLayout, layerIndex);
-      } else if (modalId === "relics") {
-        this.drawRelicsModal(snapshot, width, height, runLayout, layerIndex);
-      }
-    });
+    const topModalId = modalOrder[modalOrder.length - 1] || "";
+    this.drawLogsModal(snapshot, width, height, runLayout, topModalId === "logs" ? 0 : -1);
+    this.drawRelicsModal(snapshot, width, height, runLayout, topModalId === "relics" ? 0 : -1);
     this.syncModalBlocker(width, height);
   }
 
@@ -1046,57 +1229,35 @@ export class RunScene extends Phaser.Scene {
       : Number.isFinite(run.player?.gold)
         ? run.player.gold
         : 0;
-    const streak = Number.isFinite(run.streak)
-      ? run.streak
-      : Number.isFinite(run.player?.streak)
-        ? run.player.streak
-        : 0;
-    const guards = Number.isFinite(run.bustGuardsLeft)
-      ? run.bustGuardsLeft
-      : Number.isFinite(run.player?.bustGuardsLeft)
-        ? run.player.bustGuardsLeft
-        : 0;
     const floor = Number.isFinite(run.floor) ? run.floor : 1;
     const maxFloor = Number.isFinite(run.maxFloor) ? run.maxFloor : 3;
     const room = Number.isFinite(run.room) ? run.room : 1;
     const roomsPerFloor = Number.isFinite(run.roomsPerFloor) ? run.roomsPerFloor : 5;
     const compact = Boolean(runLayout.compact);
     if (compact) {
-      const row1Y = 24;
-      const row2Y = 58;
+      const rowY = Math.round(runLayout.topBarH * 0.5);
       const leftStartX = runLayout.sidePad + 8;
       if (this.hudChipsIcon) {
-        this.hudChipsIcon.setPosition(leftStartX, row1Y);
+        this.hudChipsIcon.setPosition(leftStartX, rowY);
         this.hudChipsIcon.setDisplaySize(18, 18);
         this.hudChipsIcon.clearTint();
         this.hudChipsIcon.setVisible(true);
       } else {
-        this.drawChipIcon(leftStartX, row1Y, 7);
+        this.drawChipIcon(leftStartX, rowY, 7);
       }
-      this.drawText("hud-chips", String(chips), leftStartX + 20, row1Y, {
+      const chipsNode = this.drawText("hud-chips", String(chips), leftStartX + 20, rowY, {
         fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
         fontSize: "16px",
         color: "#f2cd88",
         fontStyle: "700",
       }, { x: 0, y: 0.5 });
-      this.drawText("hud-streak", `Streak ${streak}`, leftStartX + 78, row1Y, {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "14px",
-        color: "#d8c09a",
-        fontStyle: "700",
-      }, { x: 0, y: 0.5 });
-      this.drawText("hud-guards", `Guards ${guards}`, width - runLayout.sidePad - 4, row1Y, {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "14px",
-        color: "#d8c09a",
-        fontStyle: "700",
-      }, { x: 1, y: 0.5 });
-      this.drawText("hud-floor-room", `Floor ${floor}/${maxFloor}  Room ${room}/${roomsPerFloor}`, width * 0.5, row2Y, {
+      const floorRoomX = chipsNode.x + chipsNode.width + 26;
+      this.drawText("hud-floor-room", `Floor ${floor}/${maxFloor}  Room ${room}/${roomsPerFloor}`, floorRoomX, rowY, {
         fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
         fontSize: "15px",
         color: "#e2d0af",
         fontStyle: "700",
-      }, { x: 0.5, y: 0.5 });
+      }, { x: 0, y: 0.5 });
       return;
     }
 
@@ -1114,12 +1275,6 @@ export class RunScene extends Phaser.Scene {
       fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
       fontSize: "17px",
       color: "#f2cd88",
-      fontStyle: "700",
-    }, { x: 0, y: 0.5 });
-    this.drawText("hud-left-stats", `Streak ${streak}   Guards ${guards}`, leftStartX + 74, hudY, {
-      fontFamily: '"Chakra Petch", "Sora", sans-serif',
-      fontSize: "16px",
-      color: "#d8c09a",
       fontStyle: "700",
     }, { x: 0, y: 0.5 });
     this.drawText("hud-floor-room", `Floor ${floor}/${maxFloor}  Room ${room}/${roomsPerFloor}`, width * 0.5, hudY, {
@@ -1361,10 +1516,15 @@ export class RunScene extends Phaser.Scene {
     return outputKey;
   }
 
-  drawEncounterPanels(snapshot, width, height, runLayout) {
+  drawEncounterPanels(snapshot, width, height, runLayout, options = {}) {
     const enemy = snapshot.enemy || {};
     const player = snapshot.player || {};
     const compact = Boolean(runLayout.compact);
+    const transitionState = options?.transitionState || null;
+    const enemyDefeatTransition = transitionState?.target === "enemy" && !transitionState?.waiting ? transitionState : null;
+    const enemyFadeProgress = enemyDefeatTransition
+      ? Phaser.Math.Easing.Cubic.In(Phaser.Math.Clamp((enemyDefeatTransition.progress - 0.16) / 0.84, 0, 1))
+      : 0;
     const enemyAvatarW = compact ? Math.max(96, Math.min(124, Math.round(width * 0.29))) : 146;
     const enemyAvatarH = compact ? Math.round(enemyAvatarW * 1.18) : 176;
     const enemyAvatarX = width - runLayout.sidePad - enemyAvatarW;
@@ -1418,11 +1578,17 @@ export class RunScene extends Phaser.Scene {
         lightTextColor: "#eef6ff",
       }
     );
-    this.drawEnemyAvatar(enemy, enemyAvatarX, enemyAvatarY, enemyAvatarW, enemyAvatarH);
+    this.drawEnemyAvatar(enemy, enemyAvatarX, enemyAvatarY, enemyAvatarW, enemyAvatarH, {
+      defeatProgress: enemyDefeatTransition?.progress || 0,
+      fadeProgress: enemyFadeProgress,
+    });
 
-    const playerAvatarSize = compact ? 84 : 110;
-    const playerAvatarW = playerAvatarSize;
-    const playerAvatarH = playerAvatarSize;
+    const playerAvatarW = compact ? 84 : 110;
+    const playerButtonH = compact ? 40 : 50;
+    const playerAvatarH = Math.max(
+      playerAvatarW,
+      (compact ? 22 : 34) + (compact ? 24 : 28) + (compact ? 30 : 36) + Math.round(playerButtonH * 0.5)
+    );
     const playerAvatarX = runLayout.sidePad;
     const playerAvatarY = runLayout.arenaBottom - playerAvatarH - (compact ? 12 : 14);
     this.drawPlayerAvatar(playerAvatarX, playerAvatarY, playerAvatarW, playerAvatarH);
@@ -1456,7 +1622,7 @@ export class RunScene extends Phaser.Scene {
 
     const cardAspect = 1.42;
     const nominalCardWidth = compact ? 64 : 88;
-    const nominalCardHeight = Math.round(nominalCardWidth * cardAspect);
+    const nominalCardHeight = Math.round(nominalCardWidth * cardAspect * RUN_CARD_HEIGHT_SCALE);
     const nominalMessageGap = compact ? 18 : 24;
     const messagePanelH = compact ? 48 : 60;
     const messagePanelW = compact
@@ -1510,6 +1676,12 @@ export class RunScene extends Phaser.Scene {
       enemyAvatarY,
       enemyAvatarW,
       enemyAvatarH,
+      enemyAvatarRect: {
+        x: enemyAvatarX,
+        y: enemyAvatarY,
+        width: enemyAvatarW,
+        height: enemyAvatarH,
+      },
       playerAvatarX,
       playerAvatarY,
       playerAvatarW,
@@ -1564,6 +1736,7 @@ export class RunScene extends Phaser.Scene {
       this.setModalOpen("relics", false);
     }
     const compact = Boolean(runLayout?.compact);
+    const showKeyboardHints = this.shouldShowKeyboardHints(this.scale.gameSize.width);
     const desiredButtonW = compact ? 170 : 220;
     const availableButtonW = Math.max(120, Math.round(layout.playerInfoWidth || desiredButtonW));
     const buttonW = Math.max(120, Math.min(desiredButtonW, availableButtonW));
@@ -1594,7 +1767,7 @@ export class RunScene extends Phaser.Scene {
       this.relicButton.shortcut.setText("TAB");
       this.relicButton.shortcut.setFontSize(compact ? 11 : 13);
       this.relicButton.shortcut.setPosition(buttonW * 0.5 - (compact ? 16 : 24), 0);
-      this.relicButton.shortcut.setVisible(true);
+      this.relicButton.shortcut.setVisible(showKeyboardHints);
     }
     this.relicButton.enabled = count > 0;
     this.setButtonVisual(this.relicButton, this.relicButton.enabled ? "idle" : "disabled");
@@ -1606,7 +1779,7 @@ export class RunScene extends Phaser.Scene {
     const shake = this.getAvatarShakeOffset("player");
     const drawX = x + shake.x;
     const drawY = y + shake.y;
-    this.graphics.fillStyle(0x2a2017, 1);
+    this.graphics.fillStyle(0x2a1a0f, 1);
     this.graphics.fillRoundedRect(drawX, drawY, width, height, 18);
     this.graphics.lineStyle(1.8, 0x8a6940, 1);
     this.graphics.strokeRoundedRect(drawX, drawY, width, height, 18);
@@ -1616,6 +1789,8 @@ export class RunScene extends Phaser.Scene {
     const innerY = drawY + inset;
     const innerW = width - inset * 2;
     const innerH = height - inset * 2;
+    this.graphics.fillStyle(0x3b2718, 1);
+    this.graphics.fillRoundedRect(innerX, innerY, innerW, innerH, 10);
     const playerTextureKey = this.textures.exists(RUN_PLAYER_AVATAR_KEY) ? RUN_PLAYER_AVATAR_KEY : "";
     if (playerTextureKey && this.playerPortrait) {
       if (this.playerPortraitMaskShape) {
@@ -1626,11 +1801,10 @@ export class RunScene extends Phaser.Scene {
       const cover = this.coverSizeForTexture(playerTextureKey, innerW, innerH);
       this.playerPortrait
         .setTexture(playerTextureKey)
+        .setAlpha(0.75)
         .setDisplaySize(cover.width, cover.height)
         .setPosition(drawX + width * 0.5, drawY + height * 0.5)
         .setVisible(true);
-      this.graphics.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.08, 0.08, 0.02, 0.12);
-      this.graphics.fillRoundedRect(innerX, innerY, innerW, innerH, 10);
       return;
     }
     if (this.playerPortrait) {
@@ -1663,10 +1837,9 @@ export class RunScene extends Phaser.Scene {
   }
 
   coverSizeForTexture(textureKey, boundsW, boundsH) {
-    const texture = this.textures.get(textureKey);
-    const source = texture?.source?.[0];
-    const sourceW = Math.max(1, Number(source?.width) || Number(texture?.getSourceImage?.()?.width) || 1);
-    const sourceH = Math.max(1, Number(source?.height) || Number(texture?.getSourceImage?.()?.height) || 1);
+    const source = this.getTextureSourceSize(textureKey);
+    const sourceW = source.width;
+    const sourceH = source.height;
     const scale = Math.max(boundsW / sourceW, boundsH / sourceH);
     return {
       width: sourceW * scale,
@@ -1674,17 +1847,41 @@ export class RunScene extends Phaser.Scene {
     };
   }
 
-  drawEnemyAvatar(enemy, x, y, width, height) {
+  getTextureSourceSize(textureKey) {
+    const texture = this.textures.get(textureKey);
+    const source = texture?.source?.[0];
+    return {
+      width: Math.max(1, Number(source?.width) || Number(texture?.getSourceImage?.()?.width) || 1),
+      height: Math.max(1, Number(source?.height) || Number(texture?.getSourceImage?.()?.height) || 1),
+    };
+  }
+
+  drawEnemyAvatar(enemy, x, y, width, height, options = {}) {
+    const defeatProgress = Phaser.Math.Clamp(Number(options?.defeatProgress) || 0, 0, 1);
+    const fadeProgress = Phaser.Math.Clamp(Number(options?.fadeProgress) || 0, 0, 1);
+    const avatarAlpha = Phaser.Math.Clamp(1 - fadeProgress, 0, 1);
     const shake = this.getAvatarShakeOffset("enemy");
-    const drawX = x + shake.x;
-    const drawY = y + shake.y;
-    this.graphics.fillStyle(0x1c2f43, 0.95);
+    const dissolveJitterX = defeatProgress > 0 ? Math.sin(this.time.now * 0.046) * (1.4 + defeatProgress * 3) : 0;
+    const dissolveJitterY = defeatProgress > 0 ? Math.cos(this.time.now * 0.041) * (0.9 + defeatProgress * 2.2) : 0;
+    const drawX = x + shake.x + dissolveJitterX;
+    const drawY = y + shake.y + dissolveJitterY;
+    if (avatarAlpha <= 0.01) {
+      if (this.enemyPortrait) {
+        this.enemyPortrait.setVisible(false);
+      }
+      const fallback = this.textNodes.get("enemy-avatar-fallback");
+      if (fallback) {
+        fallback.setVisible(false);
+      }
+      return;
+    }
+    this.graphics.fillStyle(0x1c2f43, 0.95 * avatarAlpha);
     this.graphics.fillRoundedRect(drawX, drawY, width, height, 14);
-    this.graphics.lineStyle(1.8, 0x516f8f, 0.5);
+    this.graphics.lineStyle(1.8, 0x516f8f, 0.5 * avatarAlpha);
     this.graphics.strokeRoundedRect(drawX, drawY, width, height, 14);
 
     const pulse = Math.sin(this.time.now * 0.004) * 0.5 + 0.5;
-    this.graphics.lineStyle(2.1, this.enemyAccent(enemy?.type), 0.26 + pulse * 0.22);
+    this.graphics.lineStyle(2.1, this.enemyAccent(enemy?.type), (0.26 + pulse * 0.22) * avatarAlpha);
     this.graphics.strokeRoundedRect(drawX - 1, drawY - 1, width + 2, height + 2, 15);
 
     const innerPad = 6;
@@ -1709,13 +1906,14 @@ export class RunScene extends Phaser.Scene {
       if (this.enemyPortrait) {
         this.enemyPortrait.setVisible(false);
       }
-      this.graphics.fillStyle(0x1a3146, 0.92);
+      this.graphics.fillStyle(0x1a3146, 0.92 * avatarAlpha);
       this.graphics.fillRoundedRect(innerX, innerY, innerW, innerH, 10);
-      this.drawText("enemy-avatar-fallback", "?", drawX + width * 0.5, drawY + height * 0.56, {
+      const fallbackNode = this.drawText("enemy-avatar-fallback", "?", drawX + width * 0.5, drawY + height * 0.56, {
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
         fontSize: "52px",
         color: "#bed6eb",
       });
+      fallbackNode.setAlpha(avatarAlpha);
       return;
     }
 
@@ -1724,10 +1922,64 @@ export class RunScene extends Phaser.Scene {
     const cover = this.coverSizeForTexture(textureKey, innerW, innerH);
     this.enemyPortrait.setDisplaySize(cover.width, cover.height);
     this.enemyPortrait.setPosition(drawX + width * 0.5, drawY + height * 0.5 + bob);
+    this.enemyPortrait.setAlpha(avatarAlpha);
     this.enemyPortrait.setVisible(true);
 
-    this.graphics.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.1, 0.1, 0.02, 0.13);
+    this.graphics.fillGradientStyle(
+      0xffffff,
+      0xffffff,
+      0xffffff,
+      0xffffff,
+      0.1 * avatarAlpha,
+      0.1 * avatarAlpha,
+      0.02 * avatarAlpha,
+      0.13 * avatarAlpha
+    );
     this.graphics.fillRoundedRect(innerX, innerY, innerW, innerH, 10);
+  }
+
+  renderEnemyDefeatEffect(transitionState, layout) {
+    const enemyAvatarRect = layout?.enemyAvatarRect || null;
+    if (!transitionState || transitionState.target !== "enemy" || transitionState.waiting || !enemyAvatarRect) {
+      this.enemyDefeatSignature = "";
+      this.enemyDefeatBurstStep = -1;
+      this.enemyDefeatLastPulseAt = 0;
+      return;
+    }
+    const room = Number(this.lastSnapshot?.run?.room) || 0;
+    const floor = Number(this.lastSnapshot?.run?.floor) || 0;
+    const enemyName = String(this.lastSnapshot?.enemy?.name || "");
+    const signature = `${floor}:${room}:${enemyName}`;
+    if (signature !== this.enemyDefeatSignature) {
+      this.enemyDefeatSignature = signature;
+      this.enemyDefeatBurstStep = -1;
+      this.enemyDefeatLastPulseAt = 0;
+    }
+    const progress = Phaser.Math.Clamp(Number(transitionState.progress) || 0, 0, 1);
+    const centerX = enemyAvatarRect.x + enemyAvatarRect.width * 0.5;
+    const centerY = enemyAvatarRect.y + enemyAvatarRect.height * 0.5;
+    const glowScale = 1 + progress * 0.54;
+    const glowAlpha = 0.22 * (1 - progress * 0.35);
+    this.graphics.fillStyle(0xff9a54, glowAlpha);
+    this.graphics.fillEllipse(centerX, centerY, enemyAvatarRect.width * glowScale, enemyAvatarRect.height * (0.92 + progress * 0.48));
+
+    const burstStep = Math.floor(progress * RUN_ENEMY_DEFEAT_PULSE_STEPS);
+    if (this.enemyDefeatEmitter && burstStep > this.enemyDefeatBurstStep) {
+      for (let step = this.enemyDefeatBurstStep + 1; step <= burstStep; step += 1) {
+        const burstCount = 12 + step * 4;
+        const burstX = centerX + (Math.random() * 2 - 1) * enemyAvatarRect.width * 0.2;
+        const burstY = centerY + (Math.random() * 2 - 1) * enemyAvatarRect.height * 0.22;
+        this.enemyDefeatEmitter.explode(burstCount, burstX, burstY);
+      }
+      this.enemyDefeatBurstStep = burstStep;
+    }
+    const now = this.time.now;
+    if (this.enemyDefeatEmitter && now - this.enemyDefeatLastPulseAt >= RUN_ENEMY_DEFEAT_PULSE_INTERVAL_MS) {
+      this.enemyDefeatLastPulseAt = now;
+      const trailX = centerX + (Math.random() * 2 - 1) * enemyAvatarRect.width * 0.4;
+      const trailY = centerY + (Math.random() * 2 - 1) * enemyAvatarRect.height * 0.48;
+      this.enemyDefeatEmitter.explode(6, trailX, trailY);
+    }
   }
 
   drawHpBar(keyPrefix, x, y, width, height, value, maxValue, colorHex, options = {}) {
@@ -1747,6 +1999,28 @@ export class RunScene extends Phaser.Scene {
     if (fill > 0) {
       this.graphics.fillStyle(fillColor, 1);
       this.graphics.fillRoundedRect(x + 2, y + 2, fill, Math.max(1, height - 4), Math.max(4, barRadius - 2));
+      const glowLayers = 5;
+      for (let i = glowLayers; i >= 1; i -= 1) {
+        const t = i / glowLayers;
+        const glowAlpha = 0.13 * Math.pow(t, 1.35);
+        const expand = Math.round(t * Math.max(2, height * 0.22));
+        this.graphics.fillStyle(fillColor, glowAlpha);
+        this.graphics.fillRoundedRect(
+          x + 2 - expand,
+          y + 2 - expand,
+          fill + expand * 2,
+          Math.max(1, height - 4 + expand * 2),
+          Math.max(4, barRadius - 2 + expand)
+        );
+      }
+      this.graphics.fillStyle(0xffffff, 0.18);
+      this.graphics.fillRoundedRect(
+        x + 4,
+        y + 3,
+        Math.max(1, fill - 4),
+        Math.max(1, Math.round((height - 4) * 0.42)),
+        Math.max(3, barRadius - 4)
+      );
     }
     this.graphics.lineStyle(1.4, borderColor, 0.56);
     this.graphics.strokeRoundedRect(x, y, width, height, barRadius);
@@ -1796,9 +2070,12 @@ export class RunScene extends Phaser.Scene {
   drawCards(snapshot, width, height, layout) {
     if (snapshot?.intro?.active) {
       this.cardAnimSeen.clear();
+      this.cardFlipStates.clear();
+      this.cardHiddenStateBySlot.clear();
+      this.rowCardCountByPrefix.clear();
       this.cardNodes.forEach((node) => node.container.setVisible(false));
       this.pruneCardAnimations();
-      return;
+      return { deferResolutionUi: false };
     }
     const enemyY = layout?.enemyY || Math.round(height * 0.26);
     const playerY = layout?.playerY || Math.round(height * 0.59);
@@ -1823,18 +2100,12 @@ export class RunScene extends Phaser.Scene {
     const enemyCenterX = width * 0.5;
     const playerCenterX = width * 0.5;
     const deckX = width * 0.5;
+    const rowDrawOptions = {
+      entryFlip: true,
+      dealSequenceId: this.cardDealSequenceId,
+    };
     this.cardAnimSeen.clear();
-    this.drawCardRow(
-      "enemy-card",
-      enemyCards,
-      enemyCenterX,
-      enemyY,
-      cardWidth,
-      cardHeight,
-      enemySpacing,
-      { x: deckX, y: Math.max(84, enemyY - 120) }
-    );
-    this.drawCardRow(
+    const playerRevealInProgress = this.drawCardRow(
       "player-card",
       playerCards,
       playerCenterX,
@@ -1842,49 +2113,69 @@ export class RunScene extends Phaser.Scene {
       cardWidth,
       cardHeight,
       playerSpacing,
-      { x: deckX, y: Math.min(height - 84, playerY + cardHeight + 120) }
+      { x: deckX, y: Math.min(height - 84, playerY + cardHeight + 120) },
+      rowDrawOptions
+    );
+    const enemyRevealInProgress = this.drawCardRow(
+      "enemy-card",
+      enemyCards,
+      enemyCenterX,
+      enemyY,
+      cardWidth,
+      cardHeight,
+      enemySpacing,
+      { x: deckX, y: Math.max(84, enemyY - 120) },
+      rowDrawOptions
     );
     this.pruneCardAnimations();
 
     const totals = snapshot.totals || {};
+    const cardsAnimatingInProgress = Boolean(enemyRevealInProgress || playerRevealInProgress || this.hasActiveCardDealAnimations());
+    const deferResolutionUi = cardsAnimatingInProgress;
     const enemyHasHidden = enemyCards.some((card) => card.hidden);
     const enemyHandValue = Number.isFinite(totals.dealer) ? String(totals.dealer) : "?";
     const enemyTotalText = enemyHasHidden && Number.isFinite(totals.dealer) ? `Hand ${enemyHandValue} + ?` : `Hand ${enemyHandValue}`;
     const playerTotalText = Number.isFinite(totals.player) ? `Hand ${totals.player}` : "Hand ?";
     const handLabelGap = 18;
-    this.drawText(
-      "enemy-total",
-      enemyTotalText,
-      width * 0.5,
-      enemyY - handLabelGap,
-      {
-        fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-        fontSize: "17px",
-        color: "#e0ccb0",
-        fontStyle: "700",
-      },
-      { x: 0.5, y: 0.5 }
-    );
-    this.drawText(
-      "player-total",
-      playerTotalText,
-      width * 0.5,
-      playerY + cardHeight + handLabelGap,
-      {
-        fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-        fontSize: "17px",
-        color: "#e0ccb0",
-        fontStyle: "700",
-      },
-      { x: 0.5, y: 0.5 }
-    );
+    if (!deferResolutionUi) {
+      this.drawText(
+        "enemy-total",
+        enemyTotalText,
+        width * 0.5,
+        enemyY - handLabelGap,
+        {
+          fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+          fontSize: "17px",
+          color: "#e0ccb0",
+          fontStyle: "700",
+        },
+        { x: 0.5, y: 0.5 }
+      );
+    }
+    if (!deferResolutionUi) {
+      this.drawText(
+        "player-total",
+        playerTotalText,
+        width * 0.5,
+        playerY + cardHeight + handLabelGap,
+        {
+          fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
+          fontSize: "17px",
+          color: "#e0ccb0",
+          fontStyle: "700",
+        },
+        { x: 0.5, y: 0.5 }
+      );
+    }
+    return { deferResolutionUi };
   }
 
-  processHpImpacts(snapshot, layout, width, height) {
+  processHpImpacts(snapshot, layout, width, height, options = {}) {
     if (!snapshot || !layout) {
       this.lastHpState = null;
       return;
     }
+    const deferResolutionUi = Boolean(options?.deferResolutionUi);
     const currentState = {
       enemyName: String(snapshot.enemy?.name || ""),
       enemyHp: Math.max(0, Number(snapshot.enemy?.hp) || 0),
@@ -1892,6 +2183,12 @@ export class RunScene extends Phaser.Scene {
     };
     if (snapshot?.intro?.active) {
       this.lastHpState = currentState;
+      return;
+    }
+    if (deferResolutionUi) {
+      if (!this.lastHpState || this.lastHpState.enemyName !== currentState.enemyName) {
+        this.lastHpState = currentState;
+      }
       return;
     }
     if (!this.lastHpState || this.lastHpState.enemyName !== currentState.enemyName) {
@@ -1961,6 +2258,7 @@ export class RunScene extends Phaser.Scene {
       .setAlpha(0.62)
       .setScale(compact ? 0.95 : 1.18);
     const fireball = this.add.container(fromX, fromY, [streak, glow, flame, hotCore, ember]).setDepth(122);
+    this.beginResolutionAnimation();
     this.tweens.add({
       targets: [glow, flame, hotCore],
       scaleX: compact ? 1.22 : 1.34,
@@ -2019,6 +2317,7 @@ export class RunScene extends Phaser.Scene {
         ring.setStrokeStyle(compact ? 3.2 : 4.2, 0xffca74, 0.8);
         const ringInner = this.add.circle(toX, toY, compact ? 10 : 14, 0xffdd9b, 0.34).setDepth(130).setBlendMode(Phaser.BlendModes.ADD);
         ringInner.setStrokeStyle(compact ? 2 : 2.8, 0xfff0ca, 0.74);
+        this.beginResolutionAnimation();
         this.tweens.add({
           targets: blast,
           scaleX: compact ? 3.7 : 4.8,
@@ -2026,8 +2325,12 @@ export class RunScene extends Phaser.Scene {
           alpha: 0,
           duration: compact ? 260 : 340,
           ease: "Cubic.easeOut",
-          onComplete: () => blast.destroy(),
+          onComplete: () => {
+            blast.destroy();
+            this.endResolutionAnimation();
+          },
         });
+        this.beginResolutionAnimation();
         this.tweens.add({
           targets: coreBlast,
           scaleX: compact ? 2.6 : 3.4,
@@ -2035,8 +2338,12 @@ export class RunScene extends Phaser.Scene {
           alpha: 0,
           duration: compact ? 220 : 280,
           ease: "Cubic.easeOut",
-          onComplete: () => coreBlast.destroy(),
+          onComplete: () => {
+            coreBlast.destroy();
+            this.endResolutionAnimation();
+          },
         });
+        this.beginResolutionAnimation();
         this.tweens.add({
           targets: ring,
           scaleX: compact ? 3.8 : 4.8,
@@ -2044,8 +2351,12 @@ export class RunScene extends Phaser.Scene {
           alpha: 0,
           duration: compact ? 240 : 300,
           ease: "Cubic.easeOut",
-          onComplete: () => ring.destroy(),
+          onComplete: () => {
+            ring.destroy();
+            this.endResolutionAnimation();
+          },
         });
+        this.beginResolutionAnimation();
         this.tweens.add({
           targets: ringInner,
           scaleX: compact ? 3 : 3.9,
@@ -2053,7 +2364,10 @@ export class RunScene extends Phaser.Scene {
           alpha: 0,
           duration: compact ? 220 : 280,
           ease: "Cubic.easeOut",
-          onComplete: () => ringInner.destroy(),
+          onComplete: () => {
+            ringInner.destroy();
+            this.endResolutionAnimation();
+          },
         });
         this.cameras.main.shake(compact ? 180 : 240, compact ? 0.0033 : 0.0043, true);
         this.cameras.main.flash(compact ? 140 : 180, 255, 140, 42, false);
@@ -2068,6 +2382,7 @@ export class RunScene extends Phaser.Scene {
         const damageX = Phaser.Math.Clamp(Math.round(damageXRaw), 44, width - 44);
         const damageY = Phaser.Math.Clamp(Math.round(damageYRaw), 24, height - 24);
         this.spawnDamageNumber(targetSide, safeAmount, damageX, damageY);
+        this.endResolutionAnimation();
       },
     });
   }
@@ -2082,10 +2397,11 @@ export class RunScene extends Phaser.Scene {
       fontStyle: "700",
     });
     node.setOrigin(0.5, 0.5);
-    node.setDepth(460);
+    node.setDepth(132);
     node.setStroke("#1d0a0d", compact ? 4 : 6);
     node.setShadow(0, 0, "#000000", compact ? 6 : 9, true, true);
     node.setScale(0.72);
+    this.beginResolutionAnimation();
     this.tweens.add({
       targets: node,
       scaleX: 1.08,
@@ -2099,56 +2415,220 @@ export class RunScene extends Phaser.Scene {
       alpha: 0,
       duration: 620,
       ease: "Cubic.easeOut",
-      onComplete: () => node.destroy(),
+      onComplete: () => {
+        node.destroy();
+        this.endResolutionAnimation();
+      },
     });
   }
 
-  drawCardRow(prefix, cards, centerX, y, cardW, cardH, spacing, spawn = null) {
+  drawCardRow(prefix, cards, centerX, y, cardW, cardH, spacing, spawn = null, options = null) {
     const safeCards = Array.isArray(cards) ? cards : [];
-    const totalWidth = safeCards.length > 0 ? cardW + Math.max(0, safeCards.length - 1) * spacing : cardW;
-    const startX = centerX - totalWidth * 0.5;
     const used = new Set();
     const now = this.time.now;
-    const rowDirection = prefix.startsWith("enemy") ? -1 : 1;
+    const isDealerRow = prefix.startsWith("enemy");
+    const rowDirection = isDealerRow ? -1 : 1;
     const baseSpawnX = Number.isFinite(spawn?.x) ? spawn.x : centerX;
     const baseSpawnY = Number.isFinite(spawn?.y) ? spawn.y : y + rowDirection * -104;
+    const previousCount = Math.max(0, Math.round(this.rowCardCountByPrefix.get(prefix) || 0));
+    const customEntryDelayMs =
+      options && typeof options.customEntryDelayMs === "function" ? options.customEntryDelayMs : null;
+    const entryFlip = options?.entryFlip === undefined ? true : Boolean(options.entryFlip);
+    const dealSequenceId = Number.isFinite(options?.dealSequenceId) ? Math.max(0, Math.round(options.dealSequenceId)) : 0;
+    let rowRevealInProgress = false;
+    const rowEntries = [];
 
     safeCards.forEach((card, idx) => {
       const key = `${prefix}-${idx}`;
-      const targetX = startX + idx * spacing;
-      const targetCenterX = targetX + cardW * 0.5;
-      const targetCenterY = y + cardH * 0.5;
-      const animKey = `${prefix}-${idx}-${card.rank || "?"}-${card.suit || ""}-${card.hidden ? 1 : 0}`;
+      const currentlyHidden = Boolean(card.hidden);
+      const previouslyHidden = this.cardHiddenStateBySlot.get(key);
+      if (isDealerRow && previouslyHidden === true && !currentlyHidden && !this.cardFlipStates.has(key)) {
+        const flipStart = Math.max(now, Number(this.nextGlobalDealStartAt) || now);
+        this.cardFlipStates.set(key, {
+          start: flipStart,
+          duration: RUN_DEALER_CARD_FLIP_MS,
+          cardSfxPlayed: false,
+        });
+        this.nextGlobalDealStartAt = flipStart + RUN_DEALER_CARD_FLIP_MS + RUN_CARD_DEAL_GAP_MS;
+      }
+      this.cardHiddenStateBySlot.set(key, currentlyHidden);
+      const dealtAt = Number(card?.dealtAt);
+      const dealtStamp = Number.isFinite(dealtAt) ? Math.max(0, Math.floor(dealtAt)) : -1;
+      const animKey = `${prefix}-${idx}-${card.rank || "?"}-${card.suit || ""}-${card.hidden ? 1 : 0}-${dealSequenceId}-${dealtStamp}`;
       let anim = this.cardAnimStates.get(animKey);
       if (!anim) {
+        const isNewCard = idx >= previousCount;
+        const customDelay = customEntryDelayMs ? Number(customEntryDelayMs(idx, card, prefix)) : NaN;
+        let startTime = now;
+        if (isNewCard) {
+          const requested = Number.isFinite(customDelay) ? now + Math.max(0, customDelay) : now;
+          const queuedStart = Math.max(requested, Number(this.nextGlobalDealStartAt) || now);
+          startTime = queuedStart;
+          const queueGap = RUN_DEALER_CARD_ENTRY_MS + RUN_CARD_DEAL_GAP_MS;
+          this.nextGlobalDealStartAt = startTime + queueGap;
+        } else if (Number.isFinite(customDelay)) {
+          startTime = now + Math.max(0, customDelay);
+        }
         anim = {
-          start: now + idx * 42,
+          start: startTime,
           fromX: baseSpawnX + rowDirection * 14,
           fromY: baseSpawnY + idx * rowDirection * 5,
+          entryFlip,
+          cardSfxPlayed: false,
           lastSeen: now,
         };
         this.cardAnimStates.set(animKey, anim);
       }
       anim.lastSeen = now;
       this.cardAnimSeen.add(animKey);
+      rowEntries.push({ card, idx, key, currentlyHidden, anim });
+    });
 
-      const progress = Phaser.Math.Clamp((now - anim.start) / 220, 0, 1);
+    const startedEntries = rowEntries.filter((entry) => now >= entry.anim.start);
+    const startedOrderByIdx = new Map();
+    startedEntries.forEach((entry, order) => {
+      startedOrderByIdx.set(entry.idx, order);
+    });
+    const displayCount = startedEntries.length;
+    const displayWidth = displayCount > 0 ? cardW + Math.max(0, displayCount - 1) * spacing : cardW;
+    const displayStartX = centerX - displayWidth * 0.5;
+
+    rowEntries.forEach(({ card, idx, key, currentlyHidden, anim }) => {
+      const startedOrder = startedOrderByIdx.get(idx);
+      if (startedOrder === undefined) {
+        rowRevealInProgress = true;
+        used.add(key);
+        const pendingNode = this.getCardNode(key);
+        pendingNode.container.setVisible(false);
+        return;
+      }
+
+      const targetX = displayStartX + startedOrder * spacing;
+      const targetCenterX = targetX + cardW * 0.5;
+      const targetCenterY = y + cardH * 0.5;
+      if (!anim.cardSfxPlayed) {
+        this.playRunSfx("card");
+        anim.cardSfxPlayed = true;
+      }
+
+      const entryDurationMs = (isDealerRow || anim.entryFlip) ? RUN_DEALER_CARD_ENTRY_MS : 220;
+      const progress = Phaser.Math.Clamp((now - anim.start) / entryDurationMs, 0, 1);
+      if (progress < 1) {
+        rowRevealInProgress = true;
+      }
       const eased = Phaser.Math.Easing.Cubic.Out(progress);
       const arc = Math.sin(progress * Math.PI) * 16 * (rowDirection === -1 ? 1 : -1);
       const scale = 0.66 + Phaser.Math.Easing.Back.Out(progress) * 0.34;
       const drawCenterX = Phaser.Math.Linear(anim.fromX, targetCenterX, eased);
       const drawCenterY = Phaser.Math.Linear(anim.fromY, targetCenterY, eased) + arc * (1 - progress * 0.72);
-      const drawW = cardW * scale;
-      const drawH = cardH * scale;
+      const baseDrawW = cardW * scale;
+      const baseDrawH = cardH * scale;
+      const flipState = isDealerRow ? this.cardFlipStates.get(key) : null;
+      let flipWidthScale = 1;
+      let flipHeightScale = 1;
+      let showBackHalf = false;
+      let flipOffsetX = 0;
+      let flipOffsetY = 0;
+      let flipTilt = 0;
+      if (anim.entryFlip) {
+        const flipStart = 0.22;
+        const flipEnd = 0.8;
+        if (progress < flipStart) {
+          showBackHalf = true;
+        } else if (progress < flipEnd) {
+          const flipT = Phaser.Math.Clamp((progress - flipStart) / Math.max(0.001, flipEnd - flipStart), 0, 1);
+          const flipEase = Phaser.Math.Easing.Sine.InOut(flipT);
+          const flipWave = Math.sin(flipEase * Math.PI);
+          const flipCos = Math.cos(flipEase * Math.PI);
+          const side = idx % 2 === 0 ? 1 : -1;
+          flipWidthScale *= Math.max(0.012, Math.abs(flipCos));
+          flipHeightScale *= 1 + flipWave * 0.05;
+          flipOffsetX += flipWave * (cardW * 0.07) * side;
+          flipOffsetY += -flipWave * (cardH * (RUN_DEALER_CARD_FLIP_STRETCH * 0.42));
+          flipTilt += flipWave * 0.14 * side;
+          showBackHalf = flipEase < 0.5;
+        }
+      }
+      if (flipState) {
+        if (!flipState.cardSfxPlayed && now >= flipState.start) {
+          this.playRunSfx("card");
+          flipState.cardSfxPlayed = true;
+        }
+        const duration = Math.max(120, Number(flipState.duration) || RUN_DEALER_CARD_FLIP_MS);
+        const t = Phaser.Math.Clamp((now - flipState.start) / duration, 0, 1);
+        if (t >= 1) {
+          this.cardFlipStates.delete(key);
+        } else {
+          rowRevealInProgress = true;
+          const eased = Phaser.Math.Easing.Sine.InOut(t);
+          const wave = Math.sin(eased * Math.PI);
+          const flipCos = Math.cos(eased * Math.PI);
+          const side = idx % 2 === 0 ? 1 : -1;
+          flipWidthScale = Math.max(0.012, Math.abs(flipCos));
+          flipHeightScale = 1 + wave * 0.06;
+          flipOffsetX = Math.sin(eased * Math.PI) * (cardW * 0.08) * side;
+          flipOffsetY = -wave * (cardH * (RUN_DEALER_CARD_FLIP_STRETCH * 0.5));
+          flipTilt = Math.sin(eased * Math.PI) * 0.16 * side;
+          showBackHalf = eased < 0.5;
+        }
+      }
+      const drawW = Math.max(2, baseDrawW * flipWidthScale);
+      const drawH = Math.max(12, baseDrawH * flipHeightScale);
+      const cardCornerRadius = Math.max(4, Math.min(10 * scale * 0.75, drawW * 0.5, drawH * 0.5));
+      const showBackFace = (currentlyHidden && isDealerRow) || showBackHalf;
+      const drawAsHidden = currentlyHidden || showBackHalf;
       const node = this.getCardNode(key);
-      node.container.setDepth((prefix.startsWith("enemy") ? 44 : 56) + idx);
-      node.container.setPosition(drawCenterX, drawCenterY);
+      node.container.setDepth((isDealerRow ? 44 : 56) + idx);
+      let finalCenterX = drawCenterX + flipOffsetX;
+      let finalCenterY = drawCenterY + flipOffsetY;
+      const settledCard = progress >= 1 && !flipState;
+      if (settledCard && node.container.visible) {
+        const previousX = Number(node.container.x);
+        const previousY = Number(node.container.y);
+        if (Number.isFinite(previousX) && Number.isFinite(previousY)) {
+          const deltaRatio = Phaser.Math.Clamp((Number(this.game?.loop?.delta) || 16.67) / 16.67, 0.5, 2);
+          const moveLerp = Phaser.Math.Clamp(0.22 * deltaRatio, 0.12, 0.38);
+          finalCenterX = Phaser.Math.Linear(previousX, finalCenterX, moveLerp);
+          finalCenterY = Phaser.Math.Linear(previousY, finalCenterY, moveLerp);
+        }
+      }
+      node.container.setPosition(finalCenterX, finalCenterY);
+      node.container.setRotation(flipTilt);
       node.shadow.setDisplaySize(drawW * 1.1, drawH * 1.08);
       node.shadow.setPosition(-drawW * 0.25, 0);
-      node.shadow.setAlpha(0.26);
+      node.shadow.setAlpha(0.26 + (flipState ? 0.08 : 0));
       node.face.clear();
-      node.face.fillStyle(card.hidden ? 0x2a445c : 0xf7fbff, 1);
-      node.face.fillRoundedRect(-drawW * 0.5, -drawH * 0.5, drawW, drawH, Math.max(8, 10 * scale));
+      const useDealerBackplate = showBackFace && this.textures.exists(RUN_CARD_BACKPLATE_KEY);
+      node.face.fillStyle(drawAsHidden ? (useDealerBackplate ? 0x17100a : 0x2a445c) : 0xf7fbff, 1);
+      node.face.fillRoundedRect(-drawW * 0.5, -drawH * 0.5, drawW, drawH, cardCornerRadius);
+      if (node.backplate) {
+        if (useDealerBackplate) {
+          node.backplate
+            .setTexture(RUN_CARD_BACKPLATE_KEY)
+            .setCrop()
+            .setDisplaySize(drawW, drawH)
+            .setPosition(0, 0)
+            .setOrigin(0.5, 0.5)
+            .setVisible(true);
+          if (node.backMaskShape) {
+            node.backMaskShape.clear();
+            node.backMaskShape.fillStyle(0xffffff, 1);
+            node.backMaskShape.fillRoundedRect(
+              finalCenterX - drawW * 0.5,
+              finalCenterY - drawH * 0.5,
+              drawW,
+              drawH,
+              cardCornerRadius
+            );
+          }
+        } else {
+          node.backplate.setVisible(false);
+          node.backplate.setCrop();
+          if (node.backMaskShape) {
+            node.backMaskShape.clear();
+          }
+        }
+      }
       node.label.setFontSize(Math.max(24, Math.round(cardW * 0.3 * scale)));
       node.label.setStyle({
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
@@ -2161,12 +2641,18 @@ export class RunScene extends Phaser.Scene {
 
       const suitKey = card.suit || "";
       const suitSymbol = SUIT_SYMBOL[suitKey] || suitKey || "";
-      const text = card.hidden ? "?" : `${card.rank || "?"}\n${suitSymbol}`;
+      const text = drawAsHidden ? "?" : `${card.rank || "?"}\n${suitSymbol}`;
       const suit = card.suit || "";
       const red = suit === "H" || suit === "D";
-      const color = card.hidden ? "#d6e9f8" : red ? "#b44c45" : "#231f1b";
-      node.label.setText(text);
-      node.label.setColor(this.toBrownThemeColorString(color));
+      const color = drawAsHidden ? "#d6e9f8" : red ? "#b44c45" : "#231f1b";
+      if (useDealerBackplate) {
+        node.label.setText("");
+        node.label.setVisible(false);
+      } else {
+        node.label.setText(text);
+        node.label.setColor(this.toBrownThemeColorString(color));
+        node.label.setVisible(true);
+      }
     });
 
     this.cardNodes.forEach((node, key) => {
@@ -2174,6 +2660,18 @@ export class RunScene extends Phaser.Scene {
         node.container.setVisible(false);
       }
     });
+    this.rowCardCountByPrefix.set(prefix, safeCards.length);
+    this.cardFlipStates.forEach((_, key) => {
+      if (key.startsWith(prefix) && !used.has(key)) {
+        this.cardFlipStates.delete(key);
+      }
+    });
+    this.cardHiddenStateBySlot.forEach((_, key) => {
+      if (key.startsWith(prefix) && !used.has(key)) {
+        this.cardHiddenStateBySlot.delete(key);
+      }
+    });
+    return rowRevealInProgress;
   }
 
   getCardNode(key) {
@@ -2188,6 +2686,12 @@ export class RunScene extends Phaser.Scene {
       .setBlendMode(Phaser.BlendModes.NORMAL)
       .setAlpha(0.24);
     const face = this.applyBrownThemeToGraphics(this.add.graphics());
+    const backplate = this.add
+      .image(0, 0, this.textures.exists(RUN_CARD_BACKPLATE_KEY) ? RUN_CARD_BACKPLATE_KEY : RUN_PARTICLE_KEY)
+      .setVisible(false);
+    const backMaskShape = this.make.graphics({ x: 0, y: 0, add: false });
+    const backMask = backMaskShape.createGeometryMask();
+    backplate.setMask(backMask);
     const label = this.add
       .text(0, 0, "", {
         fontFamily: '"Chakra Petch", "Sora", sans-serif',
@@ -2197,8 +2701,8 @@ export class RunScene extends Phaser.Scene {
         lineSpacing: 5,
       })
       .setOrigin(0.5, 0.5);
-    container.add([shadow, face, label]);
-    node = { container, shadow, face, label };
+    container.add([shadow, face, backplate, label]);
+    node = { container, shadow, face, backplate, label, backMaskShape, backMask };
     this.cardNodes.set(key, node);
     return node;
   }
@@ -2212,20 +2716,24 @@ export class RunScene extends Phaser.Scene {
     });
   }
 
-  drawRunMessages(snapshot, width, height, layout = null) {
+  drawRunMessages(snapshot, width, height, layout = null, options = {}) {
     const intro = snapshot.intro || {};
     const enemy = snapshot.enemy || {};
+    const deferResolutionUi = Boolean(options?.deferResolutionUi);
     const introTarget = intro.active ? 1 : 0;
+    const introGraphics = this.overlayGraphics || this.graphics;
     this.introOverlayProgress = introTarget;
 
     if (this.introOverlayProgress > 0.02) {
-      const overlayAlpha = 0.42 * this.introOverlayProgress;
-      this.graphics.fillStyle(0x000000, overlayAlpha);
-      this.graphics.fillRect(0, 0, width, height);
+      const overlayAlpha = 0.82 * this.introOverlayProgress;
+      introGraphics.fillStyle(0x000000, overlayAlpha);
+      introGraphics.fillRect(0, 0, width, height);
     }
 
     if (intro.active || this.introOverlayProgress > 0.02) {
       const compact = this.isCompactLayout(width);
+      const introContentDepth = RUN_MODAL_BASE_DEPTH + RUN_MODAL_CONTENT_OFFSET + 6;
+      const introButtonDepth = introContentDepth + 8;
       const introScale = 1.725;
       const baseModalW = compact
         ? Math.max(320, Math.min(width - 22, Math.round(width * 0.94)))
@@ -2244,14 +2752,14 @@ export class RunScene extends Phaser.Scene {
       const y = height * 0.5 - modalH * 0.5 + (1 - eased) * 20;
       const alpha = Math.min(1, this.introOverlayProgress + 0.02);
 
-      this.graphics.fillStyle(0x050b14, 0.48 * alpha);
-      this.graphics.fillRoundedRect(x + 2, y + 4, modalW, modalH, compact ? 14 : 20);
-      this.graphics.fillGradientStyle(0x1b2f47, 0x1c324a, 0x0f1f33, 0x102033, 0.96 * alpha, 0.96 * alpha, 0.96 * alpha, 0.96 * alpha);
-      this.graphics.fillRoundedRect(x, y, modalW, modalH, compact ? 12 : 18);
-      this.graphics.lineStyle(2.2, 0x7097bb, 0.56 * alpha);
-      this.graphics.strokeRoundedRect(x, y, modalW, modalH, compact ? 12 : 18);
-      this.graphics.lineStyle(1.3, 0xc9def1, 0.2 * alpha);
-      this.graphics.strokeRoundedRect(x + 4, y + 4, modalW - 8, modalH - 8, compact ? 8 : 12);
+      introGraphics.fillStyle(0x050b14, 0.48 * alpha);
+      introGraphics.fillRoundedRect(x + 2, y + 4, modalW, modalH, compact ? 14 : 20);
+      introGraphics.fillGradientStyle(0x1b2f47, 0x1c324a, 0x0f1f33, 0x102033, 0.96 * alpha, 0.96 * alpha, 0.96 * alpha, 0.96 * alpha);
+      introGraphics.fillRoundedRect(x, y, modalW, modalH, compact ? 12 : 18);
+      introGraphics.lineStyle(2.2, 0x7097bb, 0.56 * alpha);
+      introGraphics.strokeRoundedRect(x, y, modalW, modalH, compact ? 12 : 18);
+      introGraphics.lineStyle(1.3, 0xc9def1, 0.2 * alpha);
+      introGraphics.strokeRoundedRect(x + 4, y + 4, modalW - 8, modalH - 8, compact ? 8 : 12);
 
       const modalPad = compact ? 10 : 14;
       const avatarOuter = compact
@@ -2259,10 +2767,10 @@ export class RunScene extends Phaser.Scene {
         : Math.max(90, Math.min(122, modalH - modalPad * 2));
       const avatarOuterX = x + modalPad;
       const avatarOuterY = y + modalPad;
-      this.graphics.fillStyle(0x223953, 0.96 * alpha);
-      this.graphics.fillRoundedRect(avatarOuterX, avatarOuterY, avatarOuter, avatarOuter, compact ? 10 : 14);
-      this.graphics.lineStyle(2.2, 0x6d95ba, 0.68 * alpha);
-      this.graphics.strokeRoundedRect(avatarOuterX, avatarOuterY, avatarOuter, avatarOuter, compact ? 10 : 14);
+      introGraphics.fillStyle(0x223953, 0.96 * alpha);
+      introGraphics.fillRoundedRect(avatarOuterX, avatarOuterY, avatarOuter, avatarOuter, compact ? 10 : 14);
+      introGraphics.lineStyle(2.2, 0x6d95ba, 0.68 * alpha);
+      introGraphics.strokeRoundedRect(avatarOuterX, avatarOuterY, avatarOuter, avatarOuter, compact ? 10 : 14);
 
       const avatarPad = compact ? 5 : 7;
       const avatarInnerX = avatarOuterX + avatarPad;
@@ -2282,6 +2790,7 @@ export class RunScene extends Phaser.Scene {
         const cover = this.coverSizeForTexture(introAvatarTexture, avatarInnerW, avatarInnerH);
         this.introPortrait.setDisplaySize(cover.width, cover.height);
         this.introPortrait.setPosition(avatarOuterX + avatarOuter * 0.5, avatarOuterY + avatarOuter * 0.5);
+        this.introPortrait.setDepth(introContentDepth + 2);
         this.introPortrait.setVisible(true);
         this.introPortrait.setAlpha(alpha);
         const fallbackNode = this.textNodes.get("intro-avatar-fallback");
@@ -2292,13 +2801,14 @@ export class RunScene extends Phaser.Scene {
         if (this.introPortrait) {
           this.introPortrait.setVisible(false);
         }
-        this.graphics.fillStyle(0x1a3146, 0.94 * alpha);
-        this.graphics.fillRoundedRect(avatarInnerX, avatarInnerY, avatarInnerW, avatarInnerH, compact ? 8 : 10);
-        this.drawText("intro-avatar-fallback", "?", avatarOuterX + avatarOuter * 0.5, avatarOuterY + avatarOuter * 0.56, {
+        introGraphics.fillStyle(0x1a3146, 0.94 * alpha);
+        introGraphics.fillRoundedRect(avatarInnerX, avatarInnerY, avatarInnerW, avatarInnerH, compact ? 8 : 10);
+        const fallbackNode = this.drawText("intro-avatar-fallback", "?", avatarOuterX + avatarOuter * 0.5, avatarOuterY + avatarOuter * 0.56, {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: compact ? "36px" : "46px",
           color: "#bed6eb",
         });
+        fallbackNode.setDepth(introContentDepth + 2);
       }
 
       const textX = avatarOuterX + avatarOuter + (compact ? 8 : 14);
@@ -2316,19 +2826,21 @@ export class RunScene extends Phaser.Scene {
       const bodyY = typeY + Math.round(typeSize * 1.04) + (compact ? 8 : 12);
 
       if (intro.active) {
-        this.drawText("intro-title", title, textX, titleY, {
+        const titleNode = this.drawText("intro-title", title, textX, titleY, {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: `${titleSize}px`,
           color: "#84b7f8",
           fontStyle: "700",
         }, { x: 0, y: 0.5 });
-        this.drawText("intro-type", encounterType, textX, typeY, {
+        titleNode.setDepth(introContentDepth + 2);
+        const typeNode = this.drawText("intro-type", encounterType, textX, typeY, {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: `${typeSize}px`,
           color: "#9ab5d2",
           fontStyle: "600",
         }, { x: 0, y: 0.5 });
-        this.drawText("intro-body", `${bodyText}${typeCursor}`, textX, bodyY, {
+        typeNode.setDepth(introContentDepth + 2);
+        const bodyNode = this.drawText("intro-body", `${bodyText}${typeCursor}`, textX, bodyY, {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: `${bodySize}px`,
           color: "#d8e5f4",
@@ -2336,6 +2848,7 @@ export class RunScene extends Phaser.Scene {
           lineSpacing: compact ? 4 : 6,
           wordWrap: { width: textW },
         }, { x: 0, y: 0 });
+        bodyNode.setDepth(introContentDepth + 2);
       }
 
       if (!this.introCtaButton) {
@@ -2354,8 +2867,8 @@ export class RunScene extends Phaser.Scene {
           hoverScale: 1,
           pressedScale: 0.98,
         });
-        this.introCtaButton.container.setDepth(236);
       }
+      this.introCtaButton.container.setDepth(introButtonDepth);
       const ctaW = compact ? 118 : 170;
       const ctaH = compact ? 32 : 42;
       const ctaX = x + modalW - modalPad - ctaW * 0.5;
@@ -2381,13 +2894,19 @@ export class RunScene extends Phaser.Scene {
       this.introCtaButton.container.setVisible(false);
     }
 
-    const resultText = snapshot.resultText || snapshot.announcement || "";
+    if (deferResolutionUi) {
+      this.lastResultSignature = "";
+      return;
+    }
+    const transitionState = this.getTransitionState(snapshot);
+    const enemyDefeatActive = Boolean(transitionState && transitionState.target === "enemy" && !transitionState.waiting);
+    const resultText = enemyDefeatActive ? "Defeated Opponent" : snapshot.resultText || snapshot.announcement || "";
     if (!resultText) {
       this.lastResultSignature = "";
       return;
     }
 
-    const tone = snapshot.resultTone || "neutral";
+    const tone = enemyDefeatActive ? "win" : snapshot.resultTone || "neutral";
     const panelY = Math.round(layout?.messageY || height * 0.507);
     const maxPanelW = Math.round(layout?.messagePanelW || Phaser.Math.Clamp(Math.round(width * 0.44), 500, 640));
     const panelH = Math.round(layout?.messagePanelH || 60);
@@ -2459,32 +2978,69 @@ export class RunScene extends Phaser.Scene {
     if (!node) {
       return;
     }
+    const compact = this.isCompactLayout(this.scale.gameSize.width);
     const palette = this.tonePalette(tone);
     if (this.resultEmitter) {
       if (typeof this.resultEmitter.setParticleTint === "function") {
         this.resultEmitter.setParticleTint(palette[1]);
       }
-      this.resultEmitter.explode(28, node.x, node.y + 12);
+      this.resultEmitter.explode(compact ? 22 : 34, node.x, node.y + 12);
     }
 
-    node.setScale(0.84);
-    node.setAlpha(0.44);
+    const burstCircle = this.add
+      .circle(node.x, node.y + 4, compact ? 28 : 36, palette[2], 0.26)
+      .setDepth(132)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.beginResolutionAnimation();
     this.tweens.add({
-      targets: node,
-      scaleX: 1,
-      scaleY: 1,
-      alpha: 1,
-      duration: 260,
-      ease: "Sine.easeInOut",
+      targets: burstCircle,
+      scaleX: compact ? 2.1 : 2.8,
+      scaleY: compact ? 2.1 : 2.8,
+      alpha: 0,
+      duration: compact ? 250 : 320,
+      ease: "Cubic.easeOut",
+      onComplete: () => {
+        burstCircle.destroy();
+        this.endResolutionAnimation();
+      },
     });
 
-    this.cameras.main.shake(120, 0.0014, true);
+    node.setScale(compact ? 0.64 : 0.56);
+    node.setRotation(-0.04);
+    node.setAlpha(0);
+    this.beginResolutionAnimation();
+    this.tweens.add({
+      targets: node,
+      scaleX: 1.14,
+      scaleY: 1.14,
+      alpha: 1,
+      rotation: 0.01,
+      duration: compact ? 170 : 200,
+      ease: "Back.easeOut",
+      onComplete: () => {
+        this.tweens.add({
+          targets: node,
+          scaleX: 1,
+          scaleY: 1,
+          rotation: 0,
+          duration: compact ? 100 : 130,
+          ease: "Sine.easeOut",
+          onComplete: () => {
+            this.endResolutionAnimation();
+          },
+        });
+      },
+    });
+
+    this.cameras.main.shake(compact ? 110 : 150, compact ? 0.0015 : 0.0019, true);
   }
 
-  renderButtons(snapshot, width, height, runLayout) {
+  renderButtons(snapshot, width, height, runLayout, options = {}) {
     const actions = [];
     const introActive = Boolean(snapshot.intro?.active);
     const status = snapshot.status || {};
+    const deferResolutionUi = Boolean(options?.deferResolutionUi);
+    const deferActionInput = deferResolutionUi || this.hasActiveResolutionAnimations() || this.hasActiveCardDealAnimations();
     const compact = Boolean(runLayout.compact);
 
     if (introActive) {
@@ -2493,61 +3049,81 @@ export class RunScene extends Phaser.Scene {
       const showTurnActions = Boolean(status.canHit || status.canStand || status.canDouble || status.canSplit);
       if (showTurnActions) {
         if (status.canHit) {
-          actions.push({ id: "hit", label: "HIT", enabled: true });
+          actions.push({ id: "hit", label: "HIT", enabled: !deferActionInput });
         }
         if (status.canStand) {
-          actions.push({ id: "stand", label: "STAND", enabled: true });
+          actions.push({ id: "stand", label: "STAND", enabled: !deferActionInput });
         }
-        actions.push({ id: "doubleDown", label: "DOUBLE", enabled: Boolean(status.canDouble) });
+        actions.push({ id: "doubleDown", label: "DOUBLE", enabled: Boolean(status.canDouble) && !deferActionInput });
         if (status.canSplit) {
-          actions.push({ id: "split", label: "SPLIT", enabled: true });
+          actions.push({ id: "split", label: "SPLIT", enabled: !deferActionInput });
         }
       } else {
-        actions.push({ id: "deal", label: "DEAL", enabled: Boolean(status.canDeal) });
+        const dealEnabled = Boolean(status.canDeal) && !deferActionInput;
+        actions.push({ id: "deal", label: "DEAL", enabled: dealEnabled });
       }
     }
 
     this.rebuildButtons(actions);
     const count = actions.length;
+    const showKeyboardHints = this.shouldShowKeyboardHints(width);
     let spacing = compact ? 8 : 14;
+    const rowGap = compact ? 10 : 14;
     const singleWide = count <= 1;
-    const buttonH = compact ? 48 : 56;
+    const buttonH = compact ? 50 : 56;
     const bandW = Math.max(220, width - runLayout.sidePad * 2 - 8);
-    const singleActionId = singleWide && actions[0] ? actions[0].id : "";
-    const singleWideFactor = singleActionId === "deal" ? 0.34 : 0.62;
-    let buttonW = singleWide
-      ? Phaser.Math.Clamp(
-        Math.round(bandW * singleWideFactor),
-        compact ? 118 : 164,
-        compact ? 220 : 300
-      )
-      : Phaser.Math.Clamp(
-        Math.floor((bandW - spacing * Math.max(0, count - 1)) / Math.max(1, count)),
-        compact ? 82 : 160,
-        compact ? 190 : 236
-      );
-    if (!singleWide && count > 1) {
-      let totalCandidate = buttonW * count + spacing * (count - 1);
-      if (totalCandidate > bandW) {
-        buttonW = Math.max(compact ? 72 : 120, Math.floor((bandW - spacing * (count - 1)) / count));
-        totalCandidate = buttonW * count + spacing * (count - 1);
+    const maxPerRow = compact ? 2 : Math.max(1, count);
+    const rowCount = count > 0 ? Math.ceil(count / maxPerRow) : 0;
+    let buttonW = 0;
+    if (compact) {
+      if (singleWide) {
+        const singleActionId = actions[0] ? actions[0].id : "";
+        const singleWideFactor = singleActionId === "deal" ? 0.42 : 0.62;
+        buttonW = Phaser.Math.Clamp(Math.round(bandW * singleWideFactor), 160, 320);
+      } else {
+        buttonW = Phaser.Math.Clamp(Math.floor((bandW - spacing) / 2), 132, 220);
+      }
+    } else {
+      const singleActionId = singleWide && actions[0] ? actions[0].id : "";
+      const singleWideFactor = singleActionId === "deal" ? 0.34 : 0.62;
+      buttonW = singleWide
+        ? Phaser.Math.Clamp(
+          Math.round(bandW * singleWideFactor),
+          164,
+          300
+        )
+        : Phaser.Math.Clamp(
+          Math.floor((bandW - spacing * Math.max(0, count - 1)) / Math.max(1, count)),
+          160,
+          236
+        );
+      if (!singleWide && count > 1) {
+        let totalCandidate = buttonW * count + spacing * (count - 1);
         if (totalCandidate > bandW) {
-          spacing = compact ? 6 : 10;
-          buttonW = Math.max(compact ? 68 : 120, Math.floor((bandW - spacing * (count - 1)) / count));
+          buttonW = Math.max(120, Math.floor((bandW - spacing * (count - 1)) / count));
+          totalCandidate = buttonW * count + spacing * (count - 1);
+          if (totalCandidate > bandW) {
+            spacing = 10;
+            buttonW = Math.max(120, Math.floor((bandW - spacing * (count - 1)) / count));
+          }
         }
       }
     }
-    const totalW = count > 0 ? buttonW * count + spacing * Math.max(0, count - 1) : 0;
-    const startX = width * 0.5 - totalW * 0.5 + buttonW * 0.5;
-    const tunedY = height - Math.round(runLayout.bottomBarH * 0.5);
+    const totalButtonH = rowCount > 0 ? rowCount * buttonH + Math.max(0, rowCount - 1) * rowGap : 0;
+    const blockTop = height - runLayout.bottomBarH + Math.max(6, Math.round((runLayout.bottomBarH - totalButtonH) * 0.5));
 
     actions.forEach((action, index) => {
       const button = this.buttons.get(action.id);
       if (!button) {
         return;
       }
-      const x = startX + index * (buttonW + spacing);
-      const y = tunedY;
+      const row = Math.floor(index / maxPerRow);
+      const rowStart = row * maxPerRow;
+      const itemsInRow = Math.min(maxPerRow, Math.max(0, count - rowStart));
+      const col = index - rowStart;
+      const rowWidth = itemsInRow > 0 ? buttonW * itemsInRow + spacing * Math.max(0, itemsInRow - 1) : buttonW;
+      const x = width * 0.5 - rowWidth * 0.5 + buttonW * 0.5 + col * (buttonW + spacing);
+      const y = blockTop + row * (buttonH + rowGap) + buttonH * 0.5;
       const resolvedW = buttonW;
       const resolvedH = buttonH;
       button.container.setPosition(x, y);
@@ -2556,7 +3132,7 @@ export class RunScene extends Phaser.Scene {
       const iconKey = this.resolveDarkIconTexture(RUN_ACTION_ICON_KEYS[action.id] || RUN_ACTION_ICON_KEYS.deal);
       if (button.icon) {
         button.icon.setTexture(iconKey);
-        button.icon.setDisplaySize(compact ? 21 : 27, compact ? 21 : 27);
+        button.icon.setDisplaySize(compact ? 20 : 27, compact ? 20 : 27);
         button.icon.setAlpha(0.92);
         button.icon.setVisible(true);
       }
@@ -2566,14 +3142,14 @@ export class RunScene extends Phaser.Scene {
         button.shortcut.setFontSize(compact ? 9 : 13);
         button.shortcut.setColor("#000000");
         button.shortcut.setAlpha(0.5);
-        button.shortcut.setVisible(Boolean(shortcut));
+        button.shortcut.setVisible(showKeyboardHints && Boolean(shortcut));
       }
 
       button.text.setText(action.label);
       const fontSize = compact
         ? action.id === "confirmIntro"
-          ? 14
-          : 13
+          ? 15
+          : 14
         : action.id === "confirmIntro"
           ? 20
           : 18;

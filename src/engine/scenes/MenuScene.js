@@ -48,8 +48,19 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create() {
-    if (this.scale.gameSize.width !== MENU_CANVAS_WIDTH || this.scale.gameSize.height !== MENU_CANVAS_HEIGHT) {
-      this.scale.resize(MENU_CANVAS_WIDTH, MENU_CANVAS_HEIGHT);
+    const viewportW = Math.max(
+      1,
+      Math.floor(window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || MENU_CANVAS_WIDTH)
+    );
+    const viewportH = Math.max(
+      1,
+      Math.floor(window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || MENU_CANVAS_HEIGHT)
+    );
+    const fullscreenMobileMenu = this.shouldUseFullscreenMobileMenu(viewportW);
+    const targetW = fullscreenMobileMenu ? viewportW : MENU_CANVAS_WIDTH;
+    const targetH = fullscreenMobileMenu ? viewportH : MENU_CANVAS_HEIGHT;
+    if (this.scale.gameSize.width !== targetW || this.scale.gameSize.height !== targetH) {
+      this.scale.resize(targetW, targetH);
     }
     this.cameras.main.setBackgroundColor("#081420");
     this.cameras.main.setAlpha(1);
@@ -545,6 +556,38 @@ export class MenuScene extends Phaser.Scene {
     return bridge.getMenuActions();
   }
 
+  shouldUseFullscreenMobileMenu(width = this.scale.gameSize.width) {
+    const viewportWidth = Number(width) || 0;
+    const coarsePointer = typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(pointer: coarse)").matches;
+    return coarsePointer || viewportWidth <= 980;
+  }
+
+  containSizeForTexture(textureKey, boundsW, boundsH) {
+    const texture = this.textures.get(textureKey);
+    const source = texture?.source?.[0];
+    const sourceW = Math.max(1, Number(source?.width) || Number(texture?.getSourceImage?.()?.width) || 1);
+    const sourceH = Math.max(1, Number(source?.height) || Number(texture?.getSourceImage?.()?.height) || 1);
+    const scale = Math.min(boundsW / sourceW, boundsH / sourceH);
+    return {
+      width: sourceW * scale,
+      height: sourceH * scale,
+    };
+  }
+
+  coverSizeForTexture(textureKey, boundsW, boundsH) {
+    const texture = this.textures.get(textureKey);
+    const source = texture?.source?.[0];
+    const sourceW = Math.max(1, Number(source?.width) || Number(texture?.getSourceImage?.()?.width) || 1);
+    const sourceH = Math.max(1, Number(source?.height) || Number(texture?.getSourceImage?.()?.height) || 1);
+    const scale = Math.max(boundsW / sourceW, boundsH / sourceH);
+    return {
+      width: sourceW * scale,
+      height: sourceH * scale,
+    };
+  }
+
   onResize(gameSize) {
     const width =
       (gameSize && Number.isFinite(gameSize.width) ? gameSize.width : null) ||
@@ -567,8 +610,12 @@ export class MenuScene extends Phaser.Scene {
     this.menuFrameRect = { x: frameX, y: frameY, width: frameW, height: frameH };
 
     if (this.bgImage) {
+      const textureKey = this.bgImage.texture?.key || this.resolveMenuSplashKey();
+      const fitToViewport = this.shouldUseFullscreenMobileMenu(width)
+        ? this.coverSizeForTexture(textureKey, frameW, frameH)
+        : this.containSizeForTexture(textureKey, frameW, frameH);
       this.bgImage.setPosition(centerX, frameY + frameH * 0.5);
-      this.bgImage.setDisplaySize(frameW, frameH);
+      this.bgImage.setDisplaySize(fitToViewport.width, fitToViewport.height);
       this.bgImage.setAlpha(1);
       if (this.bgImage.mask && typeof this.bgImage.clearMask === "function") {
         this.bgImage.clearMask(true);
@@ -616,7 +663,13 @@ export class MenuScene extends Phaser.Scene {
     const titleStackOffset = Math.max(14, Math.round(layoutH * 0.06));
     let titleBaseY = Math.round(layoutH * 0.16);
     if (this.title) {
+      this.title.setScale(1);
       this.title.setFontSize(titleSize);
+      const maxTitleW = Math.max(120, layoutW * 0.92);
+      if (this.title.width > maxTitleW) {
+        const titleScale = Phaser.Math.Clamp(maxTitleW / this.title.width, 0.62, 1);
+        this.title.setScale(titleScale);
+      }
       titleBaseY = Math.round(this.title.height * 0.5 + titleStackOffset);
       this.title.setPosition(layoutW * 0.5, titleBaseY);
     }

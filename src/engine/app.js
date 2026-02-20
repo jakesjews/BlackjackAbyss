@@ -74,6 +74,11 @@ export function createPhaserApp() {
   }
 
   const runtime = createRuntimeContext();
+  const rendererResolution = Phaser.Math.Clamp(
+    Number.isFinite(window.devicePixelRatio) ? window.devicePixelRatio : 1,
+    1,
+    2
+  );
 
   const readyPayloadPromise = new Promise((resolve) => {
     const game = new Phaser.Game({
@@ -81,12 +86,13 @@ export function createPhaserApp() {
       parent: shell,
       width: BASE_WIDTH,
       height: BASE_HEIGHT,
+      resolution: rendererResolution,
       scene: [BootScene, MenuScene, RunScene, RewardScene, ShopScene, OverlayScene],
       transparent: true,
       backgroundColor: "#000000",
       render: {
         antialias: true,
-        roundPixels: true,
+        roundPixels: false,
         clearBeforeRender: true,
         pixelArt: false,
         transparent: true,
@@ -96,7 +102,7 @@ export function createPhaserApp() {
         mode: Phaser.Scale.NONE,
         width: BASE_WIDTH,
         height: BASE_HEIGHT,
-        autoRound: true,
+        autoRound: false,
       },
       fps: {
         target: 60,
@@ -109,6 +115,14 @@ export function createPhaserApp() {
           if (canvas) {
             canvas.id = "game-canvas";
             canvas.setAttribute("aria-label", "Blackjack Abyss game");
+            canvas.style.imageRendering = "auto";
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              ctx.imageSmoothingEnabled = true;
+              if ("imageSmoothingQuality" in ctx) {
+                ctx.imageSmoothingQuality = "high";
+              }
+            }
           }
           runtime.game = bootedGame;
           bootedGame.__ABYSS_RUNTIME__ = runtime;
