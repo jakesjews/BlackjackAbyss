@@ -1,15 +1,6 @@
 # Blackjack Abyss
 
-Roguelike blackjack combat game with a modular runtime and Phaser 3 host.
-
-## Features
-
-- Blackjack hands resolve as combat damage (you vs enemy HP).
-- Floor/room progression with normal, elite, and boss encounters.
-- Relics and shop items with passive effects.
-- Run persistence in browser localStorage (resume supported).
-- Always-on action button tray (desktop includes keyboard shortcut hints on each button).
-- Phaser 3 host runtime added for incremental migration to a maintained game engine.
+Roguelike blackjack combat game hosted in Phaser 3, with gameplay/runtime logic extracted into modular engine files.
 
 ## Quick Start
 
@@ -25,17 +16,19 @@ npm install
 npm run start
 ```
 
-3. Open:
+3. Open `http://127.0.0.1:4173`.
 
-[http://127.0.0.1:4173](http://127.0.0.1:4173)
+## Runtime Architecture
+
+- `src/main.js` boots Phaser and initializes runtime bootstrap.
+- `src/engine/runtime/bootstrap.js` is the runtime entrypoint and bridge registration source.
+- `src/engine/runtime/state/*`, `domain/*`, `persistence/*`, `bridge/*`, `audio/*` contain extracted runtime modules.
+- `game.js` is a thin compatibility wrapper that calls runtime bootstrap.
 
 ## Controls
 
-### Keyboard
-
-- `Enter`: start new run / confirm
-- `Enter`: next deal (when result lock is active)
-- `R`: resume saved run (from menu)
+- `Enter`: start new run / confirm / next deal when result lock is active
+- `R`: resume saved run from menu
 - `A`: hit
 - `B`: stand
 - `Space`: double down (and buy in shop)
@@ -43,49 +36,21 @@ npm run start
 - `F`: toggle fullscreen
 - `Esc`: exit fullscreen
 
-### Action Buttons (All Devices)
-
-Use the bottom button tray on desktop and mobile:
-
-- Combat: `Hit`, `Stand`, `Double`
-- Reward/shop: `Left`, `Right`, `Confirm` (and `Buy` in shop)
-- Menu: `Resume` / `New Run`
-- Desktop only: each button also shows its keyboard shortcut hint.
-
 ## Persistence
 
-Game state is saved in localStorage while playing/reward/shop and on tab hide/unload.
+Game state is saved in localStorage while in run/reward/shop states and on tab hide/unload.
 
 Storage keys:
 
 - `blackjack-abyss.profile.v1`
 - `blackjack-abyss.run.v1`
 
-## Project Files
+## Test Commands
 
-- `index.html` - page shell and UI overlays
-- `styles.css` - global styles + responsive controls
-- `src/main.js` - module entrypoint
-- `src/engine/app.js` - Phaser application bootstrap + runtime context
-- `src/engine/phaser-host.js` - compatibility re-export for existing host import paths
-- `game.js` - current gameplay implementation (legacy module loaded by `src/main.js`)
-- `scripts/visual-smoke.js` - Playwright screenshot sweep for key UI states (desktop + mobile)
-- `test-actions.json` - short Playwright action burst
-- `test-actions-long.json` - longer Playwright scenario
-
-## Visual Smoke Check
-
-Run the app (`npm run start`) and in another terminal capture screenshots:
-
-```bash
-node scripts/visual-smoke.js --url http://127.0.0.1:4173 --out /tmp/abyss-visual-smoke
-```
+- `npm run test:unit`: fast vitest coverage for extracted runtime logic modules.
+- `npm run test:smoke`: Playwright smoke flow (desktop/mobile snapshots and bridge checks).
 
 ## Build / Deploy
 
-```bash
-npm run build
-```
-
 - Vite outputs static assets to `dist/`.
-- Vercel uses `vercel.json` (`framework: vite`, output `dist`).
+- Vercel uses `vercel.json` with Vite output directory `dist`.

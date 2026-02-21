@@ -1,4 +1,5 @@
 import { createPhaserApp } from "./engine/app.js";
+import { bootstrapRuntime } from "./engine/runtime/bootstrap.js";
 
 await createPhaserApp();
-await import("../game.js");
+bootstrapRuntime();

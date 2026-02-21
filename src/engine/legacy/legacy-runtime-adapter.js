@@ -13,13 +13,11 @@ export class LegacyRuntimeAdapter {
     this.shopApi = null;
     this.overlayApi = null;
     this.externalRenderModes = new Set(EXTERNAL_RENDER_MODES);
-    this.renderCanvas = null;
-    this.canvasProxy = null;
     this.bridge = {
       setStepHandler: (handler) => {
         this.stepHandler = typeof handler === "function" ? handler : null;
       },
-      getCanvas: () => this.canvasProxy || this.game?.canvas || null,
+      getCanvas: () => this.game?.canvas || null,
       setInputHandlers: (handlers) => {
         if (!handlers || typeof handlers !== "object") {
           this.inputHandlers = null;
@@ -132,7 +130,6 @@ export class LegacyRuntimeAdapter {
 
   attachGame(game) {
     this.game = game || null;
-    this.ensureRenderSurface();
     return this.bridge;
   }
 
@@ -140,7 +137,6 @@ export class LegacyRuntimeAdapter {
     if (typeof this.stepHandler !== "function") {
       return;
     }
-    this.syncRenderCanvasSizeFromGameCanvas();
     const safeDeltaSeconds = Math.max(0, Number.isFinite(deltaMs) ? deltaMs : 0) / 1000;
     this.stepHandler(safeDeltaSeconds, Number.isFinite(timeMs) ? timeMs : performance.now());
   }
@@ -230,108 +226,5 @@ export class LegacyRuntimeAdapter {
       clientX: rect.left + x,
       clientY: rect.top + y,
     };
-  }
-
-  ensureRenderSurface() {
-    if (!this.game?.canvas || this.renderCanvas) {
-      return;
-    }
-    const visibleCanvas = this.game.canvas;
-    const width = Math.max(1, Number(visibleCanvas.width) || 1);
-    const height = Math.max(1, Number(visibleCanvas.height) || 1);
-    const surface = document.createElement("canvas");
-    surface.width = width;
-    surface.height = height;
-    const context = surface.getContext("2d");
-    if (!context) {
-      this.renderCanvas = visibleCanvas;
-      this.canvasProxy = visibleCanvas;
-      return;
-    }
-
-    this.renderCanvas = surface;
-    this.canvasProxy = this.createCanvasProxy(visibleCanvas, surface);
-  }
-
-  syncRenderCanvasSizeFromGameCanvas() {
-    if (!this.game?.canvas || !this.renderCanvas) {
-      return;
-    }
-    const targetWidth = Math.max(1, Number(this.game.canvas.width) || this.renderCanvas.width);
-    const targetHeight = Math.max(1, Number(this.game.canvas.height) || this.renderCanvas.height);
-    if (this.renderCanvas.width !== targetWidth) {
-      this.renderCanvas.width = targetWidth;
-    }
-    if (this.renderCanvas.height !== targetHeight) {
-      this.renderCanvas.height = targetHeight;
-    }
-  }
-
-  createCanvasProxy(visibleCanvas, surfaceCanvas) {
-    const proxy = {
-      getContext: (type, options) => surfaceCanvas.getContext(type, options),
-      getBoundingClientRect: () => visibleCanvas.getBoundingClientRect(),
-      setPointerCapture: (...args) => visibleCanvas.setPointerCapture?.(...args),
-      releasePointerCapture: (...args) => visibleCanvas.releasePointerCapture?.(...args),
-      requestFullscreen: (...args) => visibleCanvas.requestFullscreen?.(...args),
-      addEventListener: (...args) => visibleCanvas.addEventListener?.(...args),
-      removeEventListener: (...args) => visibleCanvas.removeEventListener?.(...args),
-      dispatchEvent: (...args) => visibleCanvas.dispatchEvent?.(...args),
-      setAttribute: (...args) => visibleCanvas.setAttribute?.(...args),
-      focus: (...args) => visibleCanvas.focus?.(...args),
-      blur: (...args) => visibleCanvas.blur?.(...args),
-      get ownerDocument() {
-        return visibleCanvas.ownerDocument;
-      },
-      get parentElement() {
-        return visibleCanvas.parentElement;
-      },
-      get classList() {
-        return visibleCanvas.classList;
-      },
-      get dataset() {
-        return visibleCanvas.dataset;
-      },
-      get style() {
-        return visibleCanvas.style;
-      },
-    };
-
-    Object.defineProperty(proxy, "id", {
-      configurable: true,
-      enumerable: true,
-      get() {
-        return visibleCanvas.id;
-      },
-      set(value) {
-        visibleCanvas.id = value;
-      },
-    });
-
-    Object.defineProperty(proxy, "width", {
-      configurable: true,
-      enumerable: true,
-      get() {
-        return surfaceCanvas.width;
-      },
-      set(value) {
-        const next = Math.max(1, Number(value) || surfaceCanvas.width);
-        surfaceCanvas.width = next;
-      },
-    });
-
-    Object.defineProperty(proxy, "height", {
-      configurable: true,
-      enumerable: true,
-      get() {
-        return surfaceCanvas.height;
-      },
-      set(value) {
-        const next = Math.max(1, Number(value) || surfaceCanvas.height);
-        surfaceCanvas.height = next;
-      },
-    });
-
-    return proxy;
   }
 }

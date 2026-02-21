@@ -10,7 +10,9 @@
     "build": "vite build",
     "preview": "vite preview --host --port 4173 --strictPort",
     "vercel-build": "npm run build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run test:unit",
+    "test:smoke": "node scripts/visual-smoke.js --url http://127.0.0.1:4173",
+    "test:unit": "vitest run"
   },
   "keywords": [],
   "author": "",
@@ -21,7 +23,7 @@
     "playwright": "^1.58.2"
   },
   "devDependencies": {
-    "http-server": "^14.1.1",
-    "vite": "^7.1.5"
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4"
   }
 }

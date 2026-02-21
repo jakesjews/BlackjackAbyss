@@ -15,58 +15,6 @@
   </head>
   <body>
     <div id="game-shell"></div>
-    <div id="menu-home" hidden>
-      <div id="menu-home-title-wrap" aria-hidden="true">
-        <div id="menu-home-title">BLACKJACK ABYSS</div>
-      </div>
-      <button id="menu-new-run" type="button">New Run</button>
-      <button id="menu-resume" type="button">Resume</button>
-      <button id="menu-achievements" type="button">Collections</button>
-    </div>
-    <div id="top-right-actions" hidden>
-      <button id="logs-toggle" type="button" aria-label="Open run log" hidden></button>
-      <button id="achievements-toggle" type="button" aria-label="Return to menu" hidden></button>
-    </div>
-    <div id="logs-modal" hidden>
-      <div id="logs-modal-panel" role="dialog" aria-modal="true" aria-label="Run log">
-        <div id="logs-modal-header">
-          <h2>Run Log</h2>
-          <button id="logs-close" type="button" aria-label="Close log">✕</button>
-        </div>
-        <div id="logs-feed"></div>
-      </div>
-    </div>
-    <div id="collection-modal" hidden>
-      <div id="collection-panel" role="dialog" aria-modal="true" aria-label="Collections">
-        <div id="collection-header">
-          <h2>Collections</h2>
-          <button id="collection-close" type="button" aria-label="Close collections">✕</button>
-        </div>
-        <div id="collection-stats"></div>
-        <div id="collection-list"></div>
-      </div>
-    </div>
-    <div id="passive-modal" hidden>
-      <div id="passive-modal-panel" role="dialog" aria-modal="true" aria-label="Passives">
-        <div id="passive-modal-header">
-          <h2>Passives</h2>
-          <button id="passive-modal-close" type="button" aria-label="Close passives">✕</button>
-        </div>
-        <div id="passive-modal-stats"></div>
-        <div id="passive-modal-list"></div>
-      </div>
-    </div>
-    <div id="passive-rail" aria-label="Passive relics"></div>
-    <div id="passive-tooltip" hidden></div>
-    <div id="topbar-tooltip" hidden></div>
-    <div id="mobile-controls" aria-label="Game controls">
-      <button type="button" data-mobile-action="left">Left</button>
-      <button type="button" data-mobile-action="hit">Hit</button>
-      <button type="button" data-mobile-action="stand">Stand</button>
-      <button type="button" data-mobile-action="double">Double</button>
-      <button type="button" data-mobile-action="right">Right</button>
-      <button type="button" data-mobile-action="confirm">Confirm</button>
-    </div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
