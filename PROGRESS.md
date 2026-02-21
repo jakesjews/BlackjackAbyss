@@ -8,7 +8,7 @@
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
 - Docs-first checkpoint completed and runtime docs are synced to Phaser-native runtime architecture.
 - Runtime entry now uses `src/engine/runtime/runtime-engine.js` with direct app/runtime seam wiring.
-- Last Updated: 2026-02-21 18:30:16 EST
+- Last Updated: 2026-02-21 18:35:12 EST
 
 ## Current Focus
 
@@ -87,6 +87,8 @@
 - Reduced `src/engine/runtime/runtime-engine.js` from 1078 lines to 928 lines across the snapshot-registry + runtime-effects extraction slices.
 - Extracted Phaser bridge API wrapper wiring into `src/engine/runtime/core/runtime-bridge-registry.js` and added focused registry tests in `src/engine/runtime/__tests__/runtime-bridge-registry.test.mjs`.
 - Reduced `src/engine/runtime/runtime-engine.js` from 928 lines to 878 lines in this slice.
+- Collapsed additional trivial pass-through wrappers in `src/engine/runtime/runtime-engine.js` (module alias + inline callback use for split lifecycle/resolve hookups) to reduce non-essential indirection.
+- Reduced `src/engine/runtime/runtime-engine.js` from 878 lines to 875 lines in this slice.
 
 ## Next Up
 

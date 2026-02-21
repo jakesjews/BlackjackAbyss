@@ -294,9 +294,7 @@ export function startRuntimeEngine() {
     });
   }
 
-  function passiveDescription(text) {
-    return passiveDescriptionFromModule(text);
-  }
+  const passiveDescription = passiveDescriptionFromModule;
 
   function passiveThumbUrl(relic) {
     return passiveThumbUrlFromModule({
@@ -318,9 +316,7 @@ export function startRuntimeEngine() {
     hidePassiveTooltipState(state);
   }
 
-  function passiveSummary(run) {
-    return passiveSummaryFromModule(run);
-  }
+  const passiveSummary = passiveSummaryFromModule;
 
   function createRun() {
     return createRunFromModule(defaultPlayerStats);
@@ -478,7 +474,9 @@ export function startRuntimeEngine() {
     saveRunSnapshotFn: saveRunSnapshot,
     clampNumberFn: clampNumber,
     createEncounterFn: createEncounter,
-    resolveDealerThenShowdownFn: resolveDealerThenShowdown,
+    resolveDealerThenShowdownFn: (naturalCheck) => {
+      combatTurnActions.resolveDealerThenShowdown(naturalCheck);
+    },
     spawnFloatTextFn: spawnFloatText,
     addLogFn: addLog,
     unlockAudioFn: unlockAudio,
@@ -569,7 +567,13 @@ export function startRuntimeEngine() {
     setAnnouncement,
     startHand,
     saveRunSnapshot,
-    resolveHand,
+    resolveHand: (
+      outcome,
+      pTotal = handTotal(state.encounter.playerHand).total,
+      dTotal = handTotal(state.encounter.dealerHand).total
+    ) => {
+      combatResolution.resolveHand(outcome, pTotal, dTotal);
+    },
   });
 
   const rewardShopHandlers = createRewardShopHandlers({
@@ -625,13 +629,6 @@ export function startRuntimeEngine() {
     splitAction,
   } = combatTurnActions;
 
-  function resolveDealerThenShowdown(naturalCheck) {
-    combatTurnActions.resolveDealerThenShowdown(naturalCheck);
-  }
-
-  function resolveHand(outcome, pTotal = handTotal(state.encounter.playerHand).total, dTotal = handTotal(state.encounter.dealerHand).total) {
-    combatResolution.resolveHand(outcome, pTotal, dTotal);
-  }
   const {
     onEncounterWin,
   } = encounterOutcomeHandlers;
