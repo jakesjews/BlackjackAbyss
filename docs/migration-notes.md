@@ -27,6 +27,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Extracted run snapshot hydration/sanitization logic into `src/engine/runtime/bootstrap/state-sanitizers.js`.
 - Extracted run snapshot persistence/resume orchestration helpers into `src/engine/runtime/bootstrap/run-snapshot.js`.
 - Extracted run-result/profile tally helpers (`updateProfileBest`, `finalizeRun`, chip delta handling) into `src/engine/runtime/bootstrap/run-results.js`.
+- Extracted passive/relic view formatting and collection list helpers into `src/engine/runtime/bootstrap/passive-view.js`.
 - Replaced procedural generated BGM with MP3-backed runtime soundtrack.
 - Added GitHub Actions CI workflow with required `quality-gate` and non-required smoke job.
 
