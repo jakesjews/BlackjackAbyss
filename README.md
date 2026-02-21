@@ -81,20 +81,6 @@ Run the app (`npm run start`) and in another terminal capture screenshots:
 node scripts/visual-smoke.js --url http://127.0.0.1:4173 --out /tmp/abyss-visual-smoke
 ```
 
-## Avatar Generator
-
-Generate a new portrait into `public/images/avatars` using your OpenAI API key:
-
-```bash
-./run avatar
-./run avatar "custom name"
-```
-
-Environment:
-
-- `OPENAI_API_KEY` (required)
-- `OPENAI_IMAGE_MODEL` (optional, defaults to `gpt-image-1`)
-
 ## Build / Deploy
 
 ```bash
