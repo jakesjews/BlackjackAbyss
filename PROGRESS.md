@@ -8,7 +8,7 @@
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
 - Docs-first checkpoint completed and runtime docs are synced to Phaser-native runtime architecture.
 - Runtime entry now uses `src/engine/runtime/runtime-engine.js` with direct app/runtime seam wiring.
-- Last Updated: 2026-02-21 17:50:17 EST
+- Last Updated: 2026-02-21 17:54:07 EST
 
 ## Current Focus
 
@@ -77,6 +77,9 @@
 - Extracted runtime mode-property bridge installation into `src/engine/runtime/core/runtime-mode-bridge.js` and removed the inline mode-bridge block from `src/engine/runtime/runtime-engine.js`.
 - Added targeted tests for mode bridging in `src/engine/runtime/__tests__/runtime-mode-bridge.test.mjs`.
 - Reduced `src/engine/runtime/runtime-engine.js` from 1116 lines to 1096 lines in this slice.
+- Extracted runtime visual seed/audio source configuration into `src/engine/runtime/core/runtime-content-seeds.js` (ambient orbs, menu motes, grunt/card/music source lists).
+- Added focused tests for runtime seed generation and source lists in `src/engine/runtime/__tests__/runtime-content-seeds.test.mjs`.
+- Reduced `src/engine/runtime/runtime-engine.js` from 1096 lines to 1076 lines in this slice.
 
 ## Next Up
 

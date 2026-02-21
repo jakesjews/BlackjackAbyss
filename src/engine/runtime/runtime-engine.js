@@ -145,6 +145,12 @@ import {
 import { installRuntimeTestHooks } from "./core/test-hooks.js";
 import { installRuntimeModeBridge } from "./core/runtime-mode-bridge.js";
 import { bindRuntimeWindowLifecycle, createLandscapeLockRequester } from "./core/audio-system.js";
+import {
+  CARD_SOURCES,
+  GRUNT_SOURCES,
+  MUSIC_TRACK_SOURCES,
+  createRuntimeVisualSeeds,
+} from "./core/runtime-content-seeds.js";
 
 let runtimeEngineStarted = false;
 
@@ -166,36 +172,10 @@ export function startRuntimeEngine() {
 
   const WIDTH = RUNTIME_WIDTH;
   const HEIGHT = RUNTIME_HEIGHT;
-  const AMBIENT_ORBS = Array.from({ length: 44 }, () => ({
-    x: Math.random() * WIDTH,
-    y: Math.random() * HEIGHT,
-    radius: 1.2 + Math.random() * 4.6,
-    speed: 3 + Math.random() * 12,
-    alpha: 0.05 + Math.random() * 0.11,
-  }));
-  const MENU_MOTES = Array.from({ length: 39 }, () => ({
-    x: Math.random() * WIDTH,
-    y: Math.random() * HEIGHT,
-    radius: 0.675 + Math.random() * 1.65,
-    vx: -24 + Math.random() * 48,
-    vy: -34 - Math.random() * 136,
-    alpha: 0.2 + Math.random() * 0.4,
-    twinkle: 1.1 + Math.random() * 2.4,
-    phase: Math.random() * Math.PI * 2,
-    warm: true,
-    heat: Math.random(),
-    drift: 0.8 + Math.random() * 1.6,
-    swirl: 0.6 + Math.random() * 1.8,
-    speedScale: 0.7 + Math.random() * 1.65,
-    spin: -2.4 + Math.random() * 4.8,
-    shape: Math.floor(Math.random() * 3),
-  }));
-  const GRUNT_SOURCES = [
-    "/audio/soundbites/grunt.wav",
-    "/audio/soundbites/grunt.ogg",
-  ];
-  const CARD_SOURCES = ["/audio/soundbites/card.wav"];
-  const MUSIC_TRACK_SOURCES = ["/audio/music/blackjack.mp3"];
+  const { ambientOrbs: AMBIENT_ORBS, menuMotes: MENU_MOTES } = createRuntimeVisualSeeds({
+    width: WIDTH,
+    height: HEIGHT,
+  });
   const enemyAvatarLoader = createEnemyAvatarLoaderFromModule({
     globalWindow: window,
     sourceRoots: ["/images/avatars"],
