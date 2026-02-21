@@ -34,6 +34,13 @@ import { publishRuntimeTestHooks } from "./bridge/snapshots.js";
 import { readRuntimeTestFlags } from "./testing/test-controls.js";
 import { registerBridgeApi } from "./bootstrap/api-registry.js";
 import {
+  registerPhaserMenuActions as registerPhaserMenuActionsFromModule,
+  registerPhaserOverlayApi as registerPhaserOverlayApiFromModule,
+  registerPhaserRewardApi as registerPhaserRewardApiFromModule,
+  registerPhaserRunApi as registerPhaserRunApiFromModule,
+  registerPhaserShopApi as registerPhaserShopApiFromModule,
+} from "./bootstrap/phaser-bridge-apis.js";
+import {
   BOSS_RELIC,
   RELIC_BY_ID,
   RELIC_RARITY_META,
@@ -75,10 +82,17 @@ import {
 import { createEncounterOutcomeHandlers } from "./bootstrap/encounter-outcome.js";
 import { createRewardShopHandlers } from "./bootstrap/reward-shop.js";
 import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./bootstrap/serialization.js";
+import { buildPhaserRunSnapshot as buildPhaserRunSnapshotFromModule } from "./bootstrap/phaser-run-snapshot.js";
+import { buildPhaserOverlaySnapshot as buildPhaserOverlaySnapshotFromModule } from "./bootstrap/overlay-snapshot.js";
 import {
   buildPhaserRewardSnapshot as buildPhaserRewardSnapshotFromModule,
   buildPhaserShopSnapshot as buildPhaserShopSnapshotFromModule,
 } from "./bootstrap/shop-reward-snapshots.js";
+import {
+  buildAvailableActions as buildAvailableActionsFromModule,
+  renderGameToText as renderGameToTextFromModule,
+} from "./bootstrap/runtime-text-snapshot.js";
+import { createRuntimeUpdater } from "./bootstrap/runtime-update.js";
 import { goHomeFromActiveRun as goHomeFromActiveRunModule } from "./bootstrap/run-lifecycle.js";
 import { applyTestEconomyToNewRun as applyTestEconomyToNewRunFromModule, createRun as createRunFromModule } from "./bootstrap/run-factory.js";
 import {
@@ -1736,177 +1750,28 @@ export function bootstrapRuntime() {
     });
   }
 
+  const runtimeUpdater = createRuntimeUpdater({
+    state,
+    width: WIDTH,
+    height: HEIGHT,
+    ambientOrbs: AMBIENT_ORBS,
+    menuMotes: MENU_MOTES,
+    updateMusic,
+    updateEncounterIntroTyping,
+    saveRunSnapshot,
+    onEncounterWin,
+    finalizeRun,
+    hidePassiveTooltip,
+    triggerImpactBurstAt,
+    playGruntSfx,
+    applyImpactDamage,
+    spawnSparkBurst,
+    easeOutCubic,
+    lerp,
+  });
+
   function update(dt) {
-    state.worldTime += dt;
-    updateMusic(dt);
-
-    for (const orb of AMBIENT_ORBS) {
-      orb.y += orb.speed * dt;
-      if (orb.y > HEIGHT + 12) {
-        orb.y = -12;
-        orb.x = Math.random() * WIDTH;
-      }
-    }
-
-    if (state.mode === "menu") {
-      for (const mote of MENU_MOTES) {
-        const speedScale = mote.speedScale || 1;
-        const turbulence = Math.sin(state.worldTime * (1.6 + mote.swirl) + mote.phase) * (18 * mote.drift * speedScale);
-        const flutter = Math.cos(state.worldTime * (2.3 + mote.swirl * 0.7) + mote.phase * 0.7) * (8 * mote.drift * speedScale);
-        mote.x += (mote.vx * speedScale + turbulence) * dt;
-        mote.y += (mote.vy * speedScale + flutter) * dt;
-        if (mote.x < -48) {
-          mote.x = WIDTH + 48;
-        } else if (mote.x > WIDTH + 48) {
-          mote.x = -48;
-        }
-        if (mote.y < -48) {
-          mote.y = HEIGHT + 48;
-        } else if (mote.y > HEIGHT + 48) {
-          mote.y = -48;
-        }
-      }
-
-      if (Math.random() < dt * 1.8) {
-        const dir = Math.random() > 0.5 ? 1 : -1;
-        const life = 1.2 + Math.random() * 1.25;
-        state.menuSparks.push({
-          x: dir > 0 ? -24 : WIDTH + 24,
-          y: HEIGHT * (0.54 + Math.random() * 0.42),
-          vx: dir * (68 + Math.random() * 126),
-          vy: -38 - Math.random() * 42,
-          life,
-          maxLife: life,
-          size: 0.9 + Math.random() * 1.35,
-        });
-      }
-    } else {
-      state.menuSparks = [];
-    }
-
-    state.floatingTexts = state.floatingTexts.filter((f) => {
-      f.life -= dt;
-      f.y -= f.vy * dt;
-      return f.life > 0;
-    });
-
-    state.cardBursts = state.cardBursts.filter((burst) => {
-      burst.life -= dt;
-      return burst.life > 0;
-    });
-
-    state.sparkParticles = state.sparkParticles.filter((spark) => {
-      spark.life -= dt;
-      spark.x += spark.vx * dt;
-      spark.y += spark.vy * dt;
-      spark.vx *= Math.max(0, 1 - dt * 3.5);
-      spark.vy += 180 * dt;
-      return spark.life > 0;
-    });
-
-    state.handTackles = state.handTackles.filter((tackle) => {
-      tackle.elapsed += dt;
-      const progress = Math.max(0, Math.min(1, tackle.elapsed / Math.max(0.01, tackle.duration)));
-      const travel = Math.max(0, Math.min(1, progress / Math.max(0.01, tackle.impactAt)));
-      const eased = easeOutCubic(travel);
-      const currentX = lerp(tackle.fromX, tackle.toX, eased);
-      const currentY = lerp(tackle.fromY, tackle.toY, eased) - Math.sin(travel * Math.PI) * 42 * (1 - travel * 0.35);
-      if (!tackle.impacted && progress >= tackle.impactAt) {
-        tackle.impacted = true;
-        triggerImpactBurstAt(tackle.toX, tackle.toY, tackle.amount + 2, tackle.color);
-        playGruntSfx();
-        if (tackle.impactPayload) {
-          applyImpactDamage(tackle.impactPayload);
-        }
-      } else if (!tackle.impacted && Math.random() < dt * 24) {
-        spawnSparkBurst(currentX, currentY, tackle.color, 2, 68);
-      }
-      return progress < 1;
-    });
-
-    state.menuSparks = state.menuSparks.filter((spark) => {
-      spark.life -= dt;
-      spark.x += spark.vx * dt;
-      spark.y += spark.vy * dt;
-      spark.vx *= Math.max(0, 1 - dt * 0.85);
-      spark.vy -= 7 * dt;
-      return spark.life > 0;
-    });
-
-    state.flashOverlays = state.flashOverlays.filter((flash) => {
-      flash.life -= dt;
-      return flash.life > 0;
-    });
-
-    if (state.screenShakeTime > 0) {
-      state.screenShakeTime = Math.max(0, state.screenShakeTime - dt);
-    }
-    if (state.screenShakePower > 0) {
-      state.screenShakePower = Math.max(0, state.screenShakePower - dt * 30);
-    }
-    if (state.screenShakeTime <= 0) {
-      state.screenShakeDuration = 0;
-    }
-
-    if (state.announcementTimer > 0) {
-      state.announcementTimer = Math.max(0, state.announcementTimer - dt);
-      if (state.announcementTimer <= 0) {
-        state.announcement = "";
-        state.announcementDuration = 0;
-      }
-    }
-
-    if (state.mode === "playing" && state.encounter) {
-      updateEncounterIntroTyping(state.encounter, dt);
-    }
-
-    if (state.run) {
-      state.run.log = state.run.log.filter((entry) => {
-        entry.ttl -= dt;
-        return entry.ttl > 0;
-      });
-
-      if (state.mode === "playing" || state.mode === "reward" || state.mode === "shop") {
-        state.autosaveTimer += dt;
-        if (state.autosaveTimer >= 0.75) {
-          state.autosaveTimer = 0;
-          saveRunSnapshot();
-        }
-      }
-    }
-
-    if (state.pendingTransition) {
-      if (!state.pendingTransition.waiting) {
-        state.pendingTransition.timer -= dt;
-      }
-      if (!state.pendingTransition.waiting && state.pendingTransition.timer <= 0) {
-        const transition = state.pendingTransition;
-        state.pendingTransition = null;
-        if (transition.target === "enemy") {
-          onEncounterWin();
-        } else if (transition.target === "player" && state.encounter && state.run) {
-          finalizeRun("defeat");
-          state.mode = "gameover";
-          state.encounter.phase = "done";
-        }
-      }
-    }
-
-    if (state.passiveTooltipTimer > 0) {
-      state.passiveTooltipTimer = Math.max(0, state.passiveTooltipTimer - dt);
-      if (state.passiveTooltipTimer <= 0) {
-        hidePassiveTooltip();
-      }
-    }
-
-    if (state.mode === "playing" && state.encounter && state.encounter.phase === "resolve" && !state.pendingTransition) {
-      if (state.encounter.resolveTimer > 0) {
-        state.encounter.resolveTimer = Math.max(0, state.encounter.resolveTimer - dt);
-      }
-      if (state.encounter.resolveTimer <= 0 && state.handTackles.length === 0 && !state.encounter.nextDealPrompted) {
-        state.encounter.nextDealPrompted = true;
-      }
-    }
+    runtimeUpdater.update(dt);
   }
 
   function render() {
@@ -1914,157 +1779,31 @@ export function bootstrapRuntime() {
   }
 
   function availableActions() {
-    if (state.mode === "menu") {
-      return hasSavedRun()
-        ? ["enter(start)", "r(resume)", "a(collections)"]
-        : ["enter(start)", "a(collections)"];
-    }
-    if (state.mode === "collection") {
-      return ["enter(back)", "space(back)", "a(back)"];
-    }
-    if (state.mode === "playing") {
-      if (isEncounterIntroActive()) {
-        return state.encounter?.intro?.ready
-          ? ["enter(let's-go)", "space(let's-go)", "tap(let's-go)"]
-          : ["wait(dialogue)"];
-      }
-      if (canAdvanceDeal()) {
-        return ["enter(deal)", "tap(deal)"];
-      }
-      if (!canPlayerAct()) {
-        return ["observe(result)"];
-      }
-      const canDouble = canDoubleDown({
-        canAct: canPlayerAct(),
-        encounter: state.encounter,
-      });
-      const canSplit = canSplitCurrentHand();
-      const actions = ["z(hit)", "x(stand)"];
-      if (canSplit) {
-        actions.push("s(split)");
-      }
-      if (canDouble) {
-        actions.push("c(double)");
-      }
-      return actions;
-    }
-    if (state.mode === "reward") {
-      return ["left(prev)", "right(next)", "enter(claim)", "space(claim)"];
-    }
-    if (state.mode === "shop") {
-      return ["left(prev)", "right(next)", "space(buy)", "enter(continue)"];
-    }
-    if (state.mode === "gameover" || state.mode === "victory") {
-      return ["enter(restart)"];
-    }
-    return [];
+    return buildAvailableActionsFromModule({
+      state,
+      hasSavedRun,
+      isEncounterIntroActive,
+      canAdvanceDeal,
+      canPlayerAct,
+      canDoubleDown,
+      canSplitCurrentHand,
+    });
   }
 
   function renderGameToText() {
-    const run = state.run;
-    const encounter = state.encounter;
-
-    const payload = {
-      coordSystem: "origin=(0,0) top-left on 1280x720 canvas, +x right, +y down",
-      mode: state.mode,
-      actions: availableActions(),
-      run: run
-        ? {
-            floor: run.floor,
-            room: run.room,
-            maxFloor: run.maxFloor,
-            roomsPerFloor: run.roomsPerFloor,
-            playerHp: run.player.hp,
-            playerMaxHp: run.player.maxHp,
-            gold: run.player.gold,
-            streak: run.player.streak,
-            bustGuards: run.player.bustGuardsLeft,
-            relics: run.player.relics,
-            passiveSummary: passiveSummary(run),
-          }
-        : null,
-      encounter: encounter
-        ? {
-            enemy: {
-              name: encounter.enemy.name,
-              type: encounter.enemy.type,
-              hp: encounter.enemy.hp,
-              maxHp: encounter.enemy.maxHp,
-              attack: encounter.enemy.attack,
-            },
-            phase: encounter.phase,
-            handIndex: encounter.handIndex,
-            playerHand: encounter.playerHand.map(cardToText),
-            dealerHand: encounter.dealerHand.map((card, idx) => {
-              if (state.mode === "playing" && encounter.phase === "player" && encounter.hideDealerHole && idx === 1) {
-                return "??";
-              }
-              return cardToText(card);
-            }),
-            playerTotal: encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total,
-            dealerVisibleTotal: visibleDealerTotal(encounter),
-            resultText: encounter.resultText,
-            resultTone: encounter.resultTone || "neutral",
-            nextDealReady: canAdvanceDeal(),
-            doubleDown: encounter.doubleDown,
-            splitQueueHands: Array.isArray(encounter.splitQueue) ? encounter.splitQueue.length : 0,
-            splitUsed: Boolean(encounter.splitUsed),
-            splitHandsTotal: Math.max(1, nonNegInt(encounter.splitHandsTotal, 1)),
-            splitHandsResolved: Math.max(0, nonNegInt(encounter.splitHandsResolved, 0)),
-            dealerResolved: Boolean(encounter.dealerResolved),
-            introActive: Boolean(encounter.intro?.active),
-            introReady: Boolean(encounter.intro?.ready),
-            introText: encounter.intro?.dialogue || "",
-          }
-        : null,
-      rewards:
-        state.mode === "reward"
-          ? state.rewardOptions.map((relic, idx) => ({
-              index: idx,
-              name: relic.name,
-              selected: idx === state.selectionIndex,
-            }))
-          : [],
-      shop:
-        state.mode === "shop"
-          ? state.shopStock.map((item, idx) => ({
-              index: idx,
-              name: shopItemName(item),
-              cost: item.cost,
-              sold: !!item.sold,
-              selected: idx === state.selectionIndex,
-            }))
-          : [],
-      collection:
-        state.mode === "collection"
-          ? (() => {
-              const entries = collectionEntries();
-              return {
-                totalRelics: entries.length,
-                unlockedRelics: entries.filter((entry) => entry.unlocked).length,
-                discoveredRelics: entries.filter((entry) => entry.copies > 0).length,
-              };
-            })()
-          : null,
-      banner: state.announcement,
-      hasSavedRun: hasSavedRun(),
-      mobileControls: false,
-      audio: {
-        enabled: state.audio.enabled,
-        started: state.audio.started,
-        contextState: state.audio.context ? state.audio.context.state : "none",
-      },
-      profile: state.profile
-        ? {
-            runsStarted: state.profile.totals.runsStarted,
-            runsWon: state.profile.totals.runsWon,
-            enemiesDefeated: state.profile.totals.enemiesDefeated,
-            relicsCollected: state.profile.totals.relicsCollected,
-          }
-        : null,
-    };
-
-    return JSON.stringify(payload);
+    return renderGameToTextFromModule({
+      state,
+      availableActions,
+      passiveSummary,
+      cardToText,
+      handTotal,
+      visibleDealerTotal,
+      canAdvanceDeal,
+      nonNegInt,
+      shopItemName,
+      collectionEntries,
+      hasSavedRun,
+    });
   }
 
   function advanceTime(ms) {
@@ -2144,38 +1883,17 @@ export function bootstrapRuntime() {
   }
 
   function registerPhaserMenuActions() {
-    if (!phaserBridge || typeof phaserBridge.setMenuActions !== "function") {
-      return;
-    }
-    const api = {
-      startRun: () => {
-        unlockAudio();
-        if (state.mode === "menu") {
-          startRun();
-        }
-      },
-      resumeRun: () => {
-        unlockAudio();
-        if (state.mode === "menu" && hasSavedRun()) {
-          if (resumeSavedRun()) {
-            saveRunSnapshot();
-          }
-        }
-      },
-      openCollection: () => {
-        unlockAudio();
-        if (state.mode === "menu") {
-          openCollection(0);
-        }
-      },
-      hasSavedRun: () => hasSavedRun(),
-    };
-    registerBridgeApi({
-      bridge: phaserBridge,
-      setterName: "setMenuActions",
-      api,
-      methods: MENU_API_METHODS,
-      label: "menu",
+    registerPhaserMenuActionsFromModule({
+      phaserBridge,
+      state,
+      unlockAudio,
+      startRun,
+      hasSavedRun,
+      resumeSavedRun,
+      saveRunSnapshot,
+      openCollection,
+      registerBridgeApi,
+      menuApiMethods: MENU_API_METHODS,
       assertApiContract,
     });
   }
@@ -2189,165 +1907,42 @@ export function bootstrapRuntime() {
   }
 
   function buildPhaserRunSnapshot() {
-    if (state.mode !== "playing" || !state.run || !state.encounter) {
-      return null;
-    }
-    const run = state.run;
-    const encounter = state.encounter;
-    const introActive = isEncounterIntroActive(encounter);
-    const intro = encounter.intro || null;
-    const introDialogue = typeof intro?.dialogue === "string" ? intro.dialogue : "";
-    const visibleChars = Math.max(
-      0,
-      Math.min(
-        introDialogue.length,
-        Number.isFinite(intro?.visibleChars) ? Math.floor(intro.visibleChars) : introDialogue.length
-      )
-    );
-    const canAct = canPlayerAct();
-    const canDouble = canDoubleDown({
-      canAct,
-      encounter,
+    return buildPhaserRunSnapshotFromModule({
+      state,
+      isEncounterIntroActive,
+      canPlayerAct,
+      canSplitCurrentHand,
+      canAdvanceDeal,
+      canDoubleDown,
+      handTotal,
+      visibleDealerTotal,
+      buildTransitionSnapshot,
+      getRunEventLog,
+      passiveStacksForRun,
+      relicRarityMeta,
+      passiveDescription,
+      passiveThumbUrl,
     });
-    const logs = getRunEventLog(run).slice(-120);
-    const passives = passiveStacksForRun(run).map((entry) => {
-      const rarity = relicRarityMeta(entry.relic);
-      return {
-        id: entry.relic.id,
-        name: entry.relic.name,
-        description: passiveDescription(entry.relic.description),
-        count: entry.count,
-        thumbUrl: passiveThumbUrl(entry.relic),
-        rarityLabel: rarity.label,
-      };
-    });
-    const transition = buildTransitionSnapshot(state.pendingTransition);
-
-    return {
-      mode: state.mode,
-      run: {
-        floor: run.floor,
-        room: run.room,
-        roomsPerFloor: run.roomsPerFloor,
-        chips: run.player?.gold || 0,
-        streak: run.player?.streak || 0,
-        bustGuardsLeft: run.player?.bustGuardsLeft || 0,
-      },
-      player: {
-        hp: run.player?.hp || 0,
-        maxHp: run.player?.maxHp || 1,
-      },
-      enemy: {
-        name: encounter.enemy?.name || "Enemy",
-        hp: encounter.enemy?.hp || 0,
-        maxHp: encounter.enemy?.maxHp || 1,
-        color: encounter.enemy?.color || "#a3be8d",
-        type: encounter.enemy?.type || "normal",
-        avatarKey: encounter.enemy?.avatarKey || "",
-      },
-      handIndex: Math.max(1, Number(encounter.handIndex) || 1),
-      phase: encounter.phase,
-      cards: {
-        player: encounter.playerHand.map((card) => ({
-          rank: card.rank,
-          suit: card.suit,
-          hidden: false,
-          dealtAt: Number.isFinite(card.dealtAt) ? Math.floor(card.dealtAt) : 0,
-        })),
-        dealer: encounter.dealerHand.map((card, index) => ({
-          rank: card.rank,
-          suit: card.suit,
-          hidden: Boolean(encounter.hideDealerHole && index === 1),
-          dealtAt: Number.isFinite(card.dealtAt) ? Math.floor(card.dealtAt) : 0,
-        })),
-      },
-      totals: {
-        player: encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total,
-        dealer:
-          encounter.hideDealerHole && encounter.phase === "player"
-            ? visibleDealerTotal(encounter)
-            : handTotal(encounter.dealerHand).total,
-      },
-      resultText: encounter.resultText || "",
-      resultTone: encounter.resultTone || "neutral",
-      announcement: state.announcement || "",
-      transition,
-      intro: {
-        active: introActive,
-        ready: Boolean(intro?.ready),
-        text: introDialogue.slice(0, visibleChars),
-        fullText: introDialogue,
-      },
-      logs,
-      passives,
-      status: {
-        canAct,
-        canHit: canAct,
-        canStand: canAct,
-        canSplit: canSplitCurrentHand(),
-        canDouble,
-        canDeal: canAdvanceDeal(),
-      },
-    };
   }
 
   function registerPhaserRunApi() {
-    if (!phaserBridge || typeof phaserBridge.setRunApi !== "function") {
-      return;
-    }
-    const api = {
-      getSnapshot: () => buildPhaserRunSnapshot(),
-      hit: () => {
-        unlockAudio();
-        hitAction();
-      },
-      stand: () => {
-        unlockAudio();
-        standAction();
-      },
-      doubleDown: () => {
-        unlockAudio();
-        doubleAction();
-      },
-      split: () => {
-        unlockAudio();
-        splitAction();
-      },
-      deal: () => {
-        unlockAudio();
-        advanceToNextDeal();
-      },
-      confirmIntro: () => {
-        unlockAudio();
-        advanceEncounterIntro();
-      },
-      fireballLaunch: (attacker, target, amount) => {
-        unlockAudio();
-        playFireballLaunchSfx(attacker, target, amount);
-      },
-      fireballImpact: (amount, target) => {
-        unlockAudio();
-        playFireballImpactSfx(amount, target);
-      },
-      startEnemyDefeatTransition: () => {
-        unlockAudio();
-        beginQueuedEnemyDefeatTransition();
-      },
-      card: () => {
-        unlockAudio();
-        playUiSfx("card");
-      },
-      goHome: () => {
-        unlockAudio();
-        goHomeFromActiveRun();
-      },
-    };
-    registerBridgeApi({
-      bridge: phaserBridge,
-      setterName: "setRunApi",
-      api,
-      methods: RUN_API_METHODS,
-      label: "run",
+    registerPhaserRunApiFromModule({
+      phaserBridge,
+      buildPhaserRunSnapshot,
+      unlockAudio,
+      hitAction,
+      standAction,
+      doubleAction,
+      splitAction,
+      advanceToNextDeal,
+      advanceEncounterIntro,
+      playFireballLaunchSfx,
+      playFireballImpactSfx,
+      beginQueuedEnemyDefeatTransition,
+      playUiSfx,
+      goHomeFromActiveRun,
+      registerBridgeApi,
+      runApiMethods: RUN_API_METHODS,
       assertApiContract,
     });
   }
@@ -2364,45 +1959,18 @@ export function bootstrapRuntime() {
   }
 
   function registerPhaserRewardApi() {
-    if (!phaserBridge || typeof phaserBridge.setRewardApi !== "function") {
-      return;
-    }
-    const api = {
-      getSnapshot: () => buildPhaserRewardSnapshot(),
-      prev: () => {
-        if (state.mode === "reward") {
-          moveSelection(-1, state.rewardOptions.length);
-        }
-      },
-      next: () => {
-        if (state.mode === "reward") {
-          moveSelection(1, state.rewardOptions.length);
-        }
-      },
-      claim: () => {
-        claimReward();
-      },
-      selectIndex: (index) => {
-        if (state.mode !== "reward" || !state.rewardOptions.length) {
-          return;
-        }
-        const target = clampNumber(index, 0, state.rewardOptions.length - 1, state.selectionIndex);
-        if (target !== state.selectionIndex) {
-          state.selectionIndex = target;
-          playUiSfx("select");
-        }
-      },
-      goHome: () => {
-        unlockAudio();
-        goHomeFromActiveRun();
-      },
-    };
-    registerBridgeApi({
-      bridge: phaserBridge,
-      setterName: "setRewardApi",
-      api,
-      methods: REWARD_API_METHODS,
-      label: "reward",
+    registerPhaserRewardApiFromModule({
+      phaserBridge,
+      state,
+      buildPhaserRewardSnapshot,
+      moveSelection,
+      claimReward,
+      clampNumber,
+      playUiSfx,
+      unlockAudio,
+      goHomeFromActiveRun,
+      registerBridgeApi,
+      rewardApiMethods: REWARD_API_METHODS,
       assertApiContract,
     });
   }
@@ -2419,201 +1987,46 @@ export function bootstrapRuntime() {
   }
 
   function registerPhaserShopApi() {
-    if (!phaserBridge || typeof phaserBridge.setShopApi !== "function") {
-      return;
-    }
-    const api = {
-      getSnapshot: () => buildPhaserShopSnapshot(),
-      prev: () => {
-        if (state.mode === "shop") {
-          moveSelection(-1, state.shopStock.length);
-        }
-      },
-      next: () => {
-        if (state.mode === "shop") {
-          moveSelection(1, state.shopStock.length);
-        }
-      },
-      buy: (index) => {
-        if (state.mode !== "shop") {
-          return;
-        }
-        unlockAudio();
-        if (Number.isFinite(Number(index))) {
-          buyShopItem(Number(index));
-        } else {
-          buyShopItem();
-        }
-      },
-      continueRun: () => {
-        if (state.mode !== "shop") {
-          return;
-        }
-        unlockAudio();
-        leaveShop();
-      },
-      selectIndex: (index) => {
-        if (state.mode !== "shop" || !state.shopStock.length) {
-          return;
-        }
-        const target = clampNumber(index, 0, state.shopStock.length - 1, state.selectionIndex);
-        if (target !== state.selectionIndex) {
-          state.selectionIndex = target;
-          playUiSfx("select");
-        }
-      },
-      goHome: () => {
-        unlockAudio();
-        goHomeFromActiveRun();
-      },
-    };
-    registerBridgeApi({
-      bridge: phaserBridge,
-      setterName: "setShopApi",
-      api,
-      methods: SHOP_API_METHODS,
-      label: "shop",
+    registerPhaserShopApiFromModule({
+      phaserBridge,
+      state,
+      buildPhaserShopSnapshot,
+      moveSelection,
+      unlockAudio,
+      buyShopItem,
+      leaveShop,
+      clampNumber,
+      playUiSfx,
+      goHomeFromActiveRun,
+      registerBridgeApi,
+      shopApiMethods: SHOP_API_METHODS,
       assertApiContract,
     });
   }
 
   function buildPhaserOverlaySnapshot() {
-    if (state.mode === "collection") {
-      const entries = collectionEntries();
-      const mappedEntries = entries.map((entry) => {
-        const rarityMeta = RELIC_RARITY_META[entry.rarity] || RELIC_RARITY_META.common;
-        return {
-          id: entry.relic.id,
-          thumbUrl: entry.unlocked ? passiveThumbUrl(entry.relic) : "",
-          rarityLabel: entry.rarityLabel,
-          rarityColor: rarityMeta.glow,
-          name: entry.unlocked ? entry.relic.name : "LOCKED",
-          description: entry.unlocked ? passiveDescription(entry.relic.description) : entry.unlockText,
-          unlocked: entry.unlocked,
-          copies: entry.copies,
-        };
-      });
-
-      const unlockedCount = entries.filter((entry) => entry.unlocked).length;
-      const foundCount = entries.filter((entry) => entry.copies > 0).length;
-      const totalCopies = entries.reduce((acc, entry) => acc + entry.copies, 0);
-
-      return {
-        mode: state.mode,
-        summary: `Unlocked ${unlockedCount}/${entries.length}  •  Found ${foundCount}/${entries.length}  •  Copies ${totalCopies}`,
-        entries: mappedEntries,
-      };
-    }
-
-    if (state.mode === "gameover" || state.mode === "victory") {
-      const title = state.mode === "gameover" ? "RUN LOST" : "HOUSE BROKEN";
-      const subtitle =
-        state.mode === "gameover"
-          ? "The House keeps your soul this time."
-          : "You shattered the final dealer.";
-      const prompt =
-        state.mode === "gameover"
-          ? "Press Enter to run it back."
-          : "Press Enter for another run.";
-
-      const run = state.run || null;
-      const stats = run
-        ? [
-            `Floor reached: ${run.floor}/${run.maxFloor}`,
-            `Enemies defeated: ${run.enemiesDefeated}`,
-            `Hands played: ${run.totalHands}`,
-            `Total damage dealt: ${run.player?.totalDamageDealt || 0}`,
-            `Total damage taken: ${run.player?.totalDamageTaken || 0}`,
-            `Chips banked: ${run.player?.gold || 0}`,
-          ]
-        : [];
-
-      return {
-        mode: state.mode,
-        title,
-        subtitle,
-        prompt,
-        stats,
-        canRestart: true,
-      };
-    }
-
-    return null;
+    return buildPhaserOverlaySnapshotFromModule({
+      state,
+      collectionEntries,
+      relicRarityMeta: RELIC_RARITY_META,
+      passiveThumbUrl,
+      passiveDescription,
+    });
   }
 
   function registerPhaserOverlayApi() {
-    if (!phaserBridge || typeof phaserBridge.setOverlayApi !== "function") {
-      return;
-    }
-
-    const collectionPages = () => {
-      const entries = collectionEntries();
-      const { cols, rows } = collectionPageLayout();
-      const perPage = Math.max(1, cols * rows);
-      return Math.max(1, Math.ceil(entries.length / perPage));
-    };
-
-    const goToMenu = () => {
-      if (state.mode !== "collection") {
-        return;
-      }
-      unlockAudio();
-      playUiSfx("confirm");
-      state.mode = "menu";
-    };
-
-    const restartRun = () => {
-      if (state.mode !== "gameover" && state.mode !== "victory") {
-        return;
-      }
-      unlockAudio();
-      startRun();
-    };
-
-    const api = {
-      getSnapshot: () => buildPhaserOverlaySnapshot(),
-      prevPage: () => {
-        if (state.mode !== "collection") {
-          return;
-        }
-        const pageCount = collectionPages();
-        const next = clampNumber(state.collectionPage - 1, 0, pageCount - 1, state.collectionPage);
-        if (next !== state.collectionPage) {
-          state.collectionPage = next;
-          playUiSfx("select");
-        }
-      },
-      nextPage: () => {
-        if (state.mode !== "collection") {
-          return;
-        }
-        const pageCount = collectionPages();
-        const next = clampNumber(state.collectionPage + 1, 0, pageCount - 1, state.collectionPage);
-        if (next !== state.collectionPage) {
-          state.collectionPage = next;
-          playUiSfx("select");
-        }
-      },
-      backToMenu: () => {
-        goToMenu();
-      },
-      restart: () => {
-        restartRun();
-      },
-      confirm: () => {
-        if (state.mode === "collection") {
-          goToMenu();
-          return;
-        }
-        restartRun();
-      },
-    };
-    registerBridgeApi({
-      bridge: phaserBridge,
-      setterName: "setOverlayApi",
-      api,
-      methods: OVERLAY_API_METHODS,
-      label: "overlay",
+    registerPhaserOverlayApiFromModule({
+      phaserBridge,
+      state,
+      collectionEntries,
+      collectionPageLayout,
+      clampNumber,
+      unlockAudio,
+      playUiSfx,
+      startRun,
+      buildPhaserOverlaySnapshot,
+      registerBridgeApi,
+      overlayApiMethods: OVERLAY_API_METHODS,
       assertApiContract,
     });
   }
