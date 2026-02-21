@@ -25,6 +25,8 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Moved reusable card/deck/hand helpers (`shuffle`, `createDeck`, totals/blackjack utilities, dealer-visible total) into `src/engine/runtime/domain/combat.js`.
 - Extracted run/encounter creation lifecycle from bootstrap into `src/engine/runtime/bootstrap/run-factory.js` and `src/engine/runtime/bootstrap/encounter-factory.js`.
 - Extracted run snapshot hydration/sanitization logic into `src/engine/runtime/bootstrap/state-sanitizers.js`.
+- Extracted run snapshot persistence/resume orchestration helpers into `src/engine/runtime/bootstrap/run-snapshot.js`.
+- Extracted run-result/profile tally helpers (`updateProfileBest`, `finalizeRun`, chip delta handling) into `src/engine/runtime/bootstrap/run-results.js`.
 - Replaced procedural generated BGM with MP3-backed runtime soundtrack.
 - Added GitHub Actions CI workflow with required `quality-gate` and non-required smoke job.
 

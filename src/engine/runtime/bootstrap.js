@@ -53,6 +53,19 @@ import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./bootstrap
 import { goHomeFromActiveRun as goHomeFromActiveRunModule } from "./bootstrap/run-lifecycle.js";
 import { applyTestEconomyToNewRun as applyTestEconomyToNewRunFromModule, createRun as createRunFromModule } from "./bootstrap/run-factory.js";
 import {
+  applyChipDelta as applyChipDeltaFromModule,
+  finalizeRunIntoProfile as finalizeRunIntoProfileFromModule,
+  updateProfileBest as updateProfileBestFromModule,
+} from "./bootstrap/run-results.js";
+import {
+  buildSavedRunSnapshot,
+  clearSavedRunState,
+  hydrateResumeSnapshot,
+  loadSavedRunSnapshotFromStorage,
+  persistSavedRunSnapshot,
+  resetTransientStateAfterResume,
+} from "./bootstrap/run-snapshot.js";
+import {
   sanitizeCard as sanitizeCardFromModule,
   sanitizeCardList as sanitizeCardListFromModule,
   sanitizeEncounter as sanitizeEncounterFromModule,
@@ -402,48 +415,35 @@ export function bootstrapRuntime() {
   }
 
   function clearSavedRun() {
-    safeRemoveStorage(STORAGE_KEYS.run);
-    state.savedRunSnapshot = null;
+    clearSavedRunState({
+      safeRemoveStorage,
+      storageKey: STORAGE_KEYS.run,
+      state,
+    });
   }
 
   function saveRunSnapshot() {
-    if (!state.run) {
+    const snapshot = buildSavedRunSnapshot({
+      state,
+      serializeShopStock,
+    });
+    if (!snapshot) {
       clearSavedRun();
       return;
     }
-    const snapshot = {
-      version: 1,
-      savedAt: Date.now(),
-      mode: state.mode,
-      run: state.run,
-      encounter: state.encounter,
-      rewardOptionIds: state.rewardOptions.map((relic) => relic.id),
-      shopStock: serializeShopStock(state.shopStock),
-      selectionIndex: state.selectionIndex,
-      announcement: state.announcement,
-      announcementTimer: state.announcementTimer,
-    };
-    safeSetStorage(STORAGE_KEYS.run, JSON.stringify(snapshot));
+    persistSavedRunSnapshot({
+      safeSetStorage,
+      storageKey: STORAGE_KEYS.run,
+      snapshot,
+    });
     state.savedRunSnapshot = snapshot;
   }
 
   function loadSavedRunSnapshot() {
-    const raw = safeGetStorage(STORAGE_KEYS.run);
-    if (!raw) {
-      return null;
-    }
-    try {
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== "object") {
-        return null;
-      }
-      if (!parsed.run) {
-        return null;
-      }
-      return parsed;
-    } catch {
-      return null;
-    }
+    return loadSavedRunSnapshotFromStorage({
+      safeGetStorage,
+      storageKey: STORAGE_KEYS.run,
+    });
   }
 
   function resumeSavedRun() {
@@ -452,50 +452,36 @@ export function bootstrapRuntime() {
       return false;
     }
 
-    const run = sanitizeRun(snapshot.run);
-    const encounter = sanitizeEncounter(snapshot.encounter, run);
-    if (!run || !encounter) {
+    const hydrated = hydrateResumeSnapshot({
+      snapshot,
+      sanitizeRun,
+      sanitizeEncounter,
+      relicById: RELIC_BY_ID,
+      hydrateShopStock,
+      generateCampRelicDraftStock,
+      nonNegInt,
+    });
+    if (!hydrated) {
       clearSavedRun();
       return false;
     }
 
-    const rawMode = ["playing", "reward", "shop", "gameover", "victory"].includes(snapshot.mode) ? snapshot.mode : "playing";
-    const validMode = rawMode === "reward" ? "shop" : rawMode;
-
-    state.run = run;
-    state.encounter = encounter;
-    state.mode = validMode;
-    state.rewardOptions = Array.isArray(snapshot.rewardOptionIds)
-      ? snapshot.rewardOptionIds.map((id) => RELIC_BY_ID.get(id)).filter(Boolean)
-      : [];
-    state.shopStock = hydrateShopStock(snapshot.shopStock, RELIC_BY_ID);
-    if (state.mode === "shop" && !state.shopStock.length && state.rewardOptions.length) {
-      state.shopStock = generateCampRelicDraftStock(state.rewardOptions);
-    }
-    state.selectionIndex = nonNegInt(snapshot.selectionIndex, 0);
-    if (encounter.intro?.active) {
+    state.run = hydrated.run;
+    state.encounter = hydrated.encounter;
+    state.mode = hydrated.mode;
+    state.rewardOptions = hydrated.rewardOptions;
+    state.shopStock = hydrated.shopStock;
+    state.selectionIndex = hydrated.selectionIndex;
+    if (hydrated.introActive) {
       state.announcement = "";
       state.announcementTimer = 0;
       state.announcementDuration = 0;
     } else {
       setAnnouncement("Run resumed.", 1.8);
     }
-    state.floatingTexts = [];
-    state.cardBursts = [];
-    state.sparkParticles = [];
-    state.handTackles = [];
-    state.flashOverlays = [];
-    state.screenShakeTime = 0;
-    state.screenShakeDuration = 0;
-    state.screenShakePower = 0;
-    state.pendingTransition = null;
-    state.combatLayout = null;
-    state.autosaveTimer = 0;
-    if (state.run && Array.isArray(state.run.log)) {
-      state.run.log = [];
-    }
+    resetTransientStateAfterResume(state);
     state.savedRunSnapshot = snapshot;
-    updateProfileBest(run);
+    updateProfileBest(hydrated.run);
     unlockAudio();
     playUiSfx("confirm");
     resizeCanvas();
@@ -503,12 +489,10 @@ export function bootstrapRuntime() {
   }
 
   function updateProfileBest(run) {
-    if (!state.profile || !run) {
-      return;
-    }
-    state.profile.totals.bestFloor = Math.max(state.profile.totals.bestFloor, run.floor);
-    state.profile.totals.bestRoom = Math.max(state.profile.totals.bestRoom, run.room);
-    state.profile.totals.longestStreak = Math.max(state.profile.totals.longestStreak, run.maxStreak || 0, run.player?.streak || 0);
+    updateProfileBestFromModule({
+      profile: state.profile,
+      run,
+    });
   }
 
   function finalizeRun(outcome) {
@@ -517,56 +501,22 @@ export function bootstrapRuntime() {
       return;
     }
 
-    const run = state.run;
-    const totals = state.profile.totals;
-    totals.runsCompleted += 1;
-    if (outcome === "victory") {
-      totals.runsWon += 1;
-    } else {
-      totals.runsLost += 1;
-    }
-
-    totals.enemiesDefeated += run.enemiesDefeated;
-    totals.handsPlayed += run.totalHands;
-    totals.damageDealt += run.player.totalDamageDealt;
-    totals.damageTaken += run.player.totalDamageTaken;
-    totals.chipsEarned += run.chipsEarnedRun || 0;
-    totals.chipsSpent += run.chipsSpentRun || 0;
-    totals.blackjacks += run.blackjacks || 0;
-    totals.doublesWon += run.doublesWon || 0;
-    totals.splitsUsed += run.splitsUsed || 0;
-    totals.pushes += run.pushes || 0;
-    updateProfileBest(run);
-
-    state.profile.runs.unshift({
-      at: Date.now(),
+    finalizeRunIntoProfileFromModule({
+      profile: state.profile,
+      run: state.run,
       outcome,
-      floor: run.floor,
-      room: run.room,
-      enemiesDefeated: run.enemiesDefeated,
-      hands: run.totalHands,
-      chips: run.player.gold,
+      maxRunHistory: MAX_RUN_HISTORY,
     });
-    if (state.profile.runs.length > MAX_RUN_HISTORY) {
-      state.profile.runs.length = MAX_RUN_HISTORY;
-    }
 
     saveProfile();
     clearSavedRun();
   }
 
   function gainChips(amount) {
-    if (!state.run || !Number.isFinite(amount) || amount === 0) {
-      return;
-    }
-
-    const run = state.run;
-    run.player.gold = Math.max(0, run.player.gold + Math.round(amount));
-    if (amount > 0) {
-      run.chipsEarnedRun = (run.chipsEarnedRun || 0) + Math.round(amount);
-    } else {
-      run.chipsSpentRun = (run.chipsSpentRun || 0) + Math.round(Math.abs(amount));
-    }
+    applyChipDeltaFromModule({
+      run: state.run,
+      amount,
+    });
   }
 
   function passiveDescription(text) {

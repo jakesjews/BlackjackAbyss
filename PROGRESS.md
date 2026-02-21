@@ -6,7 +6,7 @@
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
-- Last Updated: 2026-02-21 15:02:00 EST
+- Last Updated: 2026-02-21 15:18:00 EST
 
 ## Current Focus
 
@@ -33,6 +33,8 @@
 - Extracted card/deck/hand utility logic from runtime bootstrap into `src/engine/runtime/domain/combat.js` and expanded unit coverage for those helpers.
 - Extracted run/encounter creation flow into bootstrap factories (`run-factory`, `encounter-factory`) and added targeted unit tests for those modules.
 - Extracted save/resume hydration sanitizers into `src/engine/runtime/bootstrap/state-sanitizers.js` and added sanitizer-specific unit tests.
+- Extracted run snapshot persistence/resume orchestration helpers into `src/engine/runtime/bootstrap/run-snapshot.js` with dedicated unit tests.
+- Extracted run result/profile tally helpers into `src/engine/runtime/bootstrap/run-results.js` and added dedicated unit tests.
 
 ## Next Up
 

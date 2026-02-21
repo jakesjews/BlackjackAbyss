@@ -34,7 +34,7 @@ npm run start
 - Phaser scenes in `src/engine/scenes/*` are the renderer/UI state machine.
 - Runtime modules in `src/engine/runtime/*` own gameplay state, progression, persistence, and bridge APIs.
 - `src/engine/runtime/bootstrap.js` registers scene-facing APIs and test hooks.
-- `src/engine/runtime/bootstrap/*` contains extracted runtime helpers, factories, sanitizers, and content catalogs (API registration, lifecycle, audio/listeners, test hooks, run/encounter creation, save/resume hydration sanitization, relic/enemy intro data).
+- `src/engine/runtime/bootstrap/*` contains extracted runtime helpers, factories, snapshot/persistence helpers, run-results/profile helpers, sanitizers, and content catalogs (API registration, lifecycle, audio/listeners, test hooks, run/encounter creation, save/resume orchestration, profile tally/finalization, hydration sanitization, relic/enemy intro data).
 - `src/engine/app.js` exposes a minimal runtime seam (`legacyAdapter` + Phaser game instance) to scenes.
 
 ## Controls
