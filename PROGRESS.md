@@ -8,7 +8,7 @@
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
 - Docs-first checkpoint completed and runtime docs are synced to Phaser-native runtime architecture.
 - Runtime entry now uses `src/engine/runtime/runtime-engine.js` with direct app/runtime seam wiring.
-- Last Updated: 2026-02-21 17:44:21 EST
+- Last Updated: 2026-02-21 17:47:29 EST
 
 ## Current Focus
 
@@ -72,6 +72,8 @@
 - Added `src/engine/runtime/compat/phaser-bridge-compat.js` as the thin compatibility facade for scenes/tests/tools.
 - Renamed the runtime helper module folder to `src/engine/runtime/core/*` and updated source/test imports.
 - Added `npm run test:dead-refs` (`scripts/check-dead-refs.mjs`) to fail on stale bootstrap-entry and legacy-adapter symbol references.
+- Added dedicated bridge facade unit tests in `src/engine/runtime/__tests__/phaser-bridge-compat.test.mjs` (mode callbacks, tick routing, API mapping, canvas accessor).
+- Cleaned runtime entry constants in `src/engine/runtime/runtime-engine.js` to use shared exports from `src/engine/runtime/constants.js` and removed dead local symbols.
 
 ## Next Up
 

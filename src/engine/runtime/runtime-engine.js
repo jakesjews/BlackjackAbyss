@@ -1,4 +1,14 @@
-import { MAX_RUN_HISTORY, STORAGE_KEYS } from "./constants.js";
+import {
+  CARD_H,
+  CARD_W,
+  ENEMY_DEFEAT_TRANSITION_SECONDS,
+  MAX_RUN_HISTORY,
+  MAX_SPLIT_HANDS,
+  PLAYER_DEFEAT_TRANSITION_SECONDS,
+  RUNTIME_HEIGHT,
+  RUNTIME_WIDTH,
+  STORAGE_KEYS,
+} from "./constants.js";
 import { createRuntimeState, createProfile, defaultPlayerStats } from "./state/store.js";
 import { loadAudioEnabled, safeGetStorage, safeRemoveStorage, safeSetStorage, saveAudioEnabled } from "./persistence/storage.js";
 import {
@@ -153,14 +163,8 @@ export function startRuntimeEngine() {
     throw new Error("Unable to initialize Phaser runtime context.");
   }
 
-  const WIDTH = 1280;
-  const HEIGHT = 720;
-  const MAX_SPLIT_HANDS = 4;
-  const ENEMY_DEFEAT_TRANSITION_SECONDS = 1.9;
-  const PLAYER_DEFEAT_TRANSITION_SECONDS = 1.02;
-  const CARD_W = 88;
-  const CARD_H = 124;
-  const SUIT_SYMBOL = { S: "♠", H: "♥", D: "♦", C: "♣" };
+  const WIDTH = RUNTIME_WIDTH;
+  const HEIGHT = RUNTIME_HEIGHT;
   const AMBIENT_ORBS = Array.from({ length: 44 }, () => ({
     x: Math.random() * WIDTH,
     y: Math.random() * HEIGHT,
