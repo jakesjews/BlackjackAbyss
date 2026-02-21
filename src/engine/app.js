@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { BASE_HEIGHT, BASE_WIDTH, SCENE_KEYS } from "./constants.js";
-import { LegacyRuntimeAdapter } from "./legacy/legacy-runtime-adapter.js";
+import { createPhaserBridgeCompat } from "./runtime/compat/phaser-bridge-compat.js";
 import { BootScene } from "./scenes/BootScene.js";
 import { MenuScene } from "./scenes/MenuScene.js";
 import { RunScene } from "./scenes/RunScene.js";
@@ -9,10 +9,12 @@ import { ShopScene } from "./scenes/ShopScene.js";
 import { OverlayScene } from "./scenes/OverlayScene.js";
 
 function createRuntimeContext() {
-  const legacyAdapter = new LegacyRuntimeAdapter();
+  const bridgeCompat = createPhaserBridgeCompat();
 
   return {
-    legacyAdapter,
+    bridge: bridgeCompat.bridge,
+    tick: bridgeCompat.tick,
+    setGame: bridgeCompat.setGame,
     game: null,
   };
 }
@@ -115,7 +117,8 @@ export function createPhaserApp() {
           runtime.game = bootedGame;
           bootedGame.__ABYSS_RUNTIME__ = runtime;
 
-          const bridge = runtime.legacyAdapter.attachGame(bootedGame);
+          runtime.setGame(bootedGame);
+          const bridge = runtime.bridge;
           if (typeof bridge.setModeHandler === "function") {
             bridge.setModeHandler((mode) => {
               syncPhaserScenesForMode(bootedGame, mode);

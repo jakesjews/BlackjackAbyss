@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCombatImpactHandlers } from "../bootstrap/combat-impact.js";
+import { createCombatImpactHandlers } from "../core/combat-impact.js";
 
 function createBaseState() {
   return {

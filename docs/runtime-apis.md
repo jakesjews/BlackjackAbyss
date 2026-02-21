@@ -8,6 +8,11 @@ Authoritative source:
 
 - `src/engine/runtime/bridge/register-apis.js`
 
+Compatibility facade surface (current transitional endpoint):
+
+- `window.__ABYSS_PHASER_BRIDGE__`
+- This bridge is maintained for scene/test/tool compatibility while runtime wiring is simplified to a direct Phaser-native runtime service architecture.
+
 ## Menu API
 
 Registered via `setMenuActions`:
@@ -70,7 +75,7 @@ Registered via `setOverlayApi`:
 
 ## Test Hooks
 
-Published during runtime bootstrap:
+Published during runtime startup:
 
 - `window.render_game_to_text()`
 - `window.advanceTime(ms)`

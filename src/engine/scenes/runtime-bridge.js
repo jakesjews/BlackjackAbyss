@@ -3,7 +3,7 @@ export function getRuntime(scene) {
 }
 
 export function getBridge(scene) {
-  return getRuntime(scene)?.legacyAdapter?.bridge || null;
+  return getRuntime(scene)?.bridge || null;
 }
 
 function getBridgeApi(scene, methodName) {
@@ -15,9 +15,9 @@ function getBridgeApi(scene, methodName) {
 }
 
 export function tickRuntime(scene, time, delta) {
-  const adapter = getRuntime(scene)?.legacyAdapter || null;
-  if (adapter && typeof adapter.tick === "function") {
-    adapter.tick(delta, time);
+  const runtime = getRuntime(scene);
+  if (runtime && typeof runtime.tick === "function") {
+    runtime.tick(delta, time);
   }
 }
 

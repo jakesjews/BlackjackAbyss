@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCombatTurnActions } from "../bootstrap/combat-turn-actions.js";
+import { createCombatTurnActions } from "../core/combat-turn-actions.js";
 
 function nonNegInt(value, fallback = 0) {
   const n = Number(value);

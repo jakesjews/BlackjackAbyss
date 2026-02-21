@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { STORAGE_KEYS } from "../constants.js";
-import { createRuntimeSaveResumeHandlers } from "../bootstrap/runtime-save-resume.js";
+import { createRuntimeSaveResumeHandlers } from "../core/runtime-save-resume.js";
 
 function createStorageHarness(initial = {}) {
   const storage = { ...initial };

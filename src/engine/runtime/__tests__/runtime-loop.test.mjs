@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeLoop } from "../bootstrap/runtime-loop.js";
+import { createRuntimeLoop } from "../core/runtime-loop.js";
 
 function createEnv(overrides = {}) {
   const state = { viewport: null };

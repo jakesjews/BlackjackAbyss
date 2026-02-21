@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildPhaserRewardSnapshot,
   buildPhaserShopSnapshot,
-} from "../bootstrap/shop-reward-snapshots.js";
+} from "../core/shop-reward-snapshots.js";
 
 function nonNegInt(value, fallback = 0) {
   const n = Number(value);

@@ -6,7 +6,7 @@ import {
   passiveStacksForRun,
   passiveSummary,
   passiveThumbUrl,
-} from "../bootstrap/passive-view.js";
+} from "../core/passive-view.js";
 
 describe("passive view helpers", () => {
   it("normalizes passive descriptions", () => {

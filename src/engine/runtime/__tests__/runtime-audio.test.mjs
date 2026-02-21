@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeAudio } from "../bootstrap/runtime-audio.js";
+import { createRuntimeAudio } from "../core/runtime-audio.js";
 
 function createAudioElementStub(overrides = {}) {
   return {

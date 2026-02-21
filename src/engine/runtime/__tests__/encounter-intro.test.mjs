@@ -5,7 +5,7 @@ import {
   isEncounterIntroActive,
   revealEncounterIntro,
   updateEncounterIntroTyping,
-} from "../bootstrap/encounter-intro.js";
+} from "../core/encounter-intro.js";
 
 function createIntroState() {
   return {

@@ -4,7 +4,7 @@ import {
   sanitizeCardList,
   sanitizeEncounter,
   sanitizeRun,
-} from "../bootstrap/state-sanitizers.js";
+} from "../core/state-sanitizers.js";
 
 function nonNegInt(value, fallback = 0) {
   const n = Number(value);

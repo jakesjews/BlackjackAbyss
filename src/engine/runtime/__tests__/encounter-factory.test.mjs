@@ -5,7 +5,7 @@ import {
   createEncounterIntroState,
   createEnemy,
   pickEnemyName,
-} from "../bootstrap/encounter-factory.js";
+} from "../core/encounter-factory.js";
 
 describe("encounter factory", () => {
   it("picks enemy names by type", () => {

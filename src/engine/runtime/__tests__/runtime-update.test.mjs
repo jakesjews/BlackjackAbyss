@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeUpdater } from "../bootstrap/runtime-update.js";
+import { createRuntimeUpdater } from "../core/runtime-update.js";
 
 function createBaseState(overrides = {}) {
   return {

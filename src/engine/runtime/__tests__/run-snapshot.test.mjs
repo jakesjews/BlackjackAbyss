@@ -5,7 +5,7 @@ import {
   parseSavedRunSnapshot,
   resetTransientStateAfterResume,
   resolveSavedRunMode,
-} from "../bootstrap/run-snapshot.js";
+} from "../core/run-snapshot.js";
 
 describe("run snapshot helpers", () => {
   it("builds snapshot payload when a run exists", () => {

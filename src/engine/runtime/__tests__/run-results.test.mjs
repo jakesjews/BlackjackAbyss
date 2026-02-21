@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyChipDelta, finalizeRunIntoProfile, updateProfileBest } from "../bootstrap/run-results.js";
+import { applyChipDelta, finalizeRunIntoProfile, updateProfileBest } from "../core/run-results.js";
 
 describe("run results helpers", () => {
   it("updates profile best progress metrics", () => {

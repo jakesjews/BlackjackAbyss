@@ -3,7 +3,7 @@ import {
   createRewardShopHandlers,
   generateRewardOptions,
   generateShopStock,
-} from "../bootstrap/reward-shop.js";
+} from "../core/reward-shop.js";
 
 function nonNegInt(value, fallback = 0) {
   const n = Number(value);

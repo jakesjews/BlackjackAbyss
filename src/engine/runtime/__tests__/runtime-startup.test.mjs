@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { initializeRuntimeStartup } from "../bootstrap/runtime-startup.js";
+import { initializeRuntimeStartup } from "../core/runtime-startup.js";
 
 describe("runtime startup bootstrap", () => {
   it("wires profile/snapshot load, API registration, lifecycle, hooks, and loop", () => {

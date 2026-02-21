@@ -4,38 +4,39 @@
 
 - Phaser 3 is the host app and renderer of record.
 - Phaser scenes are the active presentation and input layer.
-- Runtime bootstrap and runtime modules are the gameplay/state engine.
+- Runtime modules are the gameplay/state engine.
 - Legacy raw-canvas rendering paths have been removed from active runtime execution.
+- `window.__ABYSS_PHASER_BRIDGE__` is currently a compatibility facade for scene/test/tool contracts.
 
 ## System Overview
 
-Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then attaches runtime logic through a bridge contract.
+Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then attaches runtime logic/state through a runtime entrypoint.
 
 - App bootstrap: `src/main.js`
 - Phaser host/app setup: `src/engine/app.js`
-- Runtime bootstrap: `src/engine/runtime/bootstrap.js`
-- Runtime modules: `src/engine/runtime/{state,domain,persistence,bridge,testing,bootstrap}/*`
-- Runtime content modules: `src/engine/runtime/bootstrap/{relic-catalog,encounter-content}.js`
-- Runtime factory modules: `src/engine/runtime/bootstrap/{run-factory,encounter-factory}.js`
-- Runtime hydration/sanitization module: `src/engine/runtime/bootstrap/state-sanitizers.js`
-- Runtime snapshot/persistence module: `src/engine/runtime/bootstrap/run-snapshot.js`
-- Runtime run-result/profile module: `src/engine/runtime/bootstrap/run-results.js`
-- Runtime passive/collection view module: `src/engine/runtime/bootstrap/passive-view.js`
+- Runtime entry: `src/engine/runtime/runtime-engine.js`
+- Runtime modules: `src/engine/runtime/{state,domain,persistence,bridge,testing,core}/*`
+- Runtime content modules: `src/engine/runtime/core/{relic-catalog,encounter-content}.js`
+- Runtime factory modules: `src/engine/runtime/core/{run-factory,encounter-factory}.js`
+- Runtime hydration/sanitization module: `src/engine/runtime/core/state-sanitizers.js`
+- Runtime snapshot/persistence module: `src/engine/runtime/core/run-snapshot.js`
+- Runtime run-result/profile module: `src/engine/runtime/core/run-results.js`
+- Runtime passive/collection view module: `src/engine/runtime/core/passive-view.js`
 - Scene layer: `src/engine/scenes/*`
 
 ## Boot Flow
 
 1. `src/main.js` calls `createPhaserApp()` from `src/engine/app.js`.
 2. `createPhaserApp()` creates the Phaser game and scene manager.
-3. `src/main.js` then calls `bootstrapRuntime()`.
-4. Runtime bootstrap registers scene-facing bridge APIs and test hooks.
+3. `src/main.js` starts runtime state/logic entry.
+4. Runtime entry registers scene-facing APIs and test hooks.
 5. Scene mode changes are synchronized via bridge mode reporting.
 
-## Host Runtime Seam
+## Runtime Seam
 
-- `src/engine/app.js` keeps runtime context intentionally minimal: `legacyAdapter` and `game`.
-- `window.__ABYSS_ENGINE_RUNTIME__` mirrors that seam for diagnostics, without deprecated app service objects.
-- Scenes consume bridge APIs via the runtime seam and remain decoupled from runtime internals.
+- `src/engine/app.js` exposes a direct runtime context: `game`, runtime bridge facade, and runtime tick function.
+- `window.__ABYSS_PHASER_BRIDGE__` is kept as a thin compatibility facade.
+- Scenes consume bridge APIs through `src/engine/scenes/runtime-bridge.js`, which reads from the direct runtime context.
 
 ## Runtime vs Scene Responsibilities
 
@@ -72,8 +73,8 @@ Write path:
 
 ## Legacy Boundary
 
-- `src/engine/legacy/legacy-runtime-adapter.js` remains as a bridge/tick adapter seam used by app/runtime integration.
-- Legacy compatibility should only be removed after parity is verified in Phaser-first flows.
+- Legacy adapter seam has been removed.
+- Bridge compatibility remains intentionally in `window.__ABYSS_PHASER_BRIDGE__` for scene/tool stability.
 
 ## Verification Gate
 

@@ -4,7 +4,7 @@ import {
   handleRuntimeBeforeUnload,
   handleRuntimeHidden,
   handleRuntimeVisible,
-} from "../bootstrap/runtime-lifecycle.js";
+} from "../core/runtime-lifecycle.js";
 
 describe("runtime lifecycle module", () => {
   it("handleRuntimeHidden saves state and pauses audio only when document is hidden", () => {

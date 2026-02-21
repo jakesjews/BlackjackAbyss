@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createEnemyAvatarLoader } from "../bootstrap/enemy-avatars.js";
+import { createEnemyAvatarLoader } from "../core/enemy-avatars.js";
 
 class MockImage {
   constructor() {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createEncounterLifecycleHandlers } from "../bootstrap/encounter-lifecycle.js";
+import { createEncounterLifecycleHandlers } from "../core/encounter-lifecycle.js";
 
 function createState() {
   return {

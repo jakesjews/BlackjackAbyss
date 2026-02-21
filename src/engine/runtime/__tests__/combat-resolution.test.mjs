@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCombatResolution } from "../bootstrap/combat-resolution.js";
+import { createCombatResolution } from "../core/combat-resolution.js";
 
 function nonNegInt(value, fallback = 0) {
   const n = Number(value);

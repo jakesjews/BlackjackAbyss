@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { STORAGE_KEYS } from "../constants.js";
 import { createProfile, defaultPlayerStats } from "../state/store.js";
-import { createRuntimeProfileHandlers } from "../bootstrap/runtime-profile.js";
+import { createRuntimeProfileHandlers } from "../core/runtime-profile.js";
 
 const RELIC_RARITY_META = {
   common: { label: "Common", shopMarkup: 0 },

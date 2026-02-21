@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPhaserRunSnapshot } from "../bootstrap/phaser-run-snapshot.js";
+import { buildPhaserRunSnapshot } from "../core/phaser-run-snapshot.js";
 
 describe("phaser run snapshot builder", () => {
   it("returns null outside playing mode", () => {

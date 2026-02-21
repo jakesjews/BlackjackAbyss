@@ -20,22 +20,35 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Removed obsolete fast-path test controls from runtime (`window.__ABYSS_TEST_FLAGS__.fastPath.*`).
 - Removed dormant legacy canvas draw pipeline from runtime bootstrap (Phaser scenes are renderer of record).
 - Removed dormant legacy DOM/canvas input fallback wiring from runtime bootstrap.
-- Added bootstrap helper modules under `src/engine/runtime/bootstrap/*` for API wiring, lifecycle, audio/listeners, combat transition shaping, and test-hook publication.
-- Extracted static relic catalog and encounter dialogue/enemy content into `src/engine/runtime/bootstrap/relic-catalog.js` and `src/engine/runtime/bootstrap/encounter-content.js`.
+- Added bootstrap helper modules under `src/engine/runtime/core/*` for API wiring, lifecycle, audio/listeners, combat transition shaping, and test-hook publication.
+- Extracted static relic catalog and encounter dialogue/enemy content into `src/engine/runtime/core/relic-catalog.js` and `src/engine/runtime/core/encounter-content.js`.
 - Moved reusable card/deck/hand helpers (`shuffle`, `createDeck`, totals/blackjack utilities, dealer-visible total) into `src/engine/runtime/domain/combat.js`.
-- Extracted run/encounter creation lifecycle from bootstrap into `src/engine/runtime/bootstrap/run-factory.js` and `src/engine/runtime/bootstrap/encounter-factory.js`.
-- Extracted run snapshot hydration/sanitization logic into `src/engine/runtime/bootstrap/state-sanitizers.js`.
-- Extracted run snapshot persistence/resume orchestration helpers into `src/engine/runtime/bootstrap/run-snapshot.js`.
-- Extracted run-result/profile tally helpers (`updateProfileBest`, `finalizeRun`, chip delta handling) into `src/engine/runtime/bootstrap/run-results.js`.
-- Extracted passive/relic view formatting and collection list helpers into `src/engine/runtime/bootstrap/passive-view.js`.
+- Extracted run/encounter creation lifecycle from bootstrap into `src/engine/runtime/core/run-factory.js` and `src/engine/runtime/core/encounter-factory.js`.
+- Extracted run snapshot hydration/sanitization logic into `src/engine/runtime/core/state-sanitizers.js`.
+- Extracted run snapshot persistence/resume orchestration helpers into `src/engine/runtime/core/run-snapshot.js`.
+- Extracted run-result/profile tally helpers (`updateProfileBest`, `finalizeRun`, chip delta handling) into `src/engine/runtime/core/run-results.js`.
+- Extracted passive/relic view formatting and collection list helpers into `src/engine/runtime/core/passive-view.js`.
 - Replaced procedural generated BGM with MP3-backed runtime soundtrack.
 - Added GitHub Actions CI workflow with required `quality-gate` and non-required smoke job.
+- Replaced runtime entrypoint with `src/engine/runtime/runtime-engine.js` and removed the former runtime bootstrap entry file.
+- Removed legacy adapter seam (`src/engine/legacy/legacy-runtime-adapter.js`) and switched app/scenes to direct runtime bridge/tick wiring.
+- Added runtime compatibility bridge module `src/engine/runtime/compat/phaser-bridge-compat.js`.
+- Renamed runtime helper folder to `src/engine/runtime/core/*`.
+- Added dead-reference check script `scripts/check-dead-refs.mjs`.
 
 ## Transitional / Still Present
 
-- `src/engine/legacy/legacy-runtime-adapter.js` remains as an integration seam for bridge/tick flow.
-- `src/engine/runtime/bootstrap.js` is still the largest runtime file and continues to be the next extraction target.
+- `src/engine/runtime/runtime-engine.js` is still the largest runtime file and continues to be the next extraction target.
 - Test-only economy seed controls are present in runtime for non-production acceptance execution only.
+
+## Kept For Compatibility
+
+- `window.__ABYSS_PHASER_BRIDGE__` as a thin compatibility facade for scenes/tests/tools.
+- Bridge method names in menu/run/reward/shop/overlay APIs.
+- `window.render_game_to_text()` and `window.advanceTime(ms)` hooks for smoke/acceptance tooling.
+- Existing storage keys:
+  - `blackjack-abyss.profile.v1`
+  - `blackjack-abyss.run.v1`
 
 ## Fully Migrated Position
 
@@ -46,8 +59,8 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 ## Deferred / Future Work
 
 - Reintroduce a reliable balance probe with bounded execution and cleanup guarantees.
-- Continue extracting remaining runtime concerns from `bootstrap.js` into module files.
-- Re-evaluate adapter removal once scene/runtime bridge parity remains stable across acceptance and smoke gates.
+- Continue extracting remaining runtime concerns from `runtime-engine.js` into module files.
+- Re-evaluate long-term bridge facade reduction once scene/runtime parity remains stable across acceptance and smoke gates.
 
 ## Cleanup Guardrails
 

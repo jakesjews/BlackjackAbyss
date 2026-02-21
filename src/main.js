@@ -1,5 +1,5 @@
 import { createPhaserApp } from "./engine/app.js";
-import { bootstrapRuntime } from "./engine/runtime/bootstrap.js";
+import { startRuntimeEngine } from "./engine/runtime/runtime-engine.js";
 
 await createPhaserApp();
-bootstrapRuntime();
+startRuntimeEngine();

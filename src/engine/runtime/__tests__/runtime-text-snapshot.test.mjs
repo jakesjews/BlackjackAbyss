@@ -3,7 +3,7 @@ import {
   buildAvailableActions,
   buildRenderGameToTextPayload,
   renderGameToText,
-} from "../bootstrap/runtime-text-snapshot.js";
+} from "../core/runtime-text-snapshot.js";
 
 function nonNegInt(value, fallback = 0) {
   const n = Number(value);

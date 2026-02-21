@@ -17,7 +17,7 @@ import {
   triggerImpactBurst,
   triggerImpactBurstAt,
   triggerScreenShake,
-} from "../bootstrap/combat-effects.js";
+} from "../core/combat-effects.js";
 
 describe("combat effects helpers", () => {
   it("provides interpolation/easing primitives", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applyTestEconomyToNewRun, createRun } from "../bootstrap/run-factory.js";
+import { applyTestEconomyToNewRun, createRun } from "../core/run-factory.js";
 
 describe("run factory", () => {
   it("creates a default run shell", () => {

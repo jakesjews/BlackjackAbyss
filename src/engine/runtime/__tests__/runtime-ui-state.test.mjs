@@ -7,7 +7,7 @@ import {
   moveSelectionState,
   openCollectionState,
   setAnnouncementState,
-} from "../bootstrap/runtime-ui-state.js";
+} from "../core/runtime-ui-state.js";
 
 describe("runtime ui state helpers", () => {
   it("adds run logs and trims history", () => {

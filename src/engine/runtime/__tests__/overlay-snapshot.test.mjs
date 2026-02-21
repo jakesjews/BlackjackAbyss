@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildPhaserOverlaySnapshot } from "../bootstrap/overlay-snapshot.js";
+import { buildPhaserOverlaySnapshot } from "../core/overlay-snapshot.js";
 
 const RELIC_RARITY_META = {
   common: { glow: "#8899aa" },

@@ -5,7 +5,7 @@ import {
   registerPhaserRewardApi,
   registerPhaserRunApi,
   registerPhaserShopApi,
-} from "../bootstrap/phaser-bridge-apis.js";
+} from "../core/phaser-bridge-apis.js";
 
 function createRegisterBridgeApiSpy() {
   const calls = [];

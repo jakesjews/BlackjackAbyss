@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createEncounterOutcomeHandlers } from "../bootstrap/encounter-outcome.js";
+import { createEncounterOutcomeHandlers } from "../core/encounter-outcome.js";
 
 function createState(overrides = {}) {
   return {

@@ -32,22 +32,22 @@ import {
 } from "./bridge/register-apis.js";
 import { publishRuntimeTestHooks } from "./bridge/snapshots.js";
 import { readRuntimeTestFlags } from "./testing/test-controls.js";
-import { registerBridgeApi } from "./bootstrap/api-registry.js";
+import { registerBridgeApi } from "./core/api-registry.js";
 import {
   registerPhaserMenuActions as registerPhaserMenuActionsFromModule,
   registerPhaserOverlayApi as registerPhaserOverlayApiFromModule,
   registerPhaserRewardApi as registerPhaserRewardApiFromModule,
   registerPhaserRunApi as registerPhaserRunApiFromModule,
   registerPhaserShopApi as registerPhaserShopApiFromModule,
-} from "./bootstrap/phaser-bridge-apis.js";
+} from "./core/phaser-bridge-apis.js";
 import {
   BOSS_RELIC,
   RELIC_BY_ID,
   RELIC_RARITY_META,
   RELIC_RARITY_ORDER,
   RELICS,
-} from "./bootstrap/relic-catalog.js";
-import { buildTransitionSnapshot } from "./bootstrap/combat-actions.js";
+} from "./core/relic-catalog.js";
+import { buildTransitionSnapshot } from "./core/combat-actions.js";
 import {
   animatedCardPosition as animatedCardPositionFromModule,
   beginQueuedEnemyDefeatTransition as beginQueuedEnemyDefeatTransitionFromModule,
@@ -63,50 +63,50 @@ import {
   triggerImpactBurstAt as triggerImpactBurstAtFromModule,
   queueEnemyDefeatTransition as queueEnemyDefeatTransitionFromModule,
   triggerScreenShake as triggerScreenShakeFromModule,
-} from "./bootstrap/combat-effects.js";
-import { createCombatResolution } from "./bootstrap/combat-resolution.js";
-import { createCombatTurnActions } from "./bootstrap/combat-turn-actions.js";
+} from "./core/combat-effects.js";
+import { createCombatResolution } from "./core/combat-resolution.js";
+import { createCombatTurnActions } from "./core/combat-turn-actions.js";
 import {
   buildEnemyIntroDialogue as buildEnemyIntroDialogueFromModule,
   createEncounter as createEncounterFromModule,
   createEncounterIntroState as createEncounterIntroStateFromModule,
   createEnemy as createEnemyFromModule,
-} from "./bootstrap/encounter-factory.js";
+} from "./core/encounter-factory.js";
 import {
   advanceEncounterIntro as advanceEncounterIntroFromModule,
   confirmEncounterIntro as confirmEncounterIntroFromModule,
   isEncounterIntroActive as isEncounterIntroActiveFromModule,
   revealEncounterIntro as revealEncounterIntroFromModule,
   updateEncounterIntroTyping as updateEncounterIntroTypingFromModule,
-} from "./bootstrap/encounter-intro.js";
-import { createEncounterOutcomeHandlers } from "./bootstrap/encounter-outcome.js";
-import { createRewardShopHandlers } from "./bootstrap/reward-shop.js";
-import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./bootstrap/serialization.js";
-import { buildPhaserRunSnapshot as buildPhaserRunSnapshotFromModule } from "./bootstrap/phaser-run-snapshot.js";
-import { buildPhaserOverlaySnapshot as buildPhaserOverlaySnapshotFromModule } from "./bootstrap/overlay-snapshot.js";
-import { createRuntimeLoop as createRuntimeLoopFromModule } from "./bootstrap/runtime-loop.js";
-import { bindRuntimeLifecycle as bindRuntimeLifecycleFromModule } from "./bootstrap/runtime-lifecycle.js";
-import { createRuntimeAudio as createRuntimeAudioFromModule } from "./bootstrap/runtime-audio.js";
-import { createEnemyAvatarLoader as createEnemyAvatarLoaderFromModule } from "./bootstrap/enemy-avatars.js";
-import { initializeRuntimeStartup as initializeRuntimeStartupFromModule } from "./bootstrap/runtime-startup.js";
-import { createEncounterLifecycleHandlers as createEncounterLifecycleHandlersFromModule } from "./bootstrap/encounter-lifecycle.js";
-import { createCombatImpactHandlers as createCombatImpactHandlersFromModule } from "./bootstrap/combat-impact.js";
+} from "./core/encounter-intro.js";
+import { createEncounterOutcomeHandlers } from "./core/encounter-outcome.js";
+import { createRewardShopHandlers } from "./core/reward-shop.js";
+import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./core/serialization.js";
+import { buildPhaserRunSnapshot as buildPhaserRunSnapshotFromModule } from "./core/phaser-run-snapshot.js";
+import { buildPhaserOverlaySnapshot as buildPhaserOverlaySnapshotFromModule } from "./core/overlay-snapshot.js";
+import { createRuntimeLoop as createRuntimeLoopFromModule } from "./core/runtime-loop.js";
+import { bindRuntimeLifecycle as bindRuntimeLifecycleFromModule } from "./core/runtime-lifecycle.js";
+import { createRuntimeAudio as createRuntimeAudioFromModule } from "./core/runtime-audio.js";
+import { createEnemyAvatarLoader as createEnemyAvatarLoaderFromModule } from "./core/enemy-avatars.js";
+import { initializeRuntimeStartup as initializeRuntimeStartupFromModule } from "./core/runtime-startup.js";
+import { createEncounterLifecycleHandlers as createEncounterLifecycleHandlersFromModule } from "./core/encounter-lifecycle.js";
+import { createCombatImpactHandlers as createCombatImpactHandlersFromModule } from "./core/combat-impact.js";
 import {
   buildPhaserRewardSnapshot as buildPhaserRewardSnapshotFromModule,
   buildPhaserShopSnapshot as buildPhaserShopSnapshotFromModule,
-} from "./bootstrap/shop-reward-snapshots.js";
+} from "./core/shop-reward-snapshots.js";
 import {
   buildAvailableActions as buildAvailableActionsFromModule,
   renderGameToText as renderGameToTextFromModule,
-} from "./bootstrap/runtime-text-snapshot.js";
-import { createRuntimeUpdater } from "./bootstrap/runtime-update.js";
-import { goHomeFromActiveRun as goHomeFromActiveRunModule } from "./bootstrap/run-lifecycle.js";
-import { applyTestEconomyToNewRun as applyTestEconomyToNewRunFromModule, createRun as createRunFromModule } from "./bootstrap/run-factory.js";
+} from "./core/runtime-text-snapshot.js";
+import { createRuntimeUpdater } from "./core/runtime-update.js";
+import { goHomeFromActiveRun as goHomeFromActiveRunModule } from "./core/run-lifecycle.js";
+import { applyTestEconomyToNewRun as applyTestEconomyToNewRunFromModule, createRun as createRunFromModule } from "./core/run-factory.js";
 import {
   applyChipDelta as applyChipDeltaFromModule,
   finalizeRunIntoProfile as finalizeRunIntoProfileFromModule,
   updateProfileBest as updateProfileBestFromModule,
-} from "./bootstrap/run-results.js";
+} from "./core/run-results.js";
 import {
   collectionEntries as collectionEntriesFromModule,
   collectionPageLayout as collectionPageLayoutFromModule,
@@ -114,9 +114,9 @@ import {
   passiveStacksForRun as passiveStacksForRunFromModule,
   passiveSummary as passiveSummaryFromModule,
   passiveThumbUrl as passiveThumbUrlFromModule,
-} from "./bootstrap/passive-view.js";
-import { createRuntimeProfileHandlers } from "./bootstrap/runtime-profile.js";
-import { createRuntimeSaveResumeHandlers } from "./bootstrap/runtime-save-resume.js";
+} from "./core/passive-view.js";
+import { createRuntimeProfileHandlers } from "./core/runtime-profile.js";
+import { createRuntimeSaveResumeHandlers } from "./core/runtime-save-resume.js";
 import {
   addLogToRun,
   getRunEventLog as getRunEventLogFromModule,
@@ -125,23 +125,23 @@ import {
   moveSelectionState,
   openCollectionState,
   setAnnouncementState,
-} from "./bootstrap/runtime-ui-state.js";
+} from "./core/runtime-ui-state.js";
 import {
   sanitizeCard as sanitizeCardFromModule,
   sanitizeCardList as sanitizeCardListFromModule,
   sanitizeEncounter as sanitizeEncounterFromModule,
   sanitizeRun as sanitizeRunFromModule,
-} from "./bootstrap/state-sanitizers.js";
-import { installRuntimeTestHooks } from "./bootstrap/test-hooks.js";
-import { bindRuntimeWindowLifecycle, createLandscapeLockRequester } from "./bootstrap/audio-system.js";
+} from "./core/state-sanitizers.js";
+import { installRuntimeTestHooks } from "./core/test-hooks.js";
+import { bindRuntimeWindowLifecycle, createLandscapeLockRequester } from "./core/audio-system.js";
 
-let runtimeBootstrapped = false;
+let runtimeEngineStarted = false;
 
-export function bootstrapRuntime() {
-  if (runtimeBootstrapped) {
+export function startRuntimeEngine() {
+  if (runtimeEngineStarted) {
     return;
   }
-  runtimeBootstrapped = true;
+  runtimeEngineStarted = true;
 
   (() => {
     "use strict";
