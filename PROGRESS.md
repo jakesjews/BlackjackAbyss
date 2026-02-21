@@ -6,7 +6,7 @@
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
-- Last Updated: 2026-02-21 15:42:00 EST
+- Last Updated: 2026-02-21 16:18:00 EST
 
 ## Current Focus
 
@@ -36,11 +36,19 @@
 - Extracted run snapshot persistence/resume orchestration helpers into `src/engine/runtime/bootstrap/run-snapshot.js` with dedicated unit tests.
 - Extracted run result/profile tally helpers into `src/engine/runtime/bootstrap/run-results.js` and added dedicated unit tests.
 - Extracted passive/relic collection presentation helpers into `src/engine/runtime/bootstrap/passive-view.js` with dedicated unit tests.
+- Extracted runtime UI state helpers into `src/engine/runtime/bootstrap/runtime-ui-state.js` with dedicated unit tests.
+- Extracted combat effect primitives into `src/engine/runtime/bootstrap/combat-effects.js` and moved hand-tackle + defeat-transition orchestration there with dedicated tests.
+- Extracted encounter intro flow helpers into `src/engine/runtime/bootstrap/encounter-intro.js` and wired bootstrap to delegate typing/reveal/confirm/advance behavior through that module.
+- Extracted turn-action orchestration into `src/engine/runtime/bootstrap/combat-turn-actions.js` (player action gating, hit/stand/double/split flow, split-hand queue progression, dealer showdown resolution) with dedicated unit tests.
+- Extracted hand resolution settlement math/effects/logging into `src/engine/runtime/bootstrap/combat-resolution.js` and reduced bootstrap `resolveHand(...)` to a delegation wrapper with dedicated unit tests.
+- Extracted encounter win progression/camp transition handling into `src/engine/runtime/bootstrap/encounter-outcome.js` and reduced bootstrap `onEncounterWin(...)` to a delegation wrapper with dedicated unit tests.
+- Extracted reward/shop relic roll tables, stock generation, and camp purchase/continue orchestration into `src/engine/runtime/bootstrap/reward-shop.js` and reduced bootstrap reward/shop functions to delegation wrappers with dedicated unit tests.
+- Extracted reward/shop Phaser snapshot builders into `src/engine/runtime/bootstrap/shop-reward-snapshots.js` and reduced bootstrap snapshot builders to delegation wrappers with dedicated unit tests.
 
 ## Next Up
 
 - Reintroduce a reliable long-run balancing probe with explicit guardrails and bounded runtime behavior.
-- Continue extracting remaining large runtime sections out of `bootstrap.js`.
+- Continue extracting remaining runtime sections out of `bootstrap.js` (runtime update loop partitioning and run snapshot builder extraction).
 - Keep docs synced when bridge contracts, test hooks, or mode flows change.
 
 ## Risks / Blockers

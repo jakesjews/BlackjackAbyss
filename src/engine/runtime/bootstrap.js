@@ -6,14 +6,12 @@ import {
   CARD_SUITS as SUITS,
   cardToText,
   canDoubleDown,
-  canSplitHand,
   computeHandCardPosition,
   computeHandLayout,
   createDeck,
   handTotal,
   isBlackjack,
   rankValue,
-  resolveShowdownOutcome,
   shuffle,
   visibleDealerTotal,
 } from "./domain/combat.js";
@@ -44,12 +42,43 @@ import {
 } from "./bootstrap/relic-catalog.js";
 import { buildTransitionSnapshot } from "./bootstrap/combat-actions.js";
 import {
+  animatedCardPosition as animatedCardPositionFromModule,
+  beginQueuedEnemyDefeatTransition as beginQueuedEnemyDefeatTransitionFromModule,
+  currentShakeOffset as currentShakeOffsetFromModule,
+  damageFloatAnchor as damageFloatAnchorFromModule,
+  lerp as lerpFromModule,
+  spawnFloatText as spawnFloatTextFromModule,
+  spawnSparkBurst as spawnSparkBurstFromModule,
+  startDefeatTransition as startDefeatTransitionFromModule,
+  triggerFlash as triggerFlashFromModule,
+  triggerHandTackle as triggerHandTackleFromModule,
+  triggerImpactBurst as triggerImpactBurstFromModule,
+  triggerImpactBurstAt as triggerImpactBurstAtFromModule,
+  queueEnemyDefeatTransition as queueEnemyDefeatTransitionFromModule,
+  triggerScreenShake as triggerScreenShakeFromModule,
+} from "./bootstrap/combat-effects.js";
+import { createCombatResolution } from "./bootstrap/combat-resolution.js";
+import { createCombatTurnActions } from "./bootstrap/combat-turn-actions.js";
+import {
   buildEnemyIntroDialogue as buildEnemyIntroDialogueFromModule,
   createEncounter as createEncounterFromModule,
   createEncounterIntroState as createEncounterIntroStateFromModule,
   createEnemy as createEnemyFromModule,
 } from "./bootstrap/encounter-factory.js";
+import {
+  advanceEncounterIntro as advanceEncounterIntroFromModule,
+  confirmEncounterIntro as confirmEncounterIntroFromModule,
+  isEncounterIntroActive as isEncounterIntroActiveFromModule,
+  revealEncounterIntro as revealEncounterIntroFromModule,
+  updateEncounterIntroTyping as updateEncounterIntroTypingFromModule,
+} from "./bootstrap/encounter-intro.js";
+import { createEncounterOutcomeHandlers } from "./bootstrap/encounter-outcome.js";
+import { createRewardShopHandlers } from "./bootstrap/reward-shop.js";
 import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./bootstrap/serialization.js";
+import {
+  buildPhaserRewardSnapshot as buildPhaserRewardSnapshotFromModule,
+  buildPhaserShopSnapshot as buildPhaserShopSnapshotFromModule,
+} from "./bootstrap/shop-reward-snapshots.js";
 import { goHomeFromActiveRun as goHomeFromActiveRunModule } from "./bootstrap/run-lifecycle.js";
 import { applyTestEconomyToNewRun as applyTestEconomyToNewRunFromModule, createRun as createRunFromModule } from "./bootstrap/run-factory.js";
 import {
@@ -73,6 +102,15 @@ import {
   persistSavedRunSnapshot,
   resetTransientStateAfterResume,
 } from "./bootstrap/run-snapshot.js";
+import {
+  addLogToRun,
+  getRunEventLog as getRunEventLogFromModule,
+  hasSavedRunState,
+  hidePassiveTooltipState,
+  moveSelectionState,
+  openCollectionState,
+  setAnnouncementState,
+} from "./bootstrap/runtime-ui-state.js";
 import {
   sanitizeCard as sanitizeCardFromModule,
   sanitizeCardList as sanitizeCardListFromModule,
@@ -548,7 +586,7 @@ export function bootstrapRuntime() {
   }
 
   function hidePassiveTooltip() {
-    state.passiveTooltipTimer = 0;
+    hidePassiveTooltipState(state);
   }
 
   function passiveSummary(run) {
@@ -592,38 +630,15 @@ export function bootstrapRuntime() {
   }
 
   function addLog(message) {
-    if (!state.run) {
-      return;
-    }
-    const line = typeof message === "string" ? message.trim() : "";
-    if (!line) {
-      return;
-    }
-    state.run.log.unshift({ message: line, ttl: 12 });
-    if (state.run.log.length > 6) {
-      state.run.log.length = 6;
-    }
-    if (!Array.isArray(state.run.eventLog)) {
-      state.run.eventLog = [];
-    }
-    state.run.eventLog.push(line);
-    if (state.run.eventLog.length > 240) {
-      state.run.eventLog.shift();
-    }
+    addLogToRun({ state, message });
   }
 
   function setAnnouncement(message, duration = 2.2) {
-    state.announcement = typeof message === "string" ? message : "";
-    const safeDuration = Math.max(0.25, Number(duration) || 2.2);
-    state.announcementTimer = safeDuration;
-    state.announcementDuration = safeDuration;
+    setAnnouncementState({ state, message, duration });
   }
 
   function getRunEventLog(run = state.run) {
-    if (!run || !Array.isArray(run.eventLog)) {
-      return [];
-    }
-    return run.eventLog;
+    return getRunEventLogFromModule(run);
   }
 
   function isExternalModeRendering(mode = state.mode) {
@@ -1059,25 +1074,18 @@ export function bootstrapRuntime() {
   }
 
   function spawnFloatText(text, x, y, color, opts = {}) {
-    const life = Math.max(0.1, Number(opts.life) || 1.2);
-    state.floatingTexts.push({
+    spawnFloatTextFromModule({
+      state,
       text,
       x,
       y,
       color,
-      life,
-      maxLife: life,
-      vy: Number.isFinite(opts.vy) ? opts.vy : 24,
-      size: Math.max(12, Number(opts.size) || 26),
-      weight: Math.max(500, Number(opts.weight) || 700),
-      jitter: Boolean(opts.jitter),
-      glow: typeof opts.glow === "string" ? opts.glow : "",
-      jitterSeed: Math.random() * Math.PI * 2,
+      opts,
     });
   }
 
   function lerp(a, b, t) {
-    return a + (b - a) * t;
+    return lerpFromModule(a, b, t);
   }
 
   function easeOutCubic(t) {
@@ -1085,180 +1093,85 @@ export function bootstrapRuntime() {
     return 1 - (1 - clamped) ** 3;
   }
 
-  function easeOutBack(t) {
-    const clamped = Math.max(0, Math.min(1, t));
-    const c1 = 1.70158;
-    const c3 = c1 + 1;
-    return 1 + c3 * (clamped - 1) ** 3 + c1 * (clamped - 1) ** 2;
-  }
-
   function animatedCardPosition(card, targetX, targetY) {
-    const dealtAt = Number(card?.dealtAt);
-    if (!Number.isFinite(dealtAt)) {
-      return { x: targetX, y: targetY, alpha: 1 };
-    }
-
-    const progress = (state.worldTime - dealtAt) / 0.28;
-    if (progress >= 1) {
-      return { x: targetX, y: targetY, alpha: 1 };
-    }
-
-    const t = Math.max(0, progress);
-    const eased = easeOutBack(t);
-    const fromX = Number.isFinite(card?.fromX) ? card.fromX : targetX;
-    const fromY = Number.isFinite(card?.fromY) ? card.fromY : targetY;
-    const arc = Math.sin(t * Math.PI) * 16 * (1 - t);
-    return {
-      x: lerp(fromX, targetX, eased),
-      y: lerp(fromY, targetY, eased) - arc,
-      alpha: 0.42 + 0.58 * easeOutCubic(t),
-    };
+    return animatedCardPositionFromModule({
+      card,
+      targetX,
+      targetY,
+      worldTime: state.worldTime,
+    });
   }
 
   function spawnSparkBurst(x, y, color, count = 12, speed = 160) {
-    const total = Math.max(2, Math.floor(count));
-    for (let i = 0; i < total; i += 1) {
-      const angle = Math.random() * Math.PI * 2;
-      const velocity = speed * (0.45 + Math.random() * 0.85);
-      state.sparkParticles.push({
-        x,
-        y,
-        vx: Math.cos(angle) * velocity,
-        vy: Math.sin(angle) * velocity - Math.random() * 55,
-        size: 1.4 + Math.random() * 3.2,
-        color,
-        life: 0.34 + Math.random() * 0.35,
-        maxLife: 0.34 + Math.random() * 0.35,
-      });
-    }
+    spawnSparkBurstFromModule({
+      state,
+      x,
+      y,
+      color,
+      count,
+      speed,
+    });
   }
 
   function triggerScreenShake(power = 6, duration = 0.2) {
-    state.screenShakePower = Math.max(state.screenShakePower, power);
-    state.screenShakeDuration = Math.max(state.screenShakeDuration, duration);
-    state.screenShakeTime = Math.max(state.screenShakeTime, duration);
+    triggerScreenShakeFromModule({
+      state,
+      power,
+      duration,
+    });
   }
 
   function triggerFlash(color, intensity = 0.08, duration = 0.16) {
-    state.flashOverlays.push({
+    triggerFlashFromModule({
+      state,
       color,
-      intensity: Math.max(0, intensity),
-      life: Math.max(0.01, duration),
-      maxLife: Math.max(0.01, duration),
+      intensity,
+      duration,
     });
   }
 
   function triggerImpactBurstAt(x, y, amount, color) {
-    const clampedAmount = Math.max(1, Number(amount) || 1);
-    spawnSparkBurst(x, y, color, 10 + Math.min(30, Math.floor(clampedAmount * 1.4)), 140 + clampedAmount * 9);
-    spawnSparkBurst(x, y, "#f7e8bf", 8 + Math.min(14, Math.floor(clampedAmount * 0.6)), 120 + clampedAmount * 7);
-    state.cardBursts.push({
+    triggerImpactBurstAtFromModule({
+      state,
       x,
       y,
+      amount,
       color,
-      life: 0.34,
-      maxLife: 0.34,
     });
-    triggerScreenShake(Math.min(18, 4 + clampedAmount * 0.72), 0.16 + Math.min(0.2, clampedAmount * 0.012));
-    triggerFlash(color, Math.min(0.2, 0.035 + clampedAmount * 0.004), 0.14);
   }
 
   function triggerImpactBurst(side, amount, color) {
-    const clampedAmount = Math.max(1, Number(amount) || 1);
-    const x = side === "enemy" ? WIDTH * 0.73 : WIDTH * 0.27;
-    const y = side === "enemy" ? 108 : 576;
-    triggerImpactBurstAt(x, y, clampedAmount, color);
-  }
-
-  function handTackleTargets(winner) {
-    if (!state.encounter) {
-      return null;
-    }
-    const side = winner === "enemy" ? "dealer" : "player";
-    const loserSide = winner === "enemy" ? "player" : "enemy";
-    const layout = state.combatLayout || null;
-    const box =
-      side === "dealer"
-        ? layout?.dealerBox || handBounds("dealer", Math.max(1, state.encounter.dealerHand.length))
-        : layout?.playerBox || handBounds("player", Math.max(1, state.encounter.playerHand.length));
-    if (!box) {
-      return null;
-    }
-    const targetPortrait = loserSide === "enemy" ? layout?.enemyPortrait : layout?.playerPortrait;
-    const targetX = targetPortrait ? targetPortrait.centerX : winner === "enemy" ? WIDTH * 0.28 : WIDTH * 0.72;
-    const targetY = targetPortrait ? targetPortrait.centerY : winner === "enemy" ? HEIGHT * 0.82 : 114;
-    return {
-      fromX: box.centerX,
-      fromY: box.centerY,
-      toX: targetX,
-      toY: targetY,
-    };
+    triggerImpactBurstFromModule({
+      state,
+      side,
+      amount,
+      color,
+      width: WIDTH,
+      height: HEIGHT,
+    });
   }
 
   function triggerHandTackle(winner, amount, impactPayload = null) {
-    if (!state.encounter) {
-      return false;
-    }
-    const points = handTackleTargets(winner);
-    if (!points) {
-      return false;
-    }
-    const layout = state.combatLayout || null;
-    const sourceRects = winner === "enemy" ? layout?.dealerCards : layout?.playerCards;
-    const sourceHand = winner === "enemy" ? state.encounter.dealerHand : state.encounter.playerHand;
-    const count = Math.min(4, sourceHand.length);
-    if (count <= 0) {
-      return false;
-    }
-    const projectiles = [];
-    for (let i = 0; i < count; i += 1) {
-      const card = sourceHand[i];
-      const rect = sourceRects && sourceRects[i] ? sourceRects[i] : null;
-      const fallbackX = points.fromX + (i - (count - 1) * 0.5) * 24;
-      const fallbackY = points.fromY + Math.abs(i - (count - 1) * 0.5) * 6;
-      projectiles.push({
-        card: { ...card },
-        fromX: rect ? rect.x + rect.w * 0.5 : fallbackX,
-        fromY: rect ? rect.y + rect.h * 0.5 : fallbackY,
-        w: rect ? rect.w : CARD_W * 0.72,
-        h: rect ? rect.h : CARD_H * 0.72,
-      });
-    }
-    state.handTackles.push({
-      projectiles,
+    return triggerHandTackleFromModule({
+      state,
       winner,
-      fromX: points.fromX,
-      fromY: points.fromY,
-      toX: points.toX,
-      toY: points.toY,
-      elapsed: 0,
-      duration: 0.56,
-      impactAt: 0.72,
-      impacted: false,
-      amount: Math.max(1, Number(amount) || 1),
-      color: winner === "enemy" ? "#ff8eaf" : "#f6d06e",
+      amount,
       impactPayload,
+      cardW: CARD_W,
+      cardH: CARD_H,
+      width: WIDTH,
+      height: HEIGHT,
+      handBoundsFn: handBounds,
     });
-    return true;
   }
 
   function damageFloatAnchor(target) {
-    const layout = state.combatLayout || null;
-    if (target === "enemy" && layout?.enemyPortrait) {
-      return {
-        x: layout.enemyPortrait.centerX,
-        y: layout.enemyPortrait.y - 8,
-      };
-    }
-    if (target === "player" && layout?.playerPortrait) {
-      return {
-        x: layout.playerPortrait.centerX,
-        y: layout.playerPortrait.y - 8,
-      };
-    }
-    return target === "enemy"
-      ? { x: WIDTH * 0.72, y: 108 }
-      : { x: WIDTH * 0.26, y: 576 };
+    return damageFloatAnchorFromModule({
+      state,
+      target,
+      width: WIDTH,
+      height: HEIGHT,
+    });
   }
 
   function finalizeResolveState() {
@@ -1335,77 +1248,38 @@ export function bootstrapRuntime() {
   }
 
   function startDefeatTransition(target) {
-    if (!state.encounter || state.pendingTransition) {
-      return;
-    }
-    const handType = target === "enemy" ? "dealer" : "player";
-    const hand = target === "enemy" ? state.encounter.dealerHand : state.encounter.playerHand;
-    const layout = state.combatLayout || null;
-    const cardScale = layout?.cardScale || 1;
-    const bounds =
-      target === "enemy"
-        ? layout?.dealerBox || handBounds(handType, Math.max(1, hand.length), 0, cardScale)
-        : layout?.playerBox || handBounds(handType, Math.max(1, hand.length), 0, cardScale);
-    const color = target === "enemy" ? "#ffb07a" : "#ff8eaf";
-    for (let i = 0; i < 3; i += 1) {
-      const xJitter = (Math.random() * 2 - 1) * 24;
-      const yJitter = (Math.random() * 2 - 1) * 18;
-      spawnSparkBurst(bounds.centerX + xJitter, bounds.centerY + yJitter, color, 24 + i * 12, 210 + i * 70);
-    }
-    if (target === "enemy") {
-      state.encounter.resultText = "Defeated Opponent";
-      state.encounter.resultTone = "win";
-    }
-    triggerScreenShake(12, 0.46);
-    triggerFlash(color, 0.14, 0.28);
-    playImpactSfx(16, target === "enemy" ? "enemy" : "player");
-    const transitionDuration = target === "enemy" ? ENEMY_DEFEAT_TRANSITION_SECONDS : PLAYER_DEFEAT_TRANSITION_SECONDS;
-    state.pendingTransition = { target, timer: transitionDuration, duration: transitionDuration };
-    state.encounter.phase = "done";
-    state.encounter.resolveTimer = 0;
+    startDefeatTransitionFromModule({
+      state,
+      target,
+      handBoundsFn: handBounds,
+      spawnSparkBurstFn: spawnSparkBurstFromModule,
+      triggerScreenShakeFn: triggerScreenShakeFromModule,
+      triggerFlashFn: triggerFlashFromModule,
+      playImpactSfxFn: playImpactSfx,
+      enemyDefeatTransitionSeconds: ENEMY_DEFEAT_TRANSITION_SECONDS,
+      playerDefeatTransitionSeconds: PLAYER_DEFEAT_TRANSITION_SECONDS,
+    });
   }
 
   function queueEnemyDefeatTransition() {
-    if (!state.encounter || state.pendingTransition) {
-      return;
-    }
-    const transitionDuration = ENEMY_DEFEAT_TRANSITION_SECONDS;
-    state.pendingTransition = {
-      target: "enemy",
-      timer: 0,
-      duration: transitionDuration,
-      waiting: true,
-    };
-    state.encounter.phase = "done";
-    state.encounter.resolveTimer = 0;
-    state.encounter.resultText = "Defeated Opponent";
-    state.encounter.resultTone = "win";
+    queueEnemyDefeatTransitionFromModule({
+      state,
+      enemyDefeatTransitionSeconds: ENEMY_DEFEAT_TRANSITION_SECONDS,
+    });
   }
 
   function beginQueuedEnemyDefeatTransition() {
-    const transition = state.pendingTransition;
-    if (!transition || transition.target !== "enemy" || !transition.waiting) {
-      return false;
-    }
-    transition.waiting = false;
-    transition.timer = Math.max(0.001, Number(transition.duration) || ENEMY_DEFEAT_TRANSITION_SECONDS);
-    triggerScreenShake(12, 0.46);
-    triggerFlash("#ffb07a", 0.14, 0.28);
-    playImpactSfx(16, "enemy");
-    return true;
+    return beginQueuedEnemyDefeatTransitionFromModule({
+      state,
+      triggerScreenShakeFn: triggerScreenShakeFromModule,
+      triggerFlashFn: triggerFlashFromModule,
+      playImpactSfxFn: playImpactSfx,
+      enemyDefeatTransitionSeconds: ENEMY_DEFEAT_TRANSITION_SECONDS,
+    });
   }
 
   function currentShakeOffset() {
-    if (state.screenShakeTime <= 0 || state.screenShakePower <= 0) {
-      return { x: 0, y: 0 };
-    }
-    const duration = Math.max(0.01, state.screenShakeDuration);
-    const t = Math.max(0, Math.min(1, state.screenShakeTime / duration));
-    const strength = state.screenShakePower * t;
-    return {
-      x: (Math.random() * 2 - 1) * strength,
-      y: (Math.random() * 2 - 1) * strength,
-    };
+    return currentShakeOffsetFromModule({ state });
   }
 
   function drawFromShoe(encounter) {
@@ -1598,910 +1472,241 @@ export function bootstrapRuntime() {
   }
 
   function isEncounterIntroActive(encounter = state.encounter) {
-    return Boolean(
-      state.mode === "playing" &&
-      encounter &&
-      encounter.intro &&
-      encounter.intro.active
-    );
+    return isEncounterIntroActiveFromModule({ state, encounter });
   }
 
   function updateEncounterIntroTyping(encounter, dt) {
-    if (!encounter || !encounter.intro || !encounter.intro.active || encounter.intro.ready) {
-      return;
-    }
-    const intro = encounter.intro;
-    const dialogue = intro.dialogue || "";
-    if (!dialogue.length) {
-      intro.visibleChars = 0;
-      intro.ready = true;
-      intro.typeTimer = 0;
-      return;
-    }
-
-    intro.typeTimer = Number.isFinite(intro.typeTimer) ? intro.typeTimer : 0;
-    intro.typeTimer -= dt;
-
-    while (intro.typeTimer <= 0 && intro.visibleChars < dialogue.length) {
-      const ch = dialogue.charAt(intro.visibleChars);
-      intro.visibleChars += 1;
-      if (/[.!?,]/.test(ch)) {
-        intro.typeTimer += 0.052;
-      } else if (ch === " ") {
-        intro.typeTimer += 0.008;
-      } else {
-        intro.typeTimer += 0.015;
-      }
-    }
-
-    if (intro.visibleChars >= dialogue.length) {
-      intro.visibleChars = dialogue.length;
-      intro.ready = true;
-      intro.typeTimer = 0;
-    }
+    updateEncounterIntroTypingFromModule({ encounter, dt });
   }
 
   function revealEncounterIntro(encounter = state.encounter) {
-    if (!isEncounterIntroActive(encounter) || !encounter?.intro) {
-      return false;
-    }
-    const intro = encounter.intro;
-    if (intro.ready) {
-      return false;
-    }
-    intro.visibleChars = (intro.dialogue || "").length;
-    intro.ready = true;
-    intro.typeTimer = 0;
-    saveRunSnapshot();
-    return true;
+    return revealEncounterIntroFromModule({
+      state,
+      encounter,
+      isEncounterIntroActiveFn: isEncounterIntroActiveFromModule,
+      saveRunSnapshotFn: saveRunSnapshot,
+    });
   }
 
   function advanceEncounterIntro(encounter = state.encounter) {
-    if (!isEncounterIntroActive(encounter)) {
-      return false;
-    }
-    if (revealEncounterIntro(encounter)) {
-      playUiSfx("select");
-      return true;
-    }
-    return confirmEncounterIntro();
+    return advanceEncounterIntroFromModule({
+      state,
+      encounter,
+      isEncounterIntroActiveFn: isEncounterIntroActiveFromModule,
+      revealEncounterIntroFn: revealEncounterIntroFromModule,
+      confirmEncounterIntroFn: confirmEncounterIntroFromModule,
+      playUiSfxFn: playUiSfx,
+      startHandFn: startHand,
+      saveRunSnapshotFn: saveRunSnapshot,
+    });
   }
 
   function confirmEncounterIntro() {
-    if (!isEncounterIntroActive() || !state.encounter) {
-      return false;
-    }
-    const intro = state.encounter.intro;
-    if (!intro?.ready) {
-      playUiSfx("error");
-      return false;
-    }
-    intro.active = false;
-    intro.confirmRect = null;
-    intro.typeTimer = 0;
-    intro.visibleChars = (intro.dialogue || "").length;
-    playUiSfx("confirm");
-    startHand();
-    saveRunSnapshot();
-    return true;
+    return confirmEncounterIntroFromModule({
+      state,
+      encounter: state.encounter,
+      isEncounterIntroActiveFn: isEncounterIntroActiveFromModule,
+      playUiSfxFn: playUiSfx,
+      startHandFn: startHand,
+      saveRunSnapshotFn: saveRunSnapshot,
+    });
   }
 
+  const combatResolution = createCombatResolution({
+    state,
+    nonNegInt,
+    width: WIDTH,
+    isExternalModeRendering,
+    playOutcomeSfx,
+    triggerHandTackle,
+    applyImpactDamage,
+    triggerImpactBurst,
+    spawnFloatText,
+    gainChips,
+    updateProfileBest,
+    finalizeResolveState,
+    addLog,
+    triggerFlash,
+    triggerScreenShake,
+    spawnSparkBurst,
+  });
+
+  const combatTurnActions = createCombatTurnActions({
+    state,
+    maxSplitHands: MAX_SPLIT_HANDS,
+    nonNegInt,
+    isEncounterIntroActive,
+    playUiSfx,
+    playActionSfx,
+    addLog,
+    dealCard,
+    setAnnouncement,
+    startHand,
+    saveRunSnapshot,
+    resolveHand,
+  });
+
+  const rewardShopHandlers = createRewardShopHandlers({
+    state,
+    relics: RELICS,
+    bossRelic: BOSS_RELIC,
+    rarityOrder: RELIC_RARITY_ORDER,
+    nonNegInt,
+    normalizeRelicRarity,
+    relicRarityMeta,
+    isRelicUnlocked,
+    shuffleFn: shuffle,
+    clampNumber,
+    nextModeAfterRewardClaim,
+    nextModeAfterShopContinue,
+    passiveDescription,
+    gainChips,
+    spawnFloatText,
+    playUiSfx,
+    setAnnouncement,
+    addLog,
+    saveRunSnapshot,
+    beginEncounter,
+    saveProfile,
+    width: WIDTH,
+  });
+
+  const encounterOutcomeHandlers = createEncounterOutcomeHandlers({
+    state,
+    width: WIDTH,
+    gainChips,
+    spawnFloatText,
+    spawnSparkBurst,
+    triggerScreenShake,
+    triggerFlash,
+    playUiSfx,
+    addLog,
+    finalizeRun,
+    setAnnouncement,
+    generateRewardOptions: rewardShopHandlers.generateRewardOptions,
+    generateCampRelicDraftStock: rewardShopHandlers.generateCampRelicDraftStock,
+    generateShopStock: rewardShopHandlers.generateShopStock,
+    saveRunSnapshot,
+  });
+
   function canPlayerAct() {
-    return (
-      state.mode === "playing" &&
-      Boolean(state.encounter) &&
-      state.encounter.phase === "player" &&
-      state.encounter.resolveTimer <= 0 &&
-      !isEncounterIntroActive(state.encounter)
-    );
+    return combatTurnActions.canPlayerAct();
   }
 
   function canAdvanceDeal() {
-    return (
-      state.mode === "playing" &&
-      Boolean(state.encounter) &&
-      state.encounter.phase === "resolve" &&
-      !state.pendingTransition &&
-      state.encounter.resolveTimer <= 0 &&
-      state.handTackles.length === 0 &&
-      !isEncounterIntroActive(state.encounter)
-    );
+    return combatTurnActions.canAdvanceDeal();
   }
 
   function advanceToNextDeal() {
-    if (!canAdvanceDeal() || !state.encounter) {
-      playUiSfx("error");
-      return false;
-    }
-    const encounter = state.encounter;
-    encounter.handIndex += 1;
-    encounter.nextDealPrompted = false;
-    if (!beginQueuedSplitHand(encounter)) {
-      startHand();
-    }
-    saveRunSnapshot();
-    return true;
+    return combatTurnActions.advanceToNextDeal();
   }
 
   function activeSplitHandCount(encounter) {
-    if (!encounter || !Array.isArray(encounter.splitQueue)) {
-      return 1;
-    }
-    return 1 + encounter.splitQueue.length;
+    return combatTurnActions.activeSplitHandCount(encounter);
   }
 
   function canSplitCurrentHand() {
-    return canSplitHand({
-      canAct: canPlayerAct(),
-      encounter: state.encounter,
-      maxSplitHands: MAX_SPLIT_HANDS,
-    });
+    return combatTurnActions.canSplitCurrentHand();
   }
 
   function tryActivateBustGuard(encounter) {
-    if (!state.run || state.run.player.bustGuardsLeft <= 0) {
-      return false;
-    }
-
-    state.run.player.bustGuardsLeft -= 1;
-    encounter.bustGuardTriggered = true;
-    encounter.resultText = "Bust Guard transforms your bust into 21.";
-    addLog("Bust guard triggered.");
-    return true;
+    return combatTurnActions.tryActivateBustGuard(encounter);
   }
 
   function hitAction() {
-    if (!canPlayerAct()) {
-      return;
-    }
-
-    playActionSfx("hit");
-    addLog("Hit.");
-    const encounter = state.encounter;
-    encounter.lastPlayerAction = "hit";
-    dealCard(encounter, "player");
-    const total = handTotal(encounter.playerHand).total;
-
-    if (total > 21 && !tryActivateBustGuard(encounter)) {
-      resolveHand("player_bust");
-      return;
-    }
-
-    if (total >= 21 || encounter.bustGuardTriggered) {
-      resolveDealerThenShowdown(false);
-    }
+    combatTurnActions.hitAction();
   }
 
   function standAction() {
-    if (!canPlayerAct()) {
-      return;
-    }
-    playActionSfx("stand");
-    addLog("Stand.");
-    state.encounter.lastPlayerAction = "stand";
-    resolveDealerThenShowdown(false);
+    combatTurnActions.standAction();
   }
 
   function doubleAction() {
-    if (!canPlayerAct()) {
-      return;
-    }
-
-    const encounter = state.encounter;
-    if (encounter.doubleDown || encounter.splitUsed || encounter.playerHand.length !== 2) {
-      playUiSfx("error");
-      return;
-    }
-
-    playActionSfx("double");
-    addLog("Double down.");
-    encounter.doubleDown = true;
-    encounter.lastPlayerAction = "double";
-    dealCard(encounter, "player");
-    const total = handTotal(encounter.playerHand).total;
-
-    if (total > 21 && !tryActivateBustGuard(encounter)) {
-      resolveHand("player_bust");
-      return;
-    }
-
-    resolveDealerThenShowdown(false);
+    combatTurnActions.doubleAction();
   }
 
   function startSplitHand(encounter, seedHand, announcementText, announcementDuration = 1.1) {
-    if (!encounter || !Array.isArray(seedHand) || seedHand.length === 0) {
-      return false;
-    }
-
-    encounter.playerHand = seedHand.map((card) => ({ rank: card.rank, suit: card.suit }));
-    encounter.dealerHand = [];
-    encounter.dealerResolved = false;
-    encounter.hideDealerHole = true;
-    encounter.phase = "player";
-    encounter.resultText = "";
-    encounter.resultTone = "neutral";
-    encounter.resolveTimer = 0;
-    encounter.nextDealPrompted = false;
-    encounter.doubleDown = false;
-    encounter.bustGuardTriggered = false;
-    encounter.critTriggered = false;
-    encounter.lastPlayerAction = "split";
-    dealCard(encounter, "dealer");
-    dealCard(encounter, "player");
-    dealCard(encounter, "dealer");
-
-    if (announcementText) {
-      setAnnouncement(announcementText, announcementDuration);
-    }
-
-    const playerNatural = isBlackjack(encounter.playerHand);
-    const dealerNatural = isBlackjack(encounter.dealerHand);
-    if (playerNatural || dealerNatural) {
-      resolveDealerThenShowdown(true);
-      return true;
-    }
-
-    const total = handTotal(encounter.playerHand).total;
-    if (total > 21 && !tryActivateBustGuard(encounter)) {
-      resolveHand("player_bust");
-      return true;
-    }
-    if (total >= 21 || encounter.bustGuardTriggered) {
-      resolveDealerThenShowdown(false);
-      return true;
-    }
-    if (isBlackjack(encounter.dealerHand)) {
-      resolveDealerThenShowdown(true);
-    }
-
-    return true;
+    return combatTurnActions.startSplitHand(encounter, seedHand, announcementText, announcementDuration);
   }
 
   function beginQueuedSplitHand(encounter) {
-    if (!encounter || !Array.isArray(encounter.splitQueue) || encounter.splitQueue.length === 0) {
-      return false;
-    }
-
-    const seedHand = encounter.splitQueue.shift();
-    encounter.splitHandsResolved = Math.min(
-      Math.max(0, encounter.splitHandsTotal - 1),
-      nonNegInt(encounter.splitHandsResolved, 0) + 1
-    );
-    const splitIndex = encounter.splitHandsResolved + 1;
-    const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, 2));
-    return startSplitHand(encounter, seedHand, `Split hand ${splitIndex}/${splitTotal}.`);
+    return combatTurnActions.beginQueuedSplitHand(encounter);
   }
 
   function splitAction() {
-    if (!canSplitCurrentHand()) {
-      playUiSfx("error");
-      return;
-    }
-
-    const encounter = state.encounter;
-    const [first, second] = encounter.playerHand;
-    if (state.run) {
-      state.run.splitsUsed = nonNegInt(state.run.splitsUsed, 0) + 1;
-    }
-    if (!Array.isArray(encounter.splitQueue)) {
-      encounter.splitQueue = [];
-    }
-    encounter.splitQueue.unshift([{ rank: second.rank, suit: second.suit }]);
-    encounter.splitUsed = true;
-    encounter.splitHandsTotal = Math.min(MAX_SPLIT_HANDS, nonNegInt(encounter.splitHandsTotal, 1) + 1);
-    encounter.doubleDown = false;
-
-    playActionSfx("double");
-    addLog("Hand split.");
-    addLog("Each split hand gets a fresh dealer.");
-    const splitIndex = nonNegInt(encounter.splitHandsResolved, 0) + 1;
-    const splitTotal = Math.max(2, nonNegInt(encounter.splitHandsTotal, 2));
-    if (
-      !startSplitHand(
-        encounter,
-        [{ rank: first.rank, suit: first.suit }],
-        `Hand split. Play split hand ${splitIndex}/${splitTotal}.`,
-        1.2
-      )
-    ) {
-      playUiSfx("error");
-    }
+    combatTurnActions.splitAction();
   }
 
   function resolveDealerThenShowdown(naturalCheck) {
-    const encounter = state.encounter;
-    if (!encounter || encounter.phase === "done") {
-      return;
-    }
-
-    encounter.phase = "dealer";
-    encounter.hideDealerHole = false;
-    const dealerAlreadyResolved = Boolean(encounter.dealerResolved);
-
-    if (!naturalCheck && !dealerAlreadyResolved) {
-      while (handTotal(encounter.dealerHand).total < 17) {
-        dealCard(encounter, "dealer");
-      }
-      if (encounter.splitUsed) {
-        encounter.dealerResolved = true;
-      }
-    } else if (encounter.splitUsed && isBlackjack(encounter.dealerHand)) {
-      encounter.dealerResolved = true;
-    }
-
-    const pTotal = encounter.bustGuardTriggered ? 21 : handTotal(encounter.playerHand).total;
-    const dTotal = handTotal(encounter.dealerHand).total;
-    const playerNatural = !encounter.bustGuardTriggered && isBlackjack(encounter.playerHand);
-    const dealerNatural = isBlackjack(encounter.dealerHand);
-
-    const outcome = resolveShowdownOutcome({
-      playerTotal: pTotal,
-      dealerTotal: dTotal,
-      playerNatural,
-      dealerNatural,
-    });
-
-    resolveHand(outcome, pTotal, dTotal);
+    combatTurnActions.resolveDealerThenShowdown(naturalCheck);
   }
 
   function resolveHand(outcome, pTotal = handTotal(state.encounter.playerHand).total, dTotal = handTotal(state.encounter.dealerHand).total) {
-    if (!state.run || !state.encounter) {
-      return;
-    }
-
-    const run = state.run;
-    const encounter = state.encounter;
-    const enemy = encounter.enemy;
-    const lowHpBonus = run.player.hp <= run.player.maxHp * 0.5 ? run.player.stats.lowHpDamage : 0;
-    const streakBonus = Math.min(4, Math.floor(run.player.streak / 2));
-    const firstHandBonus = encounter.handIndex === 1 ? run.player.stats.firstHandDamage : 0;
-
-    let outgoing = 0;
-    let incoming = 0;
-    let text = "Push.";
-    let resultTone = "push";
-    const splitBonus = encounter.splitUsed ? run.player.stats.splitWinDamage : 0;
-    const eliteBonus = enemy.type === "normal" ? 0 : run.player.stats.eliteDamage;
-
-    if (outcome === "blackjack") {
-      outgoing =
-        12 +
-        run.player.stats.flatDamage +
-        lowHpBonus +
-        streakBonus +
-        run.player.stats.blackjackBonusDamage +
-        splitBonus +
-        eliteBonus +
-        firstHandBonus +
-        (encounter.doubleDown ? 2 : 0);
-      text = "Blackjack!";
-      resultTone = "special";
-      run.blackjacks = nonNegInt(run.blackjacks, 0) + 1;
-    } else if (outcome === "dealer_bust") {
-      outgoing =
-        7 +
-        run.player.stats.flatDamage +
-        lowHpBonus +
-        streakBonus +
-        run.player.stats.dealerBustBonusDamage +
-        splitBonus +
-        eliteBonus +
-        firstHandBonus +
-        (encounter.doubleDown ? 2 : 0) +
-        (encounter.lastPlayerAction === "double" ? run.player.stats.doubleWinDamage : 0);
-      text = "Dealer bust.";
-      resultTone = "win";
-    } else if (outcome === "player_win") {
-      outgoing =
-        4 +
-        Math.max(0, pTotal - dTotal) +
-        run.player.stats.flatDamage +
-        lowHpBonus +
-        streakBonus +
-        splitBonus +
-        eliteBonus +
-        firstHandBonus +
-        (encounter.doubleDown ? 2 : 0) +
-        (encounter.lastPlayerAction === "stand" ? run.player.stats.standWinDamage : 0) +
-        (encounter.lastPlayerAction === "double" ? run.player.stats.doubleWinDamage : 0);
-      text = "Win hand.";
-      resultTone = "win";
-    } else if (outcome === "dealer_blackjack") {
-      incoming = enemy.attack + 3;
-      text = "Dealer blackjack.";
-      resultTone = "special";
-    } else if (outcome === "dealer_win") {
-      incoming = enemy.attack + Math.max(1, Math.floor((dTotal - pTotal) * 0.4));
-      text = "Lose hand.";
-      resultTone = "loss";
-    } else if (outcome === "player_bust") {
-      incoming = Math.max(1, enemy.attack + 1 - run.player.stats.bustBlock);
-      text = "Bust.";
-      resultTone = "loss";
-    }
-
-    if (outgoing > 0 && Math.random() < run.player.stats.critChance) {
-      outgoing *= 2;
-      encounter.critTriggered = true;
-      text = "CRIT!";
-    }
-
-    const playerLosingOutcome = outcome === "dealer_blackjack" || outcome === "dealer_win" || outcome === "player_bust";
-    const enemyLosingOutcome = outcome === "blackjack" || outcome === "dealer_bust" || outcome === "player_win";
-
-    if (playerLosingOutcome) {
-      outgoing = 0;
-    }
-    if (enemyLosingOutcome) {
-      incoming = 0;
-    }
-
-    if (incoming > 0) {
-      incoming = Math.max(1, incoming - run.player.stats.block);
-      if (encounter.lastPlayerAction === "double" && run.player.stats.doubleLossBlock > 0) {
-        incoming = Math.max(1, incoming - run.player.stats.doubleLossBlock);
-      }
-    }
-
-    playOutcomeSfx(outcome, outgoing, incoming);
-    const useLegacyHandTackle = !isExternalModeRendering("playing");
-
-    if (outgoing > 0) {
-      const outgoingPayload = {
-        target: "enemy",
-        amount: outgoing,
-        color: outcome === "blackjack" ? "#f8d37b" : "#ff916e",
-        crit: encounter.critTriggered,
-      };
-      if (!(useLegacyHandTackle && triggerHandTackle("player", outgoing, outgoingPayload))) {
-        applyImpactDamage(outgoingPayload);
-        if (useLegacyHandTackle) {
-          triggerImpactBurst("enemy", outgoing, outgoingPayload.color);
-        }
-      }
-    }
-
-    if (incoming > 0) {
-      const incomingPayload = {
-        target: "player",
-        amount: incoming,
-        color: "#ff86aa",
-      };
-      if (!(useLegacyHandTackle && triggerHandTackle("enemy", incoming, incomingPayload))) {
-        applyImpactDamage(incomingPayload);
-        if (useLegacyHandTackle) {
-          triggerImpactBurst("player", incoming, incomingPayload.color);
-        }
-      }
-    } else if (outgoing > 0) {
-      run.player.streak += 1;
-      run.maxStreak = Math.max(run.maxStreak || 0, run.player.streak);
-      if (encounter.lastPlayerAction === "double") {
-        run.doublesWon = nonNegInt(run.doublesWon, 0) + 1;
-      }
-      if (outcome === "blackjack" && run.player.stats.blackjackHeal > 0) {
-        const blackjackHeal = Math.min(run.player.stats.blackjackHeal, run.player.maxHp - run.player.hp);
-        if (blackjackHeal > 0) {
-          run.player.hp += blackjackHeal;
-          spawnFloatText(`+${blackjackHeal}`, WIDTH * 0.26, 514, "#8df0b2");
-        }
-      }
-      if (run.player.stats.healOnWinHand > 0) {
-        const heal = Math.min(run.player.stats.healOnWinHand, run.player.maxHp - run.player.hp);
-        if (heal > 0) {
-          run.player.hp += heal;
-          spawnFloatText(`+${heal}`, WIDTH * 0.26, 540, "#8df0b2");
-        }
-      }
-      if (run.player.stats.chipsOnWinHand > 0) {
-        gainChips(run.player.stats.chipsOnWinHand);
-        spawnFloatText(`+${run.player.stats.chipsOnWinHand}`, WIDTH * 0.5, 72, "#ffd687");
-      }
-    } else if (outcome === "push" && run.player.stats.chipsOnPush > 0) {
-      run.pushes = nonNegInt(run.pushes, 0) + 1;
-      gainChips(run.player.stats.chipsOnPush);
-      spawnFloatText(`+${run.player.stats.chipsOnPush}`, WIDTH * 0.5, 72, "#ffd687");
-      text = `Push +${run.player.stats.chipsOnPush} chips`;
-    } else if (outcome === "push") {
-      run.pushes = nonNegInt(run.pushes, 0) + 1;
-    }
-
-    if (encounter.critTriggered && outgoing > 0) {
-      text = `CRIT -${outgoing} HP`;
-      resultTone = "special";
-    } else if (outgoing > 0) {
-      text = `${text} -${outgoing} HP`;
-      if (resultTone !== "special") {
-        resultTone = "win";
-      }
-    } else if (incoming > 0) {
-      text = `${text} -${incoming} HP`;
-      resultTone = "loss";
-    }
-
-    if (encounter.bustGuardTriggered) {
-      text = `${text} Guard!`;
-    }
-
-    if (encounter.critTriggered) {
-      for (let i = 0; i < 6; i += 1) {
-        const color = i % 2 === 0 ? "#ffd88d" : "#ff9a7d";
-        const x = WIDTH * 0.64 + (Math.random() * 2 - 1) * 76;
-        const y = 150 + (Math.random() * 2 - 1) * 48;
-        spawnSparkBurst(x, y, color, 14 + i * 4, 230 + i * 18);
-      }
-      triggerFlash("#ffd88d", 0.14, 0.22);
-      triggerScreenShake(9.6, 0.3);
-    }
-    if (outcome === "blackjack") {
-      spawnSparkBurst(WIDTH * 0.5, 646, "#f8d37b", 28, 260);
-      triggerScreenShake(8.5, 0.24);
-    }
-
-    encounter.resultText = text;
-    encounter.resultTone = resultTone;
-    state.announcement = "";
-    state.announcementTimer = 0;
-    state.announcementDuration = 0;
-    addLog(text);
-    run.totalHands += 1;
-    encounter.resolvedHands = nonNegInt(encounter.resolvedHands, 0) + 1;
-    updateProfileBest(run);
-    finalizeResolveState();
+    combatResolution.resolveHand(outcome, pTotal, dTotal);
   }
 
   function onEncounterWin() {
-    if (!state.run || !state.encounter) {
-      return;
-    }
-
-    const run = state.run;
-    const encounter = state.encounter;
-    const enemy = encounter.enemy;
-
-    run.enemiesDefeated += 1;
-    const payout = Math.round(enemy.goldDrop * run.player.stats.goldMultiplier) + Math.min(6, run.player.streak);
-    gainChips(payout);
-    spawnFloatText(`+${payout} chips`, WIDTH * 0.5, 72, "#ffd687");
-    spawnSparkBurst(WIDTH * 0.5, 96, "#ffd687", 34, 280);
-    triggerScreenShake(7, 0.2);
-    triggerFlash("#ffd687", 0.09, 0.2);
-    playUiSfx("coin");
-    addLog(`${enemy.name} defeated. +${payout} chips.`);
-
-    encounter.phase = "done";
-
-    if (enemy.type === "boss") {
-      if (run.floor >= run.maxFloor) {
-        finalizeRun("victory");
-        state.mode = "victory";
-        setAnnouncement("The House collapses.", 2.8);
-        return;
-      }
-
-      run.floor += 1;
-      run.room = 1;
-      const heal = 8;
-      run.player.hp = Math.min(run.player.maxHp, run.player.hp + heal);
-      state.rewardOptions = generateRewardOptions(3, true);
-      state.mode = "shop";
-      run.shopPurchaseMade = false;
-      state.selectionIndex = 0;
-      state.shopStock = generateCampRelicDraftStock(state.rewardOptions);
-      if (!state.shopStock.length) {
-        state.shopStock = generateShopStock(3);
-      }
-      setAnnouncement(`Floor cleared. Restored ${heal} HP. Camp opened.`, 2.4);
-      saveRunSnapshot();
-      return;
-    }
-
-    run.room += 1;
-
-    if (run.room % 2 === 0) {
-      state.mode = "shop";
-      run.shopPurchaseMade = false;
-      state.selectionIndex = 0;
-      state.rewardOptions = generateRewardOptions(3, false);
-      state.shopStock = generateCampRelicDraftStock(state.rewardOptions);
-      if (!state.shopStock.length) {
-        state.shopStock = generateShopStock(3);
-      }
-      setAnnouncement("Relics are available at camp.", 2);
-    } else {
-      state.mode = "shop";
-      run.shopPurchaseMade = false;
-      state.selectionIndex = 0;
-      state.rewardOptions = [];
-      state.shopStock = generateShopStock(3);
-      setAnnouncement("Camp opened.", 2);
-    }
-    saveRunSnapshot();
+    encounterOutcomeHandlers.onEncounterWin();
   }
 
   function relicRarityWeights(source, floor) {
-    const clampedFloor = Math.max(1, Math.min(3, nonNegInt(floor, 1)));
-    if (source === "shop") {
-      if (clampedFloor === 1) {
-        return { common: 68, uncommon: 24, rare: 7, legendary: 1 };
-      }
-      if (clampedFloor === 2) {
-        return { common: 46, uncommon: 34, rare: 17, legendary: 3 };
-      }
-      return { common: 29, uncommon: 35, rare: 28, legendary: 8 };
-    }
-    if (clampedFloor === 1) {
-      return { common: 64, uncommon: 28, rare: 7, legendary: 1 };
-    }
-    if (clampedFloor === 2) {
-      return { common: 40, uncommon: 37, rare: 19, legendary: 4 };
-    }
-    return { common: 24, uncommon: 35, rare: 29, legendary: 12 };
+    return rewardShopHandlers.relicRarityWeights(source, floor);
   }
 
   function sampleRarity(weights) {
-    const total = Object.values(weights).reduce((acc, value) => acc + Math.max(0, Number(value) || 0), 0);
-    if (total <= 0) {
-      return "common";
-    }
-    let roll = Math.random() * total;
-    for (const rarity of RELIC_RARITY_ORDER) {
-      const weight = Math.max(0, Number(weights[rarity]) || 0);
-      if (roll < weight) {
-        return rarity;
-      }
-      roll -= weight;
-    }
-    return "common";
+    return rewardShopHandlers.sampleRarity(weights);
   }
 
   function unlockedRelicPool(profile = state.profile) {
-    return RELICS.filter((relic) => isRelicUnlocked(relic, profile));
+    return rewardShopHandlers.unlockedRelicPool(profile);
   }
 
   function sampleRelics(pool, count, source, floor) {
-    const options = [];
-    const available = [...pool];
-    const weights = relicRarityWeights(source, floor);
-    const owned = state.run?.player?.relics || {};
-    const allowDuplicatesAt = source === "shop" ? 2 : 3;
-
-    while (options.length < count && available.length > 0) {
-      const targetRarity = sampleRarity(weights);
-      const prioritizeFresh = options.length < allowDuplicatesAt;
-      let candidates = available.filter((relic) => normalizeRelicRarity(relic.rarity) === targetRarity);
-      if (prioritizeFresh) {
-        const unowned = candidates.filter((relic) => nonNegInt(owned[relic.id], 0) === 0);
-        if (unowned.length) {
-          candidates = unowned;
-        }
-      }
-      if (!candidates.length) {
-        candidates = available;
-        if (prioritizeFresh) {
-          const unownedFallback = candidates.filter((relic) => nonNegInt(owned[relic.id], 0) === 0);
-          if (unownedFallback.length) {
-            candidates = unownedFallback;
-          }
-        }
-      }
-      const picked = candidates[Math.floor(Math.random() * candidates.length)];
-      options.push(picked);
-      const idx = available.findIndex((entry) => entry.id === picked.id);
-      if (idx >= 0) {
-        available.splice(idx, 1);
-      }
-    }
-    return options;
+    return rewardShopHandlers.sampleRelics(pool, count, source, floor);
   }
 
   function generateRewardOptions(count, includeBossRelic) {
-    const options = [];
-    const floor = state.run ? state.run.floor : 1;
-    const pool = shuffle(unlockedRelicPool());
-
-    if (includeBossRelic) {
-      options.push(BOSS_RELIC);
-    }
-    const rolled = sampleRelics(pool, Math.max(0, count - options.length), "reward", floor);
-    for (const relic of rolled) {
-      if (options.some((entry) => entry.id === relic.id)) {
-        continue;
-      }
-      options.push(relic);
-      if (options.length >= count) {
-        break;
-      }
-    }
-
-    return options;
+    return rewardShopHandlers.generateRewardOptions(count, includeBossRelic);
   }
 
   function generateCampRelicDraftStock(rewardOptions) {
-    const floorScale = state.run ? state.run.floor * 2 : 0;
-    if (!Array.isArray(rewardOptions)) {
-      return [];
-    }
-    return rewardOptions
-      .filter(Boolean)
-      .map((relic) => ({
-        type: "relic",
-        relic,
-        cost: nonNegInt(relic.shopCost, 0) + floorScale + relicRarityMeta(relic).shopMarkup,
-        sold: false,
-      }));
+    return rewardShopHandlers.generateCampRelicDraftStock(rewardOptions);
   }
 
   function generateShopStock(count) {
-    const floorScale = state.run ? state.run.floor * 2 : 0;
-    const floor = state.run ? state.run.floor : 1;
-    const relicPool = shuffle(unlockedRelicPool());
-    const relics = sampleRelics(relicPool, Math.max(1, count - 1), "shop", floor);
-
-    const stock = relics.map((relic) => ({
-      type: "relic",
-      relic,
-      cost: relic.shopCost + floorScale + relicRarityMeta(relic).shopMarkup,
-      sold: false,
-    }));
-
-    stock.push({
-      type: "heal",
-      id: "patch-kit",
-      name: "Patch Kit",
-      description: "Restore 10 HP.",
-      cost: 10 + floorScale,
-      sold: false,
-    });
-
-    return shuffle(stock).slice(0, count);
+    return rewardShopHandlers.generateShopStock(count);
   }
 
   function applyRelic(relic) {
-    if (!state.run) {
-      return;
-    }
-
-    const run = state.run;
-    run.player.relics[relic.id] = (run.player.relics[relic.id] || 0) + 1;
-    relic.apply(run);
-    run.player.stats.critChance = Math.min(0.6, run.player.stats.critChance);
-    run.player.stats.flatDamage = Math.min(14, run.player.stats.flatDamage);
-    run.player.stats.block = Math.min(10, run.player.stats.block);
-    run.player.stats.goldMultiplier = Math.max(0.5, Math.min(2.35, run.player.stats.goldMultiplier));
-    run.player.hp = Math.min(run.player.maxHp, run.player.hp);
-
-    if (state.profile) {
-      state.profile.relicCollection[relic.id] = nonNegInt(state.profile.relicCollection[relic.id], 0) + 1;
-      state.profile.totals.relicsCollected += 1;
-      saveProfile();
-    }
+    rewardShopHandlers.applyRelic(relic);
   }
 
   function claimReward() {
-    if (state.mode !== "reward" || state.rewardOptions.length === 0 || !state.run) {
-      return;
-    }
-
-    state.mode = nextModeAfterRewardClaim({
-      floor: state.run.floor,
-      maxFloor: state.run.maxFloor,
-      room: state.run.room,
-      roomsPerFloor: state.run.roomsPerFloor,
-    });
-    state.run.shopPurchaseMade = false;
-    state.selectionIndex = 0;
-    state.shopStock = generateCampRelicDraftStock(state.rewardOptions);
-    if (!state.shopStock.length) {
-      state.shopStock = generateShopStock(3);
-    }
-    playUiSfx("confirm");
-    setAnnouncement("Relics moved to camp. Spend chips to buy one.", 2);
-    saveRunSnapshot();
+    rewardShopHandlers.claimReward();
   }
 
   function buyShopItem(index = state.selectionIndex) {
-    if (state.mode !== "shop" || !state.run || state.shopStock.length === 0) {
-      return;
-    }
-
-    const run = state.run;
-    const targetIndex = clampNumber(index, 0, state.shopStock.length - 1, state.selectionIndex);
-    state.selectionIndex = targetIndex;
-    const item = state.shopStock[targetIndex];
-    if (run.shopPurchaseMade) {
-      playUiSfx("error");
-      setAnnouncement("Only one purchase per camp.", 1.35);
-      addLog("Camp allows one purchase only.");
-      return;
-    }
-    if (!item || item.sold) {
-      playUiSfx("error");
-      return;
-    }
-
-    if (item.type === "relic" && state.shopStock.some((entry) => entry.type === "relic" && entry.sold)) {
-      playUiSfx("error");
-      addLog("Only one relic can be bought per camp.");
-      setAnnouncement("Only one relic per camp visit.", 1.2);
-      return;
-    }
-
-    if (run.player.gold < item.cost) {
-      playUiSfx("error");
-      addLog("Not enough chips.");
-      setAnnouncement("Need more chips.", 1.2);
-      saveRunSnapshot();
-      return;
-    }
-
-    playUiSfx("coin");
-    gainChips(-item.cost);
-    spawnFloatText(`-${item.cost}`, WIDTH * 0.5, 646, "#ffd28a");
-
-    if (item.type === "relic") {
-      applyRelic(item.relic);
-      addLog(`Bought ${item.relic.name}.`);
-      addLog(passiveDescription(item.relic.description));
-    } else {
-      const heal = Math.min(10, run.player.maxHp - run.player.hp);
-      run.player.hp += heal;
-      addLog(`Patch Kit restores ${heal} HP.`);
-      if (heal > 0) {
-        spawnFloatText(`+${heal}`, WIDTH * 0.27, 541, "#8df0b2");
-      }
-    }
-
-    item.sold = true;
-    run.shopPurchaseMade = true;
-    saveRunSnapshot();
+    rewardShopHandlers.buyShopItem(index);
   }
 
   function leaveShop() {
-    if (state.mode !== "shop") {
-      return;
-    }
-    const nextMode = nextModeAfterShopContinue();
-    if (nextMode !== "playing") {
-      return;
-    }
-    playUiSfx("confirm");
-    addLog("Left camp.");
-    beginEncounter();
+    rewardShopHandlers.leaveShop();
   }
 
   function shopItemName(item) {
-    if (!item || typeof item !== "object") {
-      return "Unknown Item";
-    }
-    if (item.type === "relic") {
-      return item.relic?.name || "Unknown Relic";
-    }
-    return item.name || "Patch Kit";
+    return rewardShopHandlers.shopItemName(item);
   }
 
   function shopItemDescription(item) {
-    if (!item || typeof item !== "object") {
-      return "";
-    }
-    if (item.type === "relic") {
-      return passiveDescription(item.relic?.description || "");
-    }
-    return item.description || "";
+    return rewardShopHandlers.shopItemDescription(item);
   }
 
   function moveSelection(delta, length) {
-    if (!length) {
-      return;
-    }
-    if (delta !== 0) {
-      playUiSfx("select");
-    }
-    state.selectionIndex = (state.selectionIndex + delta + length) % length;
+    moveSelectionState({ state, delta, length, playUiSfx });
   }
 
   function hasSavedRun() {
-    return Boolean(state.savedRunSnapshot && state.savedRunSnapshot.run);
+    return hasSavedRunState(state);
   }
 
   function collectionEntries(profile = state.profile) {
@@ -2523,9 +1728,12 @@ export function bootstrapRuntime() {
   }
 
   function openCollection(page = 0) {
-    playUiSfx("confirm");
-    state.mode = "collection";
-    state.collectionPage = Math.max(0, nonNegInt(page, 0));
+    openCollectionState({
+      state,
+      page,
+      nonNegInt,
+      playUiSfx,
+    });
   }
 
   function update(dt) {
@@ -3145,37 +2353,14 @@ export function bootstrapRuntime() {
   }
 
   function buildPhaserRewardSnapshot() {
-    if (state.mode !== "reward") {
-      return null;
-    }
-    const run = state.run || null;
-    const options = state.rewardOptions.map((relic, index) => {
-      const rarity = relicRarityMeta(relic);
-      return {
-        id: relic.id,
-        name: relic.name,
-        description: passiveDescription(relic.description),
-        rarity: normalizeRelicRarity(relic.rarity),
-        rarityLabel: rarity.label,
-        color: relic.color || rarity.glow || "#c8d7a1",
-        thumbUrl: passiveThumbUrl(relic),
-        selected: index === state.selectionIndex,
-      };
+    return buildPhaserRewardSnapshotFromModule({
+      state,
+      passiveDescription,
+      passiveThumbUrl,
+      relicRarityMeta,
+      normalizeRelicRarity,
+      getRunEventLog,
     });
-
-    return {
-      mode: state.mode,
-      run: {
-        floor: run?.floor || 1,
-        room: run?.room || 1,
-        roomsPerFloor: run?.roomsPerFloor || 5,
-        chips: run?.player?.gold || 0,
-      },
-      options,
-      selectionIndex: state.selectionIndex,
-      canClaim: options.length > 0,
-      logs: getRunEventLog(run).slice(-120),
-    };
   }
 
   function registerPhaserRewardApi() {
@@ -3223,58 +2408,14 @@ export function bootstrapRuntime() {
   }
 
   function buildPhaserShopSnapshot() {
-    if (state.mode !== "shop") {
-      return null;
-    }
-    const run = state.run || null;
-    const purchaseLocked = Boolean(run?.shopPurchaseMade);
-    const items = state.shopStock.map((item, index) => {
-      const idBase = item.type === "relic" ? item.relic?.id || "relic" : item.id || "service";
-      const affordable = Boolean(run && run.player && run.player.gold >= item.cost);
-      const sold = Boolean(item.sold);
-      return {
-        id: `${idBase}-${index}`,
-        name: shopItemName(item),
-        description: shopItemDescription(item),
-        type: item.type === "relic" ? "RELIC" : "SERVICE",
-        cost: nonNegInt(item.cost, 0),
-        sold,
-        selected: index === state.selectionIndex,
-        canBuy: !purchaseLocked && !sold && affordable,
-      };
+    return buildPhaserShopSnapshotFromModule({
+      state,
+      nonNegInt,
+      clampNumber,
+      shopItemName,
+      shopItemDescription,
+      getRunEventLog,
     });
-
-    let canBuySelected = false;
-    if (run && state.shopStock.length > 0) {
-      const selectedIndex = clampNumber(state.selectionIndex, 0, state.shopStock.length - 1, 0);
-      const selectedItem = state.shopStock[selectedIndex];
-      canBuySelected = Boolean(
-        selectedItem &&
-          !selectedItem.sold &&
-          !purchaseLocked &&
-          Number(run.player?.gold || 0) >= Number(selectedItem.cost || 0)
-      );
-    }
-
-    return {
-      mode: state.mode,
-      run: {
-        floor: run?.floor || 1,
-        room: run?.room || 1,
-        roomsPerFloor: run?.roomsPerFloor || 5,
-        chips: run?.player?.gold || 0,
-        streak: run?.player?.streak || 0,
-        bustGuardsLeft: run?.player?.bustGuardsLeft || 0,
-        hp: run?.player?.hp || 0,
-        maxHp: run?.player?.maxHp || 1,
-        shopPurchaseMade: purchaseLocked,
-      },
-      items,
-      selectionIndex: state.selectionIndex,
-      canBuySelected,
-      canContinue: true,
-      logs: getRunEventLog(run).slice(-120),
-    };
   }
 
   function registerPhaserShopApi() {
