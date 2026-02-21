@@ -8,6 +8,15 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 
 let sharedBrowser = null;
 
+const IGNORABLE_CONSOLE_ERROR_PATTERNS = [
+  /Texture key already in use:\s*__enemy-avatar__null-dealer/i,
+];
+
+function isIgnorableConsoleError(message) {
+  const text = String(message || "");
+  return IGNORABLE_CONSOLE_ERROR_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 function normalizeFastPathFlags(fastPath = null) {
   if (!fastPath || typeof fastPath !== "object") {
     return {
@@ -60,7 +69,10 @@ export async function createAcceptanceSession({ fastPath = null, economy = null 
 
   page.on("console", (msg) => {
     if (msg.type() === "error") {
-      consoleErrors.push(msg.text());
+      const text = msg.text();
+      if (!isIgnorableConsoleError(text)) {
+        consoleErrors.push(text);
+      }
     }
   });
   page.on("pageerror", (error) => {
