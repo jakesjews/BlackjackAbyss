@@ -6,7 +6,7 @@
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
-- Last Updated: 2026-02-21 17:12:42 EST
+- Last Updated: 2026-02-21 17:18:27 EST
 
 ## Current Focus
 
@@ -57,11 +57,13 @@
 - Restored explicit `handBounds(...)` bridge helper (now delegated through encounter lifecycle module) to keep defeat-transition fallback math safe.
 - Extracted enemy avatar loading/cache helpers into `src/engine/runtime/bootstrap/enemy-avatars.js` and removed that implementation detail from `bootstrap.js` with dedicated unit tests.
 - Extracted runtime startup orchestration into `src/engine/runtime/bootstrap/runtime-startup.js` and reduced bootstrap final boot wiring to a single delegation call with dedicated unit tests.
+- Collapsed wrapper-heavy runtime delegates in `bootstrap.js` by binding directly to handler/module methods (audio, combat impact, encounter lifecycle, combat turn actions, reward/shop handlers), preserving only required forward-reference wrappers.
+- Fixed a persistence regression introduced during wrapper collapse by restoring direct bindings for resume-hydration helpers (`generateCampRelicDraftStock`, etc.) used by `resumeSavedRun`.
 
 ## Next Up
 
 - Reintroduce a reliable long-run balancing probe with explicit guardrails and bounded runtime behavior.
-- Continue extracting remaining runtime sections out of `bootstrap.js` (remaining thin wrapper clusters and bootstrap entry segmentation) into focused modules.
+- Continue extracting remaining runtime sections out of `bootstrap.js` (state/profile/persistence helper clusters and remaining bootstrap entry segmentation) into focused modules.
 - Keep docs synced when bridge contracts, test hooks, or mode flows change.
 
 ## Risks / Blockers

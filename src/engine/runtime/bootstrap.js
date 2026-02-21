@@ -634,66 +634,18 @@ export function bootstrapRuntime() {
     clampNumber,
     lerpFn: lerpFromModule,
   });
-
-  function unlockAudio() {
-    runtimeAudio.unlockAudio();
-  }
-
-  function setAudioEnabled(enabled) {
-    runtimeAudio.setAudioEnabled(enabled);
-  }
-
-  function toggleAudio() {
-    runtimeAudio.toggleAudio();
-  }
-
-  function canPlayAudio() {
-    return runtimeAudio.canPlayAudio();
-  }
-
-  function playTone(freq, duration, opts = {}) {
-    runtimeAudio.playTone(freq, duration, opts);
-  }
-
-  function playImpactSfx(amount, target) {
-    runtimeAudio.playImpactSfx(amount, target);
-  }
-
-  function playDealSfx(target) {
-    runtimeAudio.playDealSfx(target);
-  }
-
-  function playFireballLaunchSfx(attacker = "player", target = "enemy", amount = 1) {
-    runtimeAudio.playFireballLaunchSfx(attacker, target, amount);
-  }
-
-  function playFireballImpactSfx(amount = 1, target = "enemy") {
-    runtimeAudio.playFireballImpactSfx(amount, target);
-  }
-
-  function playUiSfx(kind) {
-    runtimeAudio.playUiSfx(kind);
-  }
-
-  function playActionSfx(action) {
-    runtimeAudio.playActionSfx(action);
-  }
-
-  function playOutcomeSfx(outcome, outgoing, incoming) {
-    runtimeAudio.playOutcomeSfx(outcome, outgoing, incoming);
-  }
-
-  function playCardSfx() {
-    runtimeAudio.playCardSfx();
-  }
-
-  function playGruntSfx() {
-    runtimeAudio.playGruntSfx();
-  }
-
-  function updateMusic(dt) {
-    runtimeAudio.updateMusic(dt);
-  }
+  const {
+    unlockAudio,
+    playImpactSfx,
+    playDealSfx,
+    playFireballLaunchSfx,
+    playFireballImpactSfx,
+    playUiSfx,
+    playActionSfx,
+    playOutcomeSfx,
+    playGruntSfx,
+    updateMusic,
+  } = runtimeAudio;
 
   function spawnFloatText(text, x, y, color, opts = {}) {
     spawnFloatTextFromModule({
@@ -809,14 +761,10 @@ export function bootstrapRuntime() {
     damageFloatAnchorFn: damageFloatAnchor,
     spawnFloatTextFn: spawnFloatText,
   });
-
-  function finalizeResolveState() {
-    combatImpactHandlers.finalizeResolveState();
-  }
-
-  function applyImpactDamage(payload) {
-    combatImpactHandlers.applyImpactDamage(payload);
-  }
+  const {
+    finalizeResolveState,
+    applyImpactDamage,
+  } = combatImpactHandlers;
 
   function startDefeatTransition(target) {
     startDefeatTransitionFromModule({
@@ -891,42 +839,13 @@ export function bootstrapRuntime() {
     clearSavedRunFn: clearSavedRun,
     resizeCanvasFn: resizeCanvas,
   });
-
-  function drawFromShoe(encounter) {
-    return encounterLifecycleHandlers.drawFromShoe(encounter);
-  }
-
-  function luckyCardUpgrade(encounter, target, card) {
-    return encounterLifecycleHandlers.luckyCardUpgrade(encounter, target, card);
-  }
-
-  function handLayout(count, layoutScale = 1) {
-    return encounterLifecycleHandlers.handLayout(count, layoutScale);
-  }
-
-  function handCardPosition(handType, index, count, layoutScale = 1) {
-    return encounterLifecycleHandlers.handCardPosition(handType, index, count, layoutScale);
-  }
-
-  function handBounds(handType, count, index = 0, layoutScale = 1) {
-    return encounterLifecycleHandlers.handBounds(handType, count, index, layoutScale);
-  }
-
-  function dealCard(encounter, target) {
-    return encounterLifecycleHandlers.dealCard(encounter, target);
-  }
-
-  function startHand() {
-    encounterLifecycleHandlers.startHand();
-  }
-
-  function beginEncounter() {
-    encounterLifecycleHandlers.beginEncounter();
-  }
-
-  function startRun() {
-    encounterLifecycleHandlers.startRun();
-  }
+  const {
+    handBounds,
+    dealCard,
+    startHand,
+    beginEncounter,
+    startRun,
+  } = encounterLifecycleHandlers;
 
   function isEncounterIntroActive(encounter = state.encounter) {
     return isEncounterIntroActiveFromModule({ state, encounter });
@@ -1045,54 +964,16 @@ export function bootstrapRuntime() {
     generateShopStock: rewardShopHandlers.generateShopStock,
     saveRunSnapshot,
   });
-
-  function canPlayerAct() {
-    return combatTurnActions.canPlayerAct();
-  }
-
-  function canAdvanceDeal() {
-    return combatTurnActions.canAdvanceDeal();
-  }
-
-  function advanceToNextDeal() {
-    return combatTurnActions.advanceToNextDeal();
-  }
-
-  function activeSplitHandCount(encounter) {
-    return combatTurnActions.activeSplitHandCount(encounter);
-  }
-
-  function canSplitCurrentHand() {
-    return combatTurnActions.canSplitCurrentHand();
-  }
-
-  function tryActivateBustGuard(encounter) {
-    return combatTurnActions.tryActivateBustGuard(encounter);
-  }
-
-  function hitAction() {
-    combatTurnActions.hitAction();
-  }
-
-  function standAction() {
-    combatTurnActions.standAction();
-  }
-
-  function doubleAction() {
-    combatTurnActions.doubleAction();
-  }
-
-  function startSplitHand(encounter, seedHand, announcementText, announcementDuration = 1.1) {
-    return combatTurnActions.startSplitHand(encounter, seedHand, announcementText, announcementDuration);
-  }
-
-  function beginQueuedSplitHand(encounter) {
-    return combatTurnActions.beginQueuedSplitHand(encounter);
-  }
-
-  function splitAction() {
-    combatTurnActions.splitAction();
-  }
+  const {
+    canPlayerAct,
+    canAdvanceDeal,
+    advanceToNextDeal,
+    canSplitCurrentHand,
+    hitAction,
+    standAction,
+    doubleAction,
+    splitAction,
+  } = combatTurnActions;
 
   function resolveDealerThenShowdown(naturalCheck) {
     combatTurnActions.resolveDealerThenShowdown(naturalCheck);
@@ -1101,62 +982,20 @@ export function bootstrapRuntime() {
   function resolveHand(outcome, pTotal = handTotal(state.encounter.playerHand).total, dTotal = handTotal(state.encounter.dealerHand).total) {
     combatResolution.resolveHand(outcome, pTotal, dTotal);
   }
+  const {
+    onEncounterWin,
+  } = encounterOutcomeHandlers;
 
-  function onEncounterWin() {
-    encounterOutcomeHandlers.onEncounterWin();
-  }
-
-  function relicRarityWeights(source, floor) {
-    return rewardShopHandlers.relicRarityWeights(source, floor);
-  }
-
-  function sampleRarity(weights) {
-    return rewardShopHandlers.sampleRarity(weights);
-  }
-
-  function unlockedRelicPool(profile = state.profile) {
-    return rewardShopHandlers.unlockedRelicPool(profile);
-  }
-
-  function sampleRelics(pool, count, source, floor) {
-    return rewardShopHandlers.sampleRelics(pool, count, source, floor);
-  }
-
-  function generateRewardOptions(count, includeBossRelic) {
-    return rewardShopHandlers.generateRewardOptions(count, includeBossRelic);
-  }
-
-  function generateCampRelicDraftStock(rewardOptions) {
-    return rewardShopHandlers.generateCampRelicDraftStock(rewardOptions);
-  }
-
-  function generateShopStock(count) {
-    return rewardShopHandlers.generateShopStock(count);
-  }
-
-  function applyRelic(relic) {
-    rewardShopHandlers.applyRelic(relic);
-  }
-
-  function claimReward() {
-    rewardShopHandlers.claimReward();
-  }
-
-  function buyShopItem(index = state.selectionIndex) {
-    rewardShopHandlers.buyShopItem(index);
-  }
-
-  function leaveShop() {
-    rewardShopHandlers.leaveShop();
-  }
-
-  function shopItemName(item) {
-    return rewardShopHandlers.shopItemName(item);
-  }
-
-  function shopItemDescription(item) {
-    return rewardShopHandlers.shopItemDescription(item);
-  }
+  const {
+    generateRewardOptions,
+    generateCampRelicDraftStock,
+    generateShopStock,
+    claimReward,
+    buyShopItem,
+    leaveShop,
+    shopItemName,
+    shopItemDescription,
+  } = rewardShopHandlers;
 
   function moveSelection(delta, length) {
     moveSelectionState({ state, delta, length, playUiSfx });
