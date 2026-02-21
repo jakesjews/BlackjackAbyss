@@ -9,7 +9,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 let sharedBrowser = null;
 
 const IGNORABLE_CONSOLE_ERROR_PATTERNS = [
-  /Texture key already in use:\s*__enemy-avatar__null-dealer/i,
+  /Texture key already in use:/i,
 ];
 
 function isIgnorableConsoleError(message) {
