@@ -115,14 +115,8 @@ import {
   passiveSummary as passiveSummaryFromModule,
   passiveThumbUrl as passiveThumbUrlFromModule,
 } from "./bootstrap/passive-view.js";
-import {
-  buildSavedRunSnapshot,
-  clearSavedRunState,
-  hydrateResumeSnapshot,
-  loadSavedRunSnapshotFromStorage,
-  persistSavedRunSnapshot,
-  resetTransientStateAfterResume,
-} from "./bootstrap/run-snapshot.js";
+import { createRuntimeProfileHandlers } from "./bootstrap/runtime-profile.js";
+import { createRuntimeSaveResumeHandlers } from "./bootstrap/runtime-save-resume.js";
 import {
   addLogToRun,
   getRunEventLog as getRunEventLogFromModule,
@@ -244,159 +238,32 @@ export function bootstrapRuntime() {
 
   installModeBridge();
 
-  function clampNumber(value, min, max, fallback) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) {
-      return fallback;
-    }
-    return Math.max(min, Math.min(max, n));
-  }
-
-  function nonNegInt(value, fallback = 0) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) {
-      return fallback;
-    }
-    return Math.max(0, Math.floor(n));
-  }
-
-  function normalizeRelicRarity(rarity) {
-    return normalizeRelicRarityFromDomain(rarity, RELIC_RARITY_META);
-  }
-
-  function relicRarityMeta(relic) {
-    return getRelicRarityMetaFromDomain(relic, RELIC_RARITY_META);
-  }
-
-  function profileCollectionCount(profile) {
-    return countCollectedCopies(profile?.relicCollection);
-  }
-
-  function profileDistinctCollectionCount(profile) {
-    return countDistinctCollected(profile?.relicCollection);
-  }
-
-  function unlockProgressFor(relic, profile = state.profile) {
-    if (!relic || !relic.unlock) {
-      return {
-        unlocked: true,
-        current: 1,
-        target: 1,
-        label: "Unlocked by default",
-      };
-    }
-
-    const req = relic.unlock;
-    const target = Math.max(1, nonNegInt(req.min, 1));
-    const totals = profile?.totals || {};
-    let current = 0;
-    if (req.key === "distinctRelics") {
-      current = profileDistinctCollectionCount(profile);
-    } else if (req.key === "relicCopies") {
-      current = profileCollectionCount(profile);
-    } else if (Object.prototype.hasOwnProperty.call(totals, req.key)) {
-      current = nonNegInt(totals[req.key], 0);
-    }
-    const label = typeof req.label === "string" && req.label.trim().length > 0 ? req.label.trim() : `Reach ${target} ${req.key}`;
-    return {
-      unlocked: current >= target,
-      current,
-      target,
-      label,
-    };
-  }
-
-  function isRelicUnlocked(relic, profile = state.profile) {
-    return unlockProgressFor(relic, profile).unlocked;
-  }
-
-  function relicUnlockLabel(relic, profile = state.profile) {
-    const progress = unlockProgressFor(relic, profile);
-    if (progress.unlocked) {
-      return "Unlocked";
-    }
-    return `${progress.label} (${progress.current}/${progress.target})`;
-  }
-
-  function mergePlayerStats(statsLike) {
-    const merged = defaultPlayerStats();
-    if (!statsLike || typeof statsLike !== "object") {
-      return merged;
-    }
-
-    for (const key of Object.keys(merged)) {
-      const candidate = Number(statsLike[key]);
-      if (Number.isFinite(candidate)) {
-        merged[key] = candidate;
-      }
-    }
-
-    merged.goldMultiplier = Math.max(0.5, merged.goldMultiplier);
-    merged.critChance = Math.max(0, Math.min(0.6, merged.critChance));
-    merged.bustGuardPerEncounter = nonNegInt(merged.bustGuardPerEncounter, 1);
-    merged.luckyStart = nonNegInt(merged.luckyStart, 0);
-    merged.flatDamage = Math.min(14, merged.flatDamage);
-    merged.block = Math.min(10, merged.block);
-    merged.goldMultiplier = Math.min(2.35, merged.goldMultiplier);
-
-    return merged;
-  }
-
-  function normalizeProfile(profileLike) {
-    const base = createProfile();
-    if (!profileLike || typeof profileLike !== "object") {
-      return base;
-    }
-
-    if (profileLike.totals && typeof profileLike.totals === "object") {
-      for (const key of Object.keys(base.totals)) {
-        base.totals[key] = nonNegInt(profileLike.totals[key], base.totals[key]);
-      }
-    }
-
-    if (profileLike.relicCollection && typeof profileLike.relicCollection === "object") {
-      for (const [id, count] of Object.entries(profileLike.relicCollection)) {
-        if (typeof id === "string" && id.length > 0) {
-          base.relicCollection[id] = nonNegInt(count, 0);
-        }
-      }
-    }
-
-    if (Array.isArray(profileLike.runs)) {
-      base.runs = profileLike.runs
-        .slice(0, MAX_RUN_HISTORY)
-        .map((entry) => ({
-          at: typeof entry?.at === "number" ? entry.at : Date.now(),
-          outcome: entry?.outcome === "victory" ? "victory" : "defeat",
-          floor: nonNegInt(entry?.floor, 1),
-          room: nonNegInt(entry?.room, 1),
-          enemiesDefeated: nonNegInt(entry?.enemiesDefeated, 0),
-          hands: nonNegInt(entry?.hands, 0),
-          chips: nonNegInt(entry?.chips, 0),
-        }));
-    }
-
-    return base;
-  }
-
-  function loadProfile() {
-    const raw = safeGetStorage(STORAGE_KEYS.profile);
-    if (!raw) {
-      return createProfile();
-    }
-    try {
-      return normalizeProfile(JSON.parse(raw));
-    } catch {
-      return createProfile();
-    }
-  }
-
-  function saveProfile() {
-    if (!state.profile) {
-      return;
-    }
-    safeSetStorage(STORAGE_KEYS.profile, JSON.stringify(state.profile));
-  }
+  const runtimeProfileHandlers = createRuntimeProfileHandlers({
+    state,
+    createProfile,
+    defaultPlayerStats,
+    maxRunHistory: MAX_RUN_HISTORY,
+    storageKeys: STORAGE_KEYS,
+    safeGetStorage,
+    safeSetStorage,
+    countCollectedCopies,
+    countDistinctCollected,
+    normalizeRelicRarityFromDomain,
+    getRelicRarityMetaFromDomain,
+    relicRarityMetaTable: RELIC_RARITY_META,
+  });
+  const {
+    clampNumber,
+    nonNegInt,
+    normalizeRelicRarity,
+    relicRarityMeta,
+    unlockProgressFor,
+    isRelicUnlocked,
+    relicUnlockLabel,
+    mergePlayerStats,
+    loadProfile,
+    saveProfile,
+  } = runtimeProfileHandlers;
 
   function sanitizeCard(cardLike) {
     return sanitizeCardFromModule(cardLike, { ranks: RANKS, suits: SUITS });
@@ -430,86 +297,38 @@ export function bootstrapRuntime() {
     });
   }
 
-  function clearSavedRun() {
-    clearSavedRunState({
-      safeRemoveStorage,
-      storageKey: STORAGE_KEYS.run,
-      state,
-    });
-  }
-
-  function saveRunSnapshot() {
-    const snapshot = buildSavedRunSnapshot({
-      state,
-      serializeShopStock,
-    });
-    if (!snapshot) {
-      clearSavedRun();
-      return;
-    }
-    persistSavedRunSnapshot({
-      safeSetStorage,
-      storageKey: STORAGE_KEYS.run,
-      snapshot,
-    });
-    state.savedRunSnapshot = snapshot;
-  }
-
-  function loadSavedRunSnapshot() {
-    return loadSavedRunSnapshotFromStorage({
-      safeGetStorage,
-      storageKey: STORAGE_KEYS.run,
-    });
-  }
-
-  function resumeSavedRun() {
-    const snapshot = state.savedRunSnapshot || loadSavedRunSnapshot();
-    if (!snapshot) {
-      return false;
-    }
-
-    const hydrated = hydrateResumeSnapshot({
-      snapshot,
-      sanitizeRun,
-      sanitizeEncounter,
-      relicById: RELIC_BY_ID,
-      hydrateShopStock,
-      generateCampRelicDraftStock,
-      nonNegInt,
-    });
-    if (!hydrated) {
-      clearSavedRun();
-      return false;
-    }
-
-    state.run = hydrated.run;
-    state.encounter = hydrated.encounter;
-    state.mode = hydrated.mode;
-    state.rewardOptions = hydrated.rewardOptions;
-    state.shopStock = hydrated.shopStock;
-    state.selectionIndex = hydrated.selectionIndex;
-    if (hydrated.introActive) {
-      state.announcement = "";
-      state.announcementTimer = 0;
-      state.announcementDuration = 0;
-    } else {
-      setAnnouncement("Run resumed.", 1.8);
-    }
-    resetTransientStateAfterResume(state);
-    state.savedRunSnapshot = snapshot;
-    updateProfileBest(hydrated.run);
-    unlockAudio();
-    playUiSfx("confirm");
-    resizeCanvas();
-    return true;
-  }
-
   function updateProfileBest(run) {
     updateProfileBestFromModule({
       profile: state.profile,
       run,
     });
   }
+
+  const runtimeSaveResumeHandlers = createRuntimeSaveResumeHandlers({
+    state,
+    storageKeys: STORAGE_KEYS,
+    safeGetStorage,
+    safeSetStorage,
+    safeRemoveStorage,
+    serializeShopStock,
+    sanitizeRun,
+    sanitizeEncounter,
+    relicById: RELIC_BY_ID,
+    hydrateShopStock,
+    getGenerateCampRelicDraftStockFn: () => generateCampRelicDraftStock,
+    nonNegInt,
+    setAnnouncementFn: setAnnouncement,
+    updateProfileBestFn: updateProfileBest,
+    unlockAudioFn: () => unlockAudio(),
+    playUiSfxFn: (cue) => playUiSfx(cue),
+    resizeCanvasFn: resizeCanvas,
+  });
+  const {
+    clearSavedRun,
+    saveRunSnapshot,
+    loadSavedRunSnapshot,
+    resumeSavedRun,
+  } = runtimeSaveResumeHandlers;
 
   function finalizeRun(outcome) {
     if (!state.profile || !state.run) {

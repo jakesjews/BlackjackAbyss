@@ -6,7 +6,7 @@
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
-- Last Updated: 2026-02-21 17:18:27 EST
+- Last Updated: 2026-02-21 17:26:28 EST
 
 ## Current Focus
 
@@ -59,6 +59,10 @@
 - Extracted runtime startup orchestration into `src/engine/runtime/bootstrap/runtime-startup.js` and reduced bootstrap final boot wiring to a single delegation call with dedicated unit tests.
 - Collapsed wrapper-heavy runtime delegates in `bootstrap.js` by binding directly to handler/module methods (audio, combat impact, encounter lifecycle, combat turn actions, reward/shop handlers), preserving only required forward-reference wrappers.
 - Fixed a persistence regression introduced during wrapper collapse by restoring direct bindings for resume-hydration helpers (`generateCampRelicDraftStock`, etc.) used by `resumeSavedRun`.
+- Extracted profile/stat normalization + profile persistence helpers into `src/engine/runtime/bootstrap/runtime-profile.js` and replaced inlined bootstrap logic with a handler module.
+- Extracted saved-run persistence/resume orchestration into `src/engine/runtime/bootstrap/runtime-save-resume.js` and replaced inlined bootstrap logic with a handler module.
+- Added dedicated unit coverage for both new modules in `src/engine/runtime/__tests__/runtime-profile.test.mjs` and `src/engine/runtime/__tests__/runtime-save-resume.test.mjs`.
+- Reduced `src/engine/runtime/bootstrap.js` from 1293 lines to 1112 lines in this slice.
 
 ## Next Up
 
