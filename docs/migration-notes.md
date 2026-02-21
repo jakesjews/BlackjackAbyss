@@ -15,16 +15,19 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Scene runtime/bridge access normalized via `src/engine/scenes/runtime-bridge.js`.
 - Dead runtime audio shim removed (`src/engine/runtime/audio/audio-engine.js`, `MUSIC_STEP_SECONDS`, `audio.stepTimer`, `audio.stepIndex`).
 - Broken balance probe tooling removed temporarily.
-- Added acceptance test harness with one-hand fast-path coverage for reward/shop/persistence surfaces.
+- Added acceptance test harness with one-hand core/camp/persistence coverage.
 - Added test-only economy seed flag for acceptance camp-buy scenarios (`window.__ABYSS_TEST_FLAGS__.economy.startingGold`).
+- Removed obsolete fast-path test controls from runtime (`window.__ABYSS_TEST_FLAGS__.fastPath.*`).
+- Removed dormant legacy canvas draw pipeline from runtime bootstrap (Phaser scenes are renderer of record).
+- Removed dormant legacy DOM/canvas input fallback wiring from runtime bootstrap.
+- Added bootstrap helper modules under `src/engine/runtime/bootstrap/*` for API wiring, lifecycle, audio/listeners, combat transition shaping, and test-hook publication.
 - Replaced procedural generated BGM with MP3-backed runtime soundtrack.
 - Added GitHub Actions CI workflow with required `quality-gate` and non-required smoke job.
 
 ## Transitional / Still Present
 
-- `src/engine/legacy/legacy-runtime-adapter.js` remains as an integration seam for bridge/input flow.
-- Some legacy-oriented naming and pathways remain inside runtime bootstrap for compatibility while parity is maintained.
-- One-hand fast-path controls are present in runtime for non-production acceptance execution only.
+- `src/engine/legacy/legacy-runtime-adapter.js` remains as an integration seam for bridge/tick flow.
+- `src/engine/runtime/bootstrap.js` is still the largest runtime file and continues to be the next extraction target.
 - Test-only economy seed controls are present in runtime for non-production acceptance execution only.
 
 ## Fully Migrated Position
@@ -36,25 +39,8 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 ## Deferred / Future Work
 
 - Reintroduce a reliable balance probe with bounded execution and cleanup guarantees.
-- Continue reducing transitional legacy canvas surfaces only after parity checks.
-- Consider moving additional runtime concerns (audio + test controls) into dedicated runtime modules once bootstrap shrink pass starts.
-
-## Legacy Canvas Call Graph (Prepared for Next Removal Pass)
-
-Current guard in `src/engine/runtime/bootstrap.js`:
-
-1. `render()`
-2. `if (isExternalModeRendering()) return;`
-
-Legacy draw path only executes when external mode rendering is false:
-
-- `drawBackground()`
-- `drawMenu()` / `drawMenuParticles()` for `menu`/`collection`
-- `drawHud()` + `drawEncounter()` for run HUD/gameplay
-- `drawRewardScreen()` for `reward`
-- `drawShopScreen()` for `shop`
-- `drawEndOverlay()` for `gameover`/`victory`
-- `drawEffects()` + `drawFlashOverlays()`
+- Continue extracting remaining runtime concerns from `bootstrap.js` into module files.
+- Re-evaluate adapter removal once scene/runtime bridge parity remains stable across acceptance and smoke gates.
 
 ## Cleanup Guardrails
 

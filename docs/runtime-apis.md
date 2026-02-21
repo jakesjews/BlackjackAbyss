@@ -77,19 +77,16 @@ Published during runtime bootstrap:
 
 ## Test-Only Runtime Controls (Non-Production)
 
-Used by acceptance tests to run deterministic progression and economy scenarios:
+Used by acceptance tests to run deterministic economy scenarios:
 
 - `window.__ABYSS_TEST_FLAGS__`
-- `window.__ABYSS_TEST_FLAGS__.fastPath.enabled` (`boolean`)
-- `window.__ABYSS_TEST_FLAGS__.fastPath.afterHands` (`number`, default `1`)
-- `window.__ABYSS_TEST_FLAGS__.fastPath.target` (`"none" | "reward" | "shop"`)
 - `window.__ABYSS_TEST_FLAGS__.economy.startingGold` (`number`, default `0`)
 
 Notes:
 
 - These controls are ignored in production builds.
 - Default behavior with no flags remains normal gameplay flow.
-- Acceptance camp buy tests now prefer seeded chips (`economy.startingGold`) instead of forcing camp mode transitions.
+- Acceptance tests follow natural mode transitions and may seed chips with `economy.startingGold` to exercise camp buy paths quickly.
 - Scene bridge method names and global test hooks are unchanged.
 
 Hook publisher source:

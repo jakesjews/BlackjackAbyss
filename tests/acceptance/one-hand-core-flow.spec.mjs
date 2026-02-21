@@ -14,10 +14,8 @@ describe("acceptance: one-hand core flow", () => {
     await stopAcceptanceServer();
   });
 
-  test("plays through one hand with fast-path disabled and keeps runtime coherent", async () => {
-    const session = await createAcceptanceSession({
-      fastPath: { enabled: false, afterHands: 1, target: "none" },
-    });
+  test("plays through one hand in normal progression and keeps runtime coherent", async () => {
+    const session = await createAcceptanceSession();
     try {
       const initialState = await readState(session.page);
       expect(initialState.mode).toBe("menu");

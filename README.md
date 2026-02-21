@@ -34,6 +34,7 @@ npm run start
 - Phaser scenes in `src/engine/scenes/*` are the renderer/UI state machine.
 - Runtime modules in `src/engine/runtime/*` own gameplay state, progression, persistence, and bridge APIs.
 - `src/engine/runtime/bootstrap.js` registers scene-facing APIs and test hooks.
+- `src/engine/runtime/bootstrap/*` contains extracted runtime helpers (API registration, lifecycle, audio/listeners, test hooks).
 - `src/engine/app.js` exposes a minimal runtime seam (`legacyAdapter` + Phaser game instance) to scenes.
 
 ## Controls
@@ -89,7 +90,7 @@ Storage keys:
 ## Test Commands
 
 - `npm run test:unit`: fast vitest coverage for extracted runtime logic modules.
-- `npm run test:acceptance`: Playwright acceptance suite (one-hand core flow + forced reward/shop + persistence).
+- `npm run test:acceptance`: Playwright acceptance suite (one-hand core flow + natural camp/shop progression + seeded economy + persistence).
 - `npm run test:smoke`: Playwright smoke flow (desktop/mobile snapshots and bridge checks).
 
 ## Build / Deploy

@@ -21,10 +21,8 @@ describe("acceptance: persistence + resume", () => {
     await stopAcceptanceServer();
   });
 
-  test("save/resume works with fast-path disabled", async () => {
-    const session = await createAcceptanceSession({
-      fastPath: { enabled: false, afterHands: 1, target: "none" },
-    });
+  test("save/resume works with default progression", async () => {
+    const session = await createAcceptanceSession();
     try {
       await menuAction(session.page, "startRun");
       const playingMode = await waitForMode(session.page, "playing", { maxTicks: 120, stepMs: 130 });

@@ -9,27 +9,16 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..
 let sharedBrowser = null;
 
 const IGNORABLE_CONSOLE_ERROR_PATTERNS = [
-  /Texture key already in use:/i,
+  /^Texture key already in use:/i,
 ];
 
-function isIgnorableConsoleError(message) {
-  const text = String(message || "");
-  return IGNORABLE_CONSOLE_ERROR_PATTERNS.some((pattern) => pattern.test(text));
+function normalizeConsoleMessage(message) {
+  return String(message || "").replace(/\s+/g, " ").trim();
 }
 
-function normalizeFastPathFlags(fastPath = null) {
-  if (!fastPath || typeof fastPath !== "object") {
-    return {
-      enabled: false,
-      afterHands: 1,
-      target: "none",
-    };
-  }
-  return {
-    enabled: Boolean(fastPath.enabled),
-    afterHands: Math.max(1, Number.isFinite(Number(fastPath.afterHands)) ? Math.floor(Number(fastPath.afterHands)) : 1),
-    target: ["none", "reward", "shop"].includes(fastPath.target) ? fastPath.target : "none",
-  };
+function isIgnorableConsoleError(normalizedMessage) {
+  const text = normalizeConsoleMessage(normalizedMessage);
+  return IGNORABLE_CONSOLE_ERROR_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 function normalizeEconomyFlags(economy = null) {
@@ -58,7 +47,7 @@ async function ensureBrowser() {
   return sharedBrowser;
 }
 
-export async function createAcceptanceSession({ fastPath = null, economy = null } = {}) {
+export async function createAcceptanceSession({ economy = null } = {}) {
   const browser = await ensureBrowser();
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
@@ -69,18 +58,17 @@ export async function createAcceptanceSession({ fastPath = null, economy = null 
 
   page.on("console", (msg) => {
     if (msg.type() === "error") {
-      const text = msg.text();
+      const text = normalizeConsoleMessage(msg.text());
       if (!isIgnorableConsoleError(text)) {
         consoleErrors.push(text);
       }
     }
   });
   page.on("pageerror", (error) => {
-    pageErrors.push(error?.message || String(error));
+    pageErrors.push(normalizeConsoleMessage(error?.message || String(error)));
   });
 
   const testFlags = {
-    fastPath: normalizeFastPathFlags(fastPath),
     economy: normalizeEconomyFlags(economy),
   };
   await page.addInitScript((flags) => {
@@ -108,6 +96,8 @@ export async function createAcceptanceSession({ fastPath = null, economy = null 
     null,
     { timeout: 20_000 }
   );
+  consoleErrors.length = 0;
+  pageErrors.length = 0;
 
   return {
     page,

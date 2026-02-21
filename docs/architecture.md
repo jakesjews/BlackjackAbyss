@@ -5,7 +5,7 @@
 - Phaser 3 is the host app and renderer of record.
 - Phaser scenes are the active presentation and input layer.
 - Runtime bootstrap and runtime modules are the gameplay/state engine.
-- Raw-canvas and legacy pathways are transitional compatibility surfaces, not the primary rendering model.
+- Legacy raw-canvas rendering paths have been removed from active runtime execution.
 
 ## System Overview
 
@@ -14,7 +14,7 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - App bootstrap: `src/main.js`
 - Phaser host/app setup: `src/engine/app.js`
 - Runtime bootstrap: `src/engine/runtime/bootstrap.js`
-- Runtime modules: `src/engine/runtime/{state,domain,persistence,bridge,testing}/*`
+- Runtime modules: `src/engine/runtime/{state,domain,persistence,bridge,testing,bootstrap}/*`
 - Scene layer: `src/engine/scenes/*`
 
 ## Boot Flow
@@ -65,10 +65,10 @@ Write path:
 
 ## Legacy Boundary
 
-- `src/engine/legacy/legacy-runtime-adapter.js` remains as a bridge/adapter seam used by app/runtime integration.
+- `src/engine/legacy/legacy-runtime-adapter.js` remains as a bridge/tick adapter seam used by app/runtime integration.
 - Legacy compatibility should only be removed after parity is verified in Phaser-first flows.
 
 ## Verification Gate
 
 - Refactors should clear: `test:unit`, `test:acceptance`, `test:smoke`, and `build`.
-- Acceptance tests use one-hand flows plus non-production fast-path controls to validate reward/shop surfaces without long runs.
+- Acceptance tests use one-hand core + natural camp flows, with non-production economy seeding for faster buy-path verification.
