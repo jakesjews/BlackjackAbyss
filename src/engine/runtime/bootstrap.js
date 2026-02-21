@@ -1797,6 +1797,20 @@ export function bootstrapRuntime() {
     };
   }
 
+  function applyTestEconomyToNewRun(run) {
+    if (!run || !run.player || !runtimeTestFlags?.economy) {
+      return;
+    }
+    const seededGold = Math.max(0, nonNegInt(runtimeTestFlags.economy.startingGold, 0));
+    if (seededGold <= 0) {
+      return;
+    }
+    if (run.player.gold < seededGold) {
+      run.player.gold = seededGold;
+      addLog(`Test mode seeded chips: ${seededGold}.`);
+    }
+  }
+
   function roomType(room, roomsPerFloor) {
     return resolveRoomType(room, roomsPerFloor);
   }
@@ -3608,6 +3622,7 @@ export function bootstrapRuntime() {
     }
     state.autosaveTimer = 0;
     state.run = createRun();
+    applyTestEconomyToNewRun(state.run);
     state.run.player.hp = state.run.player.maxHp;
     state.rewardOptions = [];
     state.shopStock = [];

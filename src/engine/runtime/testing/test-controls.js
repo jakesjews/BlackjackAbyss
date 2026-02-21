@@ -21,6 +21,13 @@ function normalizeFastPath(rawFastPath) {
   };
 }
 
+function normalizeEconomy(rawEconomy) {
+  const source = rawEconomy && typeof rawEconomy === "object" ? rawEconomy : {};
+  return {
+    startingGold: Math.max(0, asNonNegativeInteger(source.startingGold, 0)),
+  };
+}
+
 export function readRuntimeTestFlags(globalObject = globalThis) {
   const isProduction = Boolean(import.meta.env?.PROD);
   if (isProduction) {
@@ -30,12 +37,16 @@ export function readRuntimeTestFlags(globalObject = globalThis) {
         afterHands: 1,
         target: "none",
       },
+      economy: {
+        startingGold: 0,
+      },
     };
   }
 
   const raw = globalObject && typeof globalObject === "object" ? globalObject.__ABYSS_TEST_FLAGS__ : null;
   const source = raw && typeof raw === "object" ? raw : {};
   const fastPath = normalizeFastPath(source.fastPath);
+  const economy = normalizeEconomy(source.economy);
   if (!fastPath.enabled || fastPath.target === "none") {
     return {
       fastPath: {
@@ -43,7 +54,8 @@ export function readRuntimeTestFlags(globalObject = globalThis) {
         afterHands: fastPath.afterHands,
         target: "none",
       },
+      economy,
     };
   }
-  return { fastPath };
+  return { fastPath, economy };
 }

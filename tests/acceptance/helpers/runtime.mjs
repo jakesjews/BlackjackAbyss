@@ -174,6 +174,12 @@ export async function playSingleHand(page, { stepMs = 170, maxSteps = 220 } = {}
     } else if (runSnapshot.status?.canDeal) {
       await runAction(page, "deal");
       await advanceTime(page, stepMs);
+    } else if (
+      Number(runSnapshot.enemy?.hp || 0) <= 0 &&
+      (runSnapshot.phase === "done" || runSnapshot.transition?.waiting)
+    ) {
+      await runAction(page, "startEnemyDefeatTransition");
+      await advanceTime(page, stepMs);
     } else {
       await advanceTime(page, stepMs);
     }
@@ -198,6 +204,84 @@ export async function playSingleHand(page, { stepMs = 170, maxSteps = 220 } = {}
     totalHands: Number(endSnapshot?.run?.totalHands || 0),
     startHands,
     timedOut: true,
+  };
+}
+
+export async function playUntilMode(page, modes, { maxHands = 8, stepMs = 170, maxStepsPerHand = 220 } = {}) {
+  const targets = new Set(listify(modes));
+  let lastState = await readState(page);
+  if (targets.has(lastState.mode)) {
+    return {
+      mode: lastState.mode,
+      timedOut: false,
+      handsPlayed: 0,
+      state: lastState,
+    };
+  }
+
+  for (let hand = 0; hand < maxHands; hand += 1) {
+    const handResult = await playSingleHand(page, {
+      stepMs,
+      maxSteps: maxStepsPerHand,
+    });
+    lastState = await readState(page);
+    if (targets.has(lastState.mode)) {
+      return {
+        mode: lastState.mode,
+        timedOut: false,
+        handsPlayed: hand + 1,
+        handResult,
+        state: lastState,
+      };
+    }
+    if (handResult.timedOut) {
+      return {
+        mode: lastState.mode,
+        timedOut: true,
+        handsPlayed: hand + 1,
+        handResult,
+        state: lastState,
+      };
+    }
+    if (lastState.mode === "gameover" || lastState.mode === "victory") {
+      return {
+        mode: lastState.mode,
+        timedOut: false,
+        handsPlayed: hand + 1,
+        handResult,
+        state: lastState,
+      };
+    }
+
+    for (let settle = 0; settle < 40; settle += 1) {
+      await advanceTime(page, stepMs);
+      lastState = await readState(page);
+      if (targets.has(lastState.mode)) {
+        return {
+          mode: lastState.mode,
+          timedOut: false,
+          handsPlayed: hand + 1,
+          handResult,
+          state: lastState,
+        };
+      }
+      if (lastState.mode === "gameover" || lastState.mode === "victory") {
+        return {
+          mode: lastState.mode,
+          timedOut: false,
+          handsPlayed: hand + 1,
+          handResult,
+          state: lastState,
+        };
+      }
+    }
+  }
+
+  return {
+    mode: lastState.mode,
+    timedOut: true,
+    handsPlayed: maxHands,
+    state: lastState,
   };
 }
 

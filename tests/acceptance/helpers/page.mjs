@@ -23,6 +23,17 @@ function normalizeFastPathFlags(fastPath = null) {
   };
 }
 
+function normalizeEconomyFlags(economy = null) {
+  if (!economy || typeof economy !== "object") {
+    return {
+      startingGold: 0,
+    };
+  }
+  return {
+    startingGold: Math.max(0, Number.isFinite(Number(economy.startingGold)) ? Math.floor(Number(economy.startingGold)) : 0),
+  };
+}
+
 function sanitizeLabel(value) {
   return String(value || "acceptance")
     .toLowerCase()
@@ -38,7 +49,7 @@ async function ensureBrowser() {
   return sharedBrowser;
 }
 
-export async function createAcceptanceSession({ fastPath = null } = {}) {
+export async function createAcceptanceSession({ fastPath = null, economy = null } = {}) {
   const browser = await ensureBrowser();
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
@@ -58,6 +69,7 @@ export async function createAcceptanceSession({ fastPath = null } = {}) {
 
   const testFlags = {
     fastPath: normalizeFastPathFlags(fastPath),
+    economy: normalizeEconomyFlags(economy),
   };
   await page.addInitScript((flags) => {
     window.__ABYSS_TEST_FLAGS__ = flags;

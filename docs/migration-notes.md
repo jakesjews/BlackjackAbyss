@@ -16,6 +16,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Dead runtime audio shim removed (`src/engine/runtime/audio/audio-engine.js`, `MUSIC_STEP_SECONDS`, `audio.stepTimer`, `audio.stepIndex`).
 - Broken balance probe tooling removed temporarily.
 - Added acceptance test harness with one-hand fast-path coverage for reward/shop/persistence surfaces.
+- Added test-only economy seed flag for acceptance camp-buy scenarios (`window.__ABYSS_TEST_FLAGS__.economy.startingGold`).
 - Replaced procedural generated BGM with MP3-backed runtime soundtrack.
 - Added GitHub Actions CI workflow with required `quality-gate` and non-required smoke job.
 
@@ -24,6 +25,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - `src/engine/legacy/legacy-runtime-adapter.js` remains as an integration seam for bridge/input flow.
 - Some legacy-oriented naming and pathways remain inside runtime bootstrap for compatibility while parity is maintained.
 - One-hand fast-path controls are present in runtime for non-production acceptance execution only.
+- Test-only economy seed controls are present in runtime for non-production acceptance execution only.
 
 ## Fully Migrated Position
 

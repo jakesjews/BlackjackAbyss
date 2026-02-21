@@ -5,7 +5,7 @@
 - Phaser-first runtime migration is active in production with acceptance tests in place as a refactor gate.
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
-- Last Updated: 2026-02-21 01:29:41 EST
+- Last Updated: 2026-02-21 01:39:24 EST
 
 ## Current Focus
 
@@ -24,6 +24,7 @@
 - Replaced procedural generated music with MP3 runtime BGM and retained prominent SFX mixing.
 - Added GitHub Actions CI (`quality-gate` + scheduled/main smoke artifact job).
 - Simplified Phaser host/runtime seam by removing dead app service layer and normalizing scene bridge access.
+- Added test-only economy seed control (`window.__ABYSS_TEST_FLAGS__.economy.startingGold`) and updated acceptance camp coverage to use seeded chips.
 
 ## Next Up
 

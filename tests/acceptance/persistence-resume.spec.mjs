@@ -66,9 +66,10 @@ describe("acceptance: persistence + resume", () => {
     }
   });
 
-  test("save/resume works with fast-path enabled", async () => {
+  test("save/resume works with seeded test chips", async () => {
+    const startingGold = 280;
     const session = await createAcceptanceSession({
-      fastPath: { enabled: true, afterHands: 1, target: "shop" },
+      economy: { startingGold },
     });
     try {
       await menuAction(session.page, "startRun");
@@ -77,11 +78,11 @@ describe("acceptance: persistence + resume", () => {
 
       const handResult = await playSingleHand(session.page);
       expect(handResult.timedOut).toBe(false);
-      await waitForMode(session.page, "shop", { maxTicks: 120, stepMs: 130 });
 
       const storedBefore = await readStoredRunSnapshot(session.page);
       expect(storedBefore?.mode).toBeTruthy();
       expect(storedBefore?.run?.totalHands).toBeGreaterThanOrEqual(1);
+      expect(Number(storedBefore?.run?.player?.gold || 0)).toBeGreaterThanOrEqual(startingGold);
 
       const homeMode = await goHomeFromActiveMode(session.page);
       expect(homeMode).toBe("menu");
@@ -103,7 +104,7 @@ describe("acceptance: persistence + resume", () => {
 
       expectNoRuntimeErrors(session);
     } catch (error) {
-      const artifactDir = await captureFailureArtifacts(session, "persistence-resume-with-flags");
+      const artifactDir = await captureFailureArtifacts(session, "persistence-resume-seeded-economy");
       if (artifactDir) {
         error.message = `${error.message}\nAcceptance artifacts: ${artifactDir}`;
       }
