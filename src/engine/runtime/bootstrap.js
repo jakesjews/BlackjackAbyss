@@ -87,6 +87,8 @@ import { buildPhaserOverlaySnapshot as buildPhaserOverlaySnapshotFromModule } fr
 import { createRuntimeLoop as createRuntimeLoopFromModule } from "./bootstrap/runtime-loop.js";
 import { bindRuntimeLifecycle as bindRuntimeLifecycleFromModule } from "./bootstrap/runtime-lifecycle.js";
 import { createRuntimeAudio as createRuntimeAudioFromModule } from "./bootstrap/runtime-audio.js";
+import { createEnemyAvatarLoader as createEnemyAvatarLoaderFromModule } from "./bootstrap/enemy-avatars.js";
+import { initializeRuntimeStartup as initializeRuntimeStartupFromModule } from "./bootstrap/runtime-startup.js";
 import { createEncounterLifecycleHandlers as createEncounterLifecycleHandlersFromModule } from "./bootstrap/encounter-lifecycle.js";
 import { createCombatImpactHandlers as createCombatImpactHandlersFromModule } from "./bootstrap/combat-impact.js";
 import {
@@ -195,63 +197,12 @@ export function bootstrapRuntime() {
   ];
   const CARD_SOURCES = ["/audio/soundbites/card.wav"];
   const MUSIC_TRACK_SOURCES = ["/audio/music/blackjack.mp3"];
-  const ENEMY_AVATAR_SOURCE_ROOTS = ["/images/avatars"];
-  const enemyAvatarCache = new Map();
-
-  function sanitizeEnemyAvatarKey(name) {
-    if (typeof name !== "string") {
-      return "";
-    }
-    return name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
-  }
-
-  function enemyAvatarSourcesForKey(key) {
-    return ENEMY_AVATAR_SOURCE_ROOTS.map((root) => `${root}/${key}.png`);
-  }
-
-  function ensureEnemyAvatarLoaded(key) {
-    if (!key) {
-      return null;
-    }
-    const cached = enemyAvatarCache.get(key);
-    if (cached && (cached.status === "loading" || cached.status === "ready")) {
-      return cached;
-    }
-
-    const image = new window.Image();
-    image.decoding = "async";
-    const entry = {
-      key,
-      status: "loading",
-      image,
-      sourceIndex: 0,
-    };
-    enemyAvatarCache.set(key, entry);
-    const sources = enemyAvatarSourcesForKey(key);
-
-    const tryNextSource = () => {
-      if (entry.sourceIndex >= sources.length) {
-        entry.status = "error";
-        return;
-      }
-      const src = sources[entry.sourceIndex];
-      image.onload = () => {
-        entry.status = "ready";
-      };
-      image.onerror = () => {
-        entry.sourceIndex += 1;
-        tryNextSource();
-      };
-      image.src = src;
-    };
-
-    tryNextSource();
-    return entry;
-  }
+  const enemyAvatarLoader = createEnemyAvatarLoaderFromModule({
+    globalWindow: window,
+    sourceRoots: ["/images/avatars"],
+  });
+  const sanitizeEnemyAvatarKey = enemyAvatarLoader.sanitizeEnemyAvatarKey;
+  const ensureEnemyAvatarLoaded = enemyAvatarLoader.ensureEnemyAvatarLoaded;
 
   const passiveThumbCache = new Map();
 
@@ -1474,35 +1425,30 @@ export function bootstrapRuntime() {
     });
   }
 
-  state.profile = loadProfile();
-  state.savedRunSnapshot = loadSavedRunSnapshot();
-  registerPhaserMenuActions();
-  registerPhaserRunApi();
-  registerPhaserRewardApi();
-  registerPhaserShopApi();
-  registerPhaserOverlayApi();
-
-  const requestLandscapeLock = createLandscapeLockRequester(window);
-
-  bindRuntimeLifecycleFromModule({
-    bindRuntimeWindowLifecycle,
+  initializeRuntimeStartupFromModule({
+    state,
+    loadProfile,
+    loadSavedRunSnapshot,
+    registerPhaserMenuActions,
+    registerPhaserRunApi,
+    registerPhaserRewardApi,
+    registerPhaserShopApi,
+    registerPhaserOverlayApi,
+    createLandscapeLockRequesterFn: createLandscapeLockRequester,
     globalWindow: window,
     globalDocument: document,
+    bindRuntimeLifecycle: bindRuntimeLifecycleFromModule,
+    bindRuntimeWindowLifecycle,
     unlockAudio,
-    requestLandscapeLock,
     resizeCanvas,
-    state,
     saveRunSnapshot,
     saveProfile,
-  });
-
-  installRuntimeTestHooks({
+    installRuntimeTestHooksFn: installRuntimeTestHooks,
     publishRuntimeTestHooks,
     renderGameToText,
     advanceTime,
+    startRuntimeLoop,
   });
-  requestLandscapeLock();
 
-    startRuntimeLoop();
   })();
 }
