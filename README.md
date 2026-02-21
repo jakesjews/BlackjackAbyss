@@ -10,6 +10,7 @@ Blackjack Abyss is a Phaser 3 app: a roguelike blackjack combat game where Phase
 - Run and profile persistence via browser localStorage.
 - Phaser-first rendering and scene flow, with runtime logic bridged into scenes.
 - Mode-driven action button tray with desktop keyboard shortcut hints.
+- MP3 background soundtrack with SFX-priority mixing so combat/UI sounds stay prominent.
 
 ## Quick Start
 
@@ -82,6 +83,7 @@ Storage keys:
 ## Test Commands
 
 - `npm run test:unit`: fast vitest coverage for extracted runtime logic modules.
+- `npm run test:acceptance`: Playwright acceptance suite (one-hand core flow + forced reward/shop + persistence).
 - `npm run test:smoke`: Playwright smoke flow (desktop/mobile snapshots and bridge checks).
 
 ## Build / Deploy

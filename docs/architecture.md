@@ -33,6 +33,7 @@ Runtime responsibilities:
 - Resolve combat/progression/reward/shop transitions.
 - Persist state and profile snapshots.
 - Expose snapshots and mutating actions via bridge contracts.
+- Own runtime audio behavior (MP3 BGM + SFX mixing policy).
 
 Scene responsibilities:
 
@@ -61,3 +62,8 @@ Write path:
 - `game.js` remains a thin compatibility wrapper that calls runtime bootstrap.
 - `src/engine/legacy/legacy-runtime-adapter.js` remains as a bridge/adapter seam used by app/runtime integration.
 - Legacy compatibility should only be removed after parity is verified in Phaser-first flows.
+
+## Verification Gate
+
+- Refactors should clear: `test:unit`, `test:acceptance`, `test:smoke`, and `build`.
+- Acceptance tests use one-hand flows plus non-production fast-path controls to validate reward/shop surfaces without long runs.

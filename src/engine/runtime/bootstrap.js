@@ -1,7 +1,6 @@
 import { MUSIC_STEP_SECONDS, MAX_RUN_HISTORY, STORAGE_KEYS } from "./constants.js";
 import { createRuntimeState, createProfile, defaultPlayerStats } from "./state/store.js";
 import { loadAudioEnabled, safeGetStorage, safeRemoveStorage, safeSetStorage, saveAudioEnabled } from "./persistence/storage.js";
-import { semitoneToFreq } from "./audio/audio-engine.js";
 import {
   canDoubleDown,
   canSplitHand,
@@ -25,6 +24,7 @@ import {
   assertApiContract,
 } from "./bridge/register-apis.js";
 import { publishRuntimeTestHooks } from "./bridge/snapshots.js";
+import { readRuntimeTestFlags } from "./testing/test-controls.js";
 
 let runtimeBootstrapped = false;
 
@@ -129,6 +129,7 @@ export function bootstrapRuntime() {
     "/audio/soundbites/grunt.ogg",
   ];
   const CARD_SOURCES = ["/audio/soundbites/card.wav"];
+  const MUSIC_TRACK_SOURCES = ["/audio/music/blackjack.mp3"];
   const menuArtImage = new window.Image();
   menuArtImage.decoding = "async";
   const chipIconImage = new window.Image();
@@ -242,12 +243,6 @@ export function bootstrapRuntime() {
     );
   }
   const passiveThumbCache = new Map();
-  const MUSIC_CHORDS = [
-    [0, 3, 7],
-    [2, 5, 9],
-    [3, 7, 10],
-    [5, 8, 12],
-  ];
   const ACTION_ICON_BASE = "/images/icons";
   const ACTION_ICON_FILES = Object.freeze({
     achievements: `${ACTION_ICON_BASE}/achievements.png`,
@@ -1184,6 +1179,7 @@ export function bootstrapRuntime() {
     musicStepSeconds: MUSIC_STEP_SECONDS,
     audioEnabled: loadAudioEnabled(STORAGE_KEYS),
   });
+  const runtimeTestFlags = readRuntimeTestFlags(window);
 
   function installModeBridge() {
     let modeValue = typeof state.mode === "string" ? state.mode : "menu";
@@ -1452,6 +1448,8 @@ export function bootstrapRuntime() {
         : "neutral",
       resolveTimer: clampNumber(encounterLike.resolveTimer, 0, 10, 0),
       handIndex: Math.max(1, nonNegInt(encounterLike.handIndex, 1)),
+      resolvedHands: Math.max(0, nonNegInt(encounterLike.resolvedHands, 0)),
+      fastPathForced: Boolean(encounterLike.fastPathForced),
       doubleDown: Boolean(encounterLike.doubleDown),
       bustGuardTriggered: Boolean(encounterLike.bustGuardTriggered),
       critTriggered: Boolean(encounterLike.critTriggered),
@@ -2646,6 +2644,41 @@ export function bootstrapRuntime() {
     return window.AudioContext || window.webkitAudioContext || null;
   }
 
+  function ensureMusicElement() {
+    if (state.audio.musicElement) {
+      return state.audio.musicElement;
+    }
+    const track = new Audio();
+    track.preload = "auto";
+    track.loop = true;
+    track.volume = 0;
+    track.src = MUSIC_TRACK_SOURCES[state.audio.musicSourceIndex] || MUSIC_TRACK_SOURCES[0];
+    track.addEventListener("error", () => {
+      if (state.audio.musicSourceIndex < MUSIC_TRACK_SOURCES.length - 1) {
+        state.audio.musicSourceIndex += 1;
+        track.src = MUSIC_TRACK_SOURCES[state.audio.musicSourceIndex];
+      }
+    });
+    state.audio.musicElement = track;
+    return track;
+  }
+
+  function musicTargetVolumeForMode(mode) {
+    if (mode === "menu") {
+      return 0.13;
+    }
+    if (mode === "playing") {
+      return 0.17;
+    }
+    return 0.145;
+  }
+
+  function markSfxActivity(weight = 1) {
+    const intensity = Math.max(0.2, Math.min(2, Number(weight) || 1));
+    const duckSeconds = 0.14 + Math.min(0.26, intensity * 0.08);
+    state.audio.musicDuckTimer = Math.max(duckSeconds, Number(state.audio.musicDuckTimer) || 0);
+  }
+
   function ensureAudioGraph() {
     if (state.audio.context) {
       return state.audio.context;
@@ -2684,6 +2717,16 @@ export function bootstrapRuntime() {
     }
     const target = state.audio.enabled ? 0.86 : 0;
     state.audio.masterGain.gain.setTargetAtTime(target, state.audio.context.currentTime, 0.08);
+    const track = ensureMusicElement();
+    if (!track) {
+      return;
+    }
+    if (!state.audio.enabled) {
+      track.volume = 0;
+      if (!track.paused) {
+        track.pause();
+      }
+    }
   }
 
   function unlockAudio() {
@@ -2709,6 +2752,13 @@ export function bootstrapRuntime() {
         }
       }
       syncAudioEnabled();
+      const track = ensureMusicElement();
+      if (track && state.audio.enabled && track.paused) {
+        const playPromise = track.play();
+        if (playPromise && typeof playPromise.catch === "function") {
+          playPromise.catch(() => {});
+        }
+      }
     };
 
     if (context.state !== "running" && state.audio.enabled) {
@@ -2751,7 +2801,8 @@ export function bootstrapRuntime() {
       return;
     }
     const context = state.audio.context;
-    const bus = opts.bus === "music" ? state.audio.musicGain : state.audio.sfxGain;
+    const isMusicBus = opts.bus === "music";
+    const bus = isMusicBus ? state.audio.musicGain : state.audio.sfxGain;
     if (!context || !bus) {
       return;
     }
@@ -2761,6 +2812,9 @@ export function bootstrapRuntime() {
     const release = Math.max(0.012, Number(opts.release) || 0.09);
     const gainLevel = Math.max(0.001, Number(opts.gain) || 0.08);
     const sustainLevel = Math.max(0, Math.min(gainLevel, Number(opts.sustainGain) || gainLevel * 0.72));
+    if (!isMusicBus) {
+      markSfxActivity(Math.max(0.3, gainLevel * 9));
+    }
 
     const osc = context.createOscillator();
     const gain = context.createGain();
@@ -2947,6 +3001,7 @@ export function bootstrapRuntime() {
     if (!canPlayAudio()) {
       return;
     }
+    markSfxActivity(1.25);
     const clips = ensureCardElements();
     if (!Array.isArray(clips) || clips.length === 0) {
       return;
@@ -2969,6 +3024,7 @@ export function bootstrapRuntime() {
     if (!canPlayAudio()) {
       return;
     }
+    markSfxActivity(1.35);
     const clip = ensureGruntElement();
     if (!clip) {
       return;
@@ -2982,64 +3038,32 @@ export function bootstrapRuntime() {
   }
 
   function updateMusic(dt) {
+    const track = ensureMusicElement();
+    if (!track) {
+      return;
+    }
     if (!canPlayAudio()) {
+      track.volume = 0;
+      if (!track.paused) {
+        track.pause();
+      }
       return;
     }
 
-    const context = state.audio.context;
-    if (!context || !state.audio.musicGain) {
-      return;
-    }
-    const calmMode = state.mode === "menu";
-    const tenseMode = state.mode === "playing";
-    const targetMusicGain = calmMode ? 0.12 : tenseMode ? 0.2 : 0.15;
-    state.audio.musicGain.gain.setTargetAtTime(targetMusicGain, context.currentTime, 0.35);
-
-    if (state.audio.lastMusicMode !== state.mode) {
-      state.audio.lastMusicMode = state.mode;
-      state.audio.stepTimer = Math.min(state.audio.stepTimer, MUSIC_STEP_SECONDS * 0.5);
-    }
-
-    state.audio.stepTimer -= dt;
-    while (state.audio.stepTimer <= 0) {
-      state.audio.stepTimer += MUSIC_STEP_SECONDS;
-
-      const step = state.audio.stepIndex++;
-      const bar = Math.floor(step / 16);
-      const beat = step % 16;
-      const chord = MUSIC_CHORDS[bar % MUSIC_CHORDS.length];
-      const base = 116;
-      const bass = chord[0] - 12;
-
-      if (beat % 4 === 0) {
-        playTone(semitoneToFreq(base, bass), 0.16, {
-          type: "triangle",
-          gain: tenseMode ? 0.085 : 0.055,
-          release: 0.1,
-          bus: "music",
-        });
-      }
-
-      if (beat % 2 === 0) {
-        const arp = chord[(Math.floor(beat / 2) + bar) % chord.length] + 12;
-        playTone(semitoneToFreq(base, arp), 0.12, {
-          type: "sine",
-          gain: tenseMode ? 0.05 : 0.035,
-          release: 0.09,
-          bus: "music",
-          detune: beat % 4 === 0 ? 3 : -2,
-        });
-      }
-
-      if (tenseMode && beat % 4 === 2) {
-        playTone(semitoneToFreq(base, chord[2] + 19), 0.07, {
-          type: "square",
-          gain: 0.023,
-          release: 0.05,
-          bus: "music",
-        });
+    if (track.paused) {
+      const playPromise = track.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
       }
     }
+
+    state.audio.musicDuckTimer = Math.max(0, (Number(state.audio.musicDuckTimer) || 0) - dt);
+    const ducking = state.audio.musicDuckTimer > 0 ? 0.4 : 1;
+    const targetVolume = musicTargetVolumeForMode(state.mode) * ducking;
+    const currentVolume = clampNumber(track.volume, 0, 1, 0);
+    const easedVolume = lerp(currentVolume, targetVolume, Math.min(1, Math.max(0, dt * 7.2)));
+    track.volume = clampNumber(easedVolume, 0, 1, targetVolume);
+    state.audio.lastMusicMode = state.mode;
   }
 
   function spawnFloatText(text, x, y, color, opts = {}) {
@@ -3496,6 +3520,8 @@ export function bootstrapRuntime() {
       resolveTimer: 0,
       nextDealPrompted: false,
       handIndex: 1,
+      resolvedHands: 0,
+      fastPathForced: false,
       doubleDown: false,
       bustGuardTriggered: false,
       critTriggered: false,
@@ -3959,6 +3985,69 @@ export function bootstrapRuntime() {
     resolveHand(outcome, pTotal, dTotal);
   }
 
+  function transitionToRewardModeFromFastPath() {
+    if (!state.run) {
+      return false;
+    }
+    state.mode = "reward";
+    state.pendingTransition = null;
+    state.run.shopPurchaseMade = false;
+    state.selectionIndex = 0;
+    state.rewardOptions = generateRewardOptions(3, false);
+    state.shopStock = [];
+    setAnnouncement("Test fast path: reward route enabled.", 1.6);
+    saveRunSnapshot();
+    return true;
+  }
+
+  function transitionToShopModeFromFastPath() {
+    if (!state.run) {
+      return false;
+    }
+    state.mode = "shop";
+    state.run.shopPurchaseMade = false;
+    state.rewardOptions = state.rewardOptions.length > 0 ? state.rewardOptions : generateRewardOptions(3, false);
+    state.selectionIndex = 0;
+    state.shopStock = generateCampRelicDraftStock(state.rewardOptions);
+    if (!state.shopStock.length) {
+      state.shopStock = generateShopStock(3);
+    }
+    state.pendingTransition = null;
+    setAnnouncement("Test fast path: camp route enabled.", 1.6);
+    saveRunSnapshot();
+    return true;
+  }
+
+  function tryApplyFastPathTransition(encounter) {
+    const fastPath = runtimeTestFlags.fastPath;
+    if (!fastPath.enabled || !state.run || state.mode !== "playing" || !encounter) {
+      return false;
+    }
+    if (encounter.fastPathForced) {
+      return false;
+    }
+    const resolvedHands = Math.max(0, nonNegInt(encounter.resolvedHands, 0));
+    if (resolvedHands < fastPath.afterHands) {
+      return false;
+    }
+    encounter.fastPathForced = true;
+    encounter.phase = "done";
+    encounter.resolveTimer = 0;
+    encounter.nextDealPrompted = false;
+    state.handTackles = [];
+    state.pendingTransition = null;
+
+    if (fastPath.target === "reward") {
+      addLog("Test fast path forced reward mode.");
+      return transitionToRewardModeFromFastPath();
+    }
+    if (fastPath.target === "shop") {
+      addLog("Test fast path forced camp mode.");
+      return transitionToShopModeFromFastPath();
+    }
+    return false;
+  }
+
   function resolveHand(outcome, pTotal = handTotal(state.encounter.playerHand).total, dTotal = handTotal(state.encounter.dealerHand).total) {
     if (!state.run || !state.encounter) {
       return;
@@ -4160,7 +4249,11 @@ export function bootstrapRuntime() {
     state.announcementDuration = 0;
     addLog(text);
     run.totalHands += 1;
+    encounter.resolvedHands = nonNegInt(encounter.resolvedHands, 0) + 1;
     updateProfileBest(run);
+    if (tryApplyFastPathTransition(encounter)) {
+      return;
+    }
     finalizeResolveState();
   }
 
@@ -9147,10 +9240,20 @@ export function bootstrapRuntime() {
       if (state.audio.context && state.audio.context.state === "running") {
         state.audio.context.suspend().catch(() => {});
       }
+      if (state.audio.musicElement && !state.audio.musicElement.paused) {
+        state.audio.musicElement.pause();
+      }
       return;
     }
     if (state.audio.enabled && state.audio.started && state.audio.context && state.audio.context.state === "suspended") {
-      state.audio.context.resume().catch(() => {});
+      state.audio.context.resume().then(() => {
+        if (state.audio.musicElement && state.audio.musicElement.paused) {
+          const playPromise = state.audio.musicElement.play();
+          if (playPromise && typeof playPromise.catch === "function") {
+            playPromise.catch(() => {});
+          }
+        }
+      }).catch(() => {});
     }
     requestLandscapeLock();
   });

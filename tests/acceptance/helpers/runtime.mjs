@@ -1,0 +1,214 @@
+const RUN_STORAGE_KEY = "blackjack-abyss.run.v1";
+
+function listify(value) {
+  return Array.isArray(value) ? value : [value];
+}
+
+export async function advanceTime(page, ms = 180) {
+  await page.evaluate(async (delay) => {
+    if (typeof window.advanceTime === "function") {
+      await window.advanceTime(delay);
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }, ms);
+}
+
+export async function readState(page) {
+  const payload = await page.evaluate(() => {
+    if (typeof window.render_game_to_text !== "function") {
+      return "{}";
+    }
+    return window.render_game_to_text();
+  });
+  try {
+    return JSON.parse(payload || "{}");
+  } catch {
+    return {};
+  }
+}
+
+export async function readStoredRunSnapshot(page) {
+  return page.evaluate((runStorageKey) => {
+    try {
+      const raw = window.localStorage.getItem(runStorageKey);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  }, RUN_STORAGE_KEY);
+}
+
+export async function waitForMode(page, modes, { maxTicks = 160, stepMs = 140 } = {}) {
+  const allowed = new Set(listify(modes));
+  for (let i = 0; i < maxTicks; i += 1) {
+    const state = await readState(page);
+    if (allowed.has(state.mode)) {
+      return state.mode;
+    }
+    await advanceTime(page, stepMs);
+  }
+  return null;
+}
+
+export async function readBridgeContracts(page) {
+  return page.evaluate(() => {
+    const bridge = window.__ABYSS_PHASER_BRIDGE__ || null;
+    const extractMethods = (obj) =>
+      obj && typeof obj === "object"
+        ? Object.keys(obj).filter((name) => typeof obj[name] === "function").sort()
+        : [];
+
+    const menuApi = bridge && typeof bridge.getMenuActions === "function" ? bridge.getMenuActions() : null;
+    const runApi = bridge && typeof bridge.getRunApi === "function" ? bridge.getRunApi() : null;
+    const rewardApi = bridge && typeof bridge.getRewardApi === "function" ? bridge.getRewardApi() : null;
+    const shopApi = bridge && typeof bridge.getShopApi === "function" ? bridge.getShopApi() : null;
+    const overlayApi = bridge && typeof bridge.getOverlayApi === "function" ? bridge.getOverlayApi() : null;
+
+    return {
+      phaserReady: Boolean(window.__ABYSS_PHASER_GAME__),
+      bridgeReady: Boolean(bridge),
+      menuMethods: extractMethods(menuApi),
+      runMethods: extractMethods(runApi),
+      rewardMethods: extractMethods(rewardApi),
+      shopMethods: extractMethods(shopApi),
+      overlayMethods: extractMethods(overlayApi),
+      hasRenderHook: typeof window.render_game_to_text === "function",
+      hasAdvanceHook: typeof window.advanceTime === "function",
+    };
+  });
+}
+
+export async function menuAction(page, method, ...args) {
+  return page.evaluate(
+    ({ methodName, methodArgs }) => {
+      const api = window.__ABYSS_PHASER_BRIDGE__?.getMenuActions?.();
+      if (!api || typeof api[methodName] !== "function") {
+        return null;
+      }
+      return api[methodName](...methodArgs);
+    },
+    { methodName: method, methodArgs: args }
+  );
+}
+
+export async function runAction(page, method, ...args) {
+  return page.evaluate(
+    ({ methodName, methodArgs }) => {
+      const api = window.__ABYSS_PHASER_BRIDGE__?.getRunApi?.();
+      if (!api || typeof api[methodName] !== "function") {
+        return null;
+      }
+      return api[methodName](...methodArgs);
+    },
+    { methodName: method, methodArgs: args }
+  );
+}
+
+export async function rewardAction(page, method, ...args) {
+  return page.evaluate(
+    ({ methodName, methodArgs }) => {
+      const api = window.__ABYSS_PHASER_BRIDGE__?.getRewardApi?.();
+      if (!api || typeof api[methodName] !== "function") {
+        return null;
+      }
+      return api[methodName](...methodArgs);
+    },
+    { methodName: method, methodArgs: args }
+  );
+}
+
+export async function shopAction(page, method, ...args) {
+  return page.evaluate(
+    ({ methodName, methodArgs }) => {
+      const api = window.__ABYSS_PHASER_BRIDGE__?.getShopApi?.();
+      if (!api || typeof api[methodName] !== "function") {
+        return null;
+      }
+      return api[methodName](...methodArgs);
+    },
+    { methodName: method, methodArgs: args }
+  );
+}
+
+export async function playSingleHand(page, { stepMs = 170, maxSteps = 220 } = {}) {
+  const startSnapshot = await readStoredRunSnapshot(page);
+  const startHands = Number(startSnapshot?.run?.totalHands || 0);
+
+  for (let step = 0; step < maxSteps; step += 1) {
+    const state = await readState(page);
+    if (state.mode === "reward" || state.mode === "shop" || state.mode === "gameover" || state.mode === "victory") {
+      const persisted = await readStoredRunSnapshot(page);
+      return {
+        mode: state.mode,
+        totalHands: Number(persisted?.run?.totalHands || 0),
+        startHands,
+        timedOut: false,
+      };
+    }
+
+    if (state.mode !== "playing") {
+      await advanceTime(page, stepMs);
+      continue;
+    }
+
+    const runSnapshot = await runAction(page, "getSnapshot");
+    if (!runSnapshot) {
+      await advanceTime(page, stepMs);
+      continue;
+    }
+
+    if (runSnapshot.intro?.active) {
+      await runAction(page, "confirmIntro");
+      await advanceTime(page, stepMs);
+    } else if (runSnapshot.status?.canAct) {
+      const playerTotal = Number(runSnapshot.totals?.player || 0);
+      if (runSnapshot.status?.canDouble && playerTotal >= 9 && playerTotal <= 11) {
+        await runAction(page, "doubleDown");
+      } else if (playerTotal >= 17) {
+        await runAction(page, "stand");
+      } else {
+        await runAction(page, "hit");
+      }
+      await advanceTime(page, stepMs);
+    } else if (runSnapshot.status?.canDeal) {
+      await runAction(page, "deal");
+      await advanceTime(page, stepMs);
+    } else {
+      await advanceTime(page, stepMs);
+    }
+
+    const persisted = await readStoredRunSnapshot(page);
+    const currentHands = Number(persisted?.run?.totalHands || 0);
+    if (currentHands >= startHands + 1) {
+      const latest = await readState(page);
+      return {
+        mode: latest.mode,
+        totalHands: currentHands,
+        startHands,
+        timedOut: false,
+      };
+    }
+  }
+
+  const endSnapshot = await readStoredRunSnapshot(page);
+  const endState = await readState(page);
+  return {
+    mode: endState.mode,
+    totalHands: Number(endSnapshot?.run?.totalHands || 0),
+    startHands,
+    timedOut: true,
+  };
+}
+
+export async function goHomeFromActiveMode(page) {
+  const state = await readState(page);
+  if (state.mode === "playing") {
+    await runAction(page, "goHome");
+  } else if (state.mode === "reward") {
+    await rewardAction(page, "goHome");
+  } else if (state.mode === "shop") {
+    await shopAction(page, "goHome");
+  }
+  return waitForMode(page, "menu", { maxTicks: 80, stepMs: 120 });
+}

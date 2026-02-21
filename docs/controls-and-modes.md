@@ -15,7 +15,7 @@ Controls are mode-driven. Keyboard shortcuts and action tray buttons map to the 
 - `Left` / `Right`: selection in reward/shop
 - `F`: toggle fullscreen
 - `Esc`: close overlays, exit collection, or exit fullscreen
-- `M`: toggle audio
+- `M`: toggle audio (BGM + SFX master enable)
 
 ## Mode Matrix
 

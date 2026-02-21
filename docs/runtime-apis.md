@@ -75,6 +75,21 @@ Published during runtime bootstrap:
 - `window.render_game_to_text()`
 - `window.advanceTime(ms)`
 
+## Test-Only Runtime Controls (Non-Production)
+
+Used by acceptance tests to force short deterministic progression paths:
+
+- `window.__ABYSS_TEST_FLAGS__`
+- `window.__ABYSS_TEST_FLAGS__.fastPath.enabled` (`boolean`)
+- `window.__ABYSS_TEST_FLAGS__.fastPath.afterHands` (`number`, default `1`)
+- `window.__ABYSS_TEST_FLAGS__.fastPath.target` (`"none" | "reward" | "shop"`)
+
+Notes:
+
+- These controls are ignored in production builds.
+- Default behavior with no flags remains normal gameplay flow.
+- Scene bridge method names and global test hooks are unchanged.
+
 Hook publisher source:
 
 - `src/engine/runtime/bridge/snapshots.js`

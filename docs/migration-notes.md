@@ -11,12 +11,15 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Bridge contract assertions and test hook publication integrated into runtime bootstrap.
 - Legacy Phaser host shim removed.
 - Broken balance probe tooling removed temporarily.
+- Added acceptance test harness with one-hand fast-path coverage for reward/shop/persistence surfaces.
+- Replaced procedural generated BGM with MP3-backed runtime soundtrack.
 
 ## Transitional / Still Present
 
 - `game.js` remains as a thin compatibility wrapper to bootstrap runtime.
 - `src/engine/legacy/legacy-runtime-adapter.js` remains as an integration seam for bridge/input flow.
 - Some legacy-oriented naming and pathways remain inside runtime bootstrap for compatibility while parity is maintained.
+- One-hand fast-path controls are present in runtime for non-production acceptance execution only.
 
 ## Fully Migrated Position
 
@@ -28,6 +31,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 
 - Reintroduce a reliable balance probe with bounded execution and cleanup guarantees.
 - Continue reducing transitional legacy surfaces only after parity checks.
+- Consider moving additional runtime concerns (audio + test controls) into dedicated runtime modules once bootstrap shrink pass starts.
 
 ## Cleanup Guardrails
 

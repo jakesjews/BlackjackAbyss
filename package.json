@@ -12,7 +12,8 @@
     "vercel-build": "npm run build",
     "test": "npm run test:unit",
     "test:smoke": "node scripts/visual-smoke.js --url http://127.0.0.1:4173",
-    "test:unit": "vitest run"
+    "test:unit": "vitest run",
+    "test:acceptance": "vitest run --config vitest.acceptance.config.mjs"
   },
   "keywords": [],
   "author": "",
