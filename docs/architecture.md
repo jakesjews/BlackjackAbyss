@@ -14,7 +14,7 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - App bootstrap: `src/main.js`
 - Phaser host/app setup: `src/engine/app.js`
 - Runtime bootstrap: `src/engine/runtime/bootstrap.js`
-- Runtime modules: `src/engine/runtime/{state,domain,persistence,audio,bridge}/*`
+- Runtime modules: `src/engine/runtime/{state,domain,persistence,bridge,testing}/*`
 - Scene layer: `src/engine/scenes/*`
 
 ## Boot Flow
@@ -24,6 +24,12 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 3. `src/main.js` then calls `bootstrapRuntime()`.
 4. Runtime bootstrap registers scene-facing bridge APIs and test hooks.
 5. Scene mode changes are synchronized via bridge mode reporting.
+
+## Host Runtime Seam
+
+- `src/engine/app.js` keeps runtime context intentionally minimal: `legacyAdapter` and `game`.
+- `window.__ABYSS_ENGINE_RUNTIME__` mirrors that seam for diagnostics, without deprecated app service objects.
+- Scenes consume bridge APIs via the runtime seam and remain decoupled from runtime internals.
 
 ## Runtime vs Scene Responsibilities
 
@@ -59,7 +65,6 @@ Write path:
 
 ## Legacy Boundary
 
-- `game.js` remains a thin compatibility wrapper that calls runtime bootstrap.
 - `src/engine/legacy/legacy-runtime-adapter.js` remains as a bridge/adapter seam used by app/runtime integration.
 - Legacy compatibility should only be removed after parity is verified in Phaser-first flows.
 

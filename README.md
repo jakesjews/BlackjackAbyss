@@ -34,7 +34,7 @@ npm run start
 - Phaser scenes in `src/engine/scenes/*` are the renderer/UI state machine.
 - Runtime modules in `src/engine/runtime/*` own gameplay state, progression, persistence, and bridge APIs.
 - `src/engine/runtime/bootstrap.js` registers scene-facing APIs and test hooks.
-- `game.js` remains a thin compatibility wrapper around runtime bootstrap.
+- `src/engine/app.js` exposes a minimal runtime seam (`legacyAdapter` + Phaser game instance) to scenes.
 
 ## Controls
 
@@ -79,6 +79,12 @@ Storage keys:
 - [`docs/controls-and-modes.md`](./docs/controls-and-modes.md): mode-specific controls and tray behavior
 - [`docs/runtime-apis.md`](./docs/runtime-apis.md): bridge API contracts and test hooks
 - [`docs/migration-notes.md`](./docs/migration-notes.md): migration status, transitional boundaries, cleanup notes
+
+## CI
+
+- GitHub Actions workflow: `.github/workflows/ci.yml`
+- Required check for PR merge to `main`: `quality-gate` (`test:unit`, `test:acceptance`, `build`)
+- Informational smoke job: runs on `main` pushes, nightly schedule, and manual dispatch; uploads `artifacts/visual-smoke/latest`
 
 ## Test Commands
 

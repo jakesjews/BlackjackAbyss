@@ -3,6 +3,7 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
+import { getRunApi as getRunApiFromRuntime, tickRuntime } from "./runtime-bridge.js";
 
 const BUTTON_STYLES = ACTION_BUTTON_STYLE;
 const RUN_PARTICLE_KEY = "__run-particle__";
@@ -677,11 +678,7 @@ export class RunScene extends Phaser.Scene {
   }
 
   update(time, delta) {
-    const runtime = this.game.__ABYSS_RUNTIME__ || null;
-    const adapter = runtime?.legacyAdapter || null;
-    if (adapter) {
-      adapter.tick(delta, time);
-    }
+    tickRuntime(this, time, delta);
     const snapshot = this.getSnapshot();
     this.lastSnapshot = snapshot;
     this.renderSnapshot(snapshot);
@@ -861,12 +858,7 @@ export class RunScene extends Phaser.Scene {
   }
 
   getRunApi() {
-    const runtime = this.game.__ABYSS_RUNTIME__ || null;
-    const bridge = runtime?.legacyAdapter?.bridge || null;
-    if (!bridge || typeof bridge.getRunApi !== "function") {
-      return null;
-    }
-    return bridge.getRunApi();
+    return getRunApiFromRuntime(this);
   }
 
   getEncounterTypeLabel(type) {

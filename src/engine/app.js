@@ -7,23 +7,11 @@ import { RunScene } from "./scenes/RunScene.js";
 import { RewardScene } from "./scenes/RewardScene.js";
 import { ShopScene } from "./scenes/ShopScene.js";
 import { OverlayScene } from "./scenes/OverlayScene.js";
-import { AudioService } from "./services/audio.js";
-import { EventBus } from "./services/event-bus.js";
-import { GameStateService } from "./services/game-state.js";
-import { PersistenceService } from "./services/persistence.js";
 
 function createRuntimeContext() {
-  const eventBus = new EventBus();
-  const persistence = new PersistenceService();
-  const gameState = new GameStateService({ eventBus });
-  const audio = new AudioService({ eventBus });
   const legacyAdapter = new LegacyRuntimeAdapter();
 
   return {
-    eventBus,
-    persistence,
-    gameState,
-    audio,
     legacyAdapter,
     game: null,
   };
@@ -130,7 +118,6 @@ export function createPhaserApp() {
           const bridge = runtime.legacyAdapter.attachGame(bootedGame);
           if (typeof bridge.setModeHandler === "function") {
             bridge.setModeHandler((mode) => {
-              runtime.gameState.setMode(mode);
               syncPhaserScenesForMode(bootedGame, mode);
             });
           }

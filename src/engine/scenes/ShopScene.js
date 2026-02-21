@@ -3,6 +3,7 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
+import { getShopApi as getShopApiFromRuntime, tickRuntime } from "./runtime-bridge.js";
 
 const CARD_STYLE = Object.freeze({
   fill: 0x22384a,
@@ -195,11 +196,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   update(time, delta) {
-    const runtime = this.game.__ABYSS_RUNTIME__ || null;
-    const adapter = runtime?.legacyAdapter || null;
-    if (adapter) {
-      adapter.tick(delta, time);
-    }
+    tickRuntime(this, time, delta);
     const snapshot = this.getSnapshot();
     this.lastSnapshot = snapshot;
     this.renderSnapshot(snapshot);
@@ -354,12 +351,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   getShopApi() {
-    const runtime = this.game.__ABYSS_RUNTIME__ || null;
-    const bridge = runtime?.legacyAdapter?.bridge || null;
-    if (!bridge || typeof bridge.getShopApi !== "function") {
-      return null;
-    }
-    return bridge.getShopApi();
+    return getShopApiFromRuntime(this);
   }
 
   getSnapshot() {

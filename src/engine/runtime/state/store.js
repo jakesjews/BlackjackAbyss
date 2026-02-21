@@ -52,7 +52,7 @@ export function createProfile() {
   };
 }
 
-export function createRuntimeState({ width, height, musicStepSeconds, audioEnabled }) {
+export function createRuntimeState({ width, height, audioEnabled }) {
   return {
     mode: "menu",
     run: null,
@@ -93,8 +93,6 @@ export function createRuntimeState({ width, height, musicStepSeconds, audioEnabl
       cardElements: [],
       cardSourceIndex: 0,
       cardNextIndex: 0,
-      stepTimer: musicStepSeconds,
-      stepIndex: 0,
       lastMusicMode: "menu",
     },
     rewardUi: null,

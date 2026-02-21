@@ -1,4 +1,4 @@
-import { MUSIC_STEP_SECONDS, MAX_RUN_HISTORY, STORAGE_KEYS } from "./constants.js";
+import { MAX_RUN_HISTORY, STORAGE_KEYS } from "./constants.js";
 import { createRuntimeState, createProfile, defaultPlayerStats } from "./state/store.js";
 import { loadAudioEnabled, safeGetStorage, safeRemoveStorage, safeSetStorage, saveAudioEnabled } from "./persistence/storage.js";
 import {
@@ -1176,7 +1176,6 @@ export function bootstrapRuntime() {
   const state = createRuntimeState({
     width: WIDTH,
     height: HEIGHT,
-    musicStepSeconds: MUSIC_STEP_SECONDS,
     audioEnabled: loadAudioEnabled(STORAGE_KEYS),
   });
   const runtimeTestFlags = readRuntimeTestFlags(window);
@@ -2706,8 +2705,6 @@ export function bootstrapRuntime() {
     state.audio.masterGain = masterGain;
     state.audio.musicGain = musicGain;
     state.audio.sfxGain = sfxGain;
-    state.audio.stepTimer = MUSIC_STEP_SECONDS;
-    state.audio.stepIndex = 0;
     return context;
   }
 

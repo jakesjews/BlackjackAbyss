@@ -3,6 +3,7 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
+import { getOverlayApi as getOverlayApiFromRuntime, tickRuntime } from "./runtime-bridge.js";
 
 const BUTTON_STYLE = ACTION_BUTTON_STYLE;
 const COLLECTION_ROW_GAP = 9;
@@ -88,11 +89,7 @@ export class OverlayScene extends Phaser.Scene {
   }
 
   update(time, delta) {
-    const runtime = this.game.__ABYSS_RUNTIME__ || null;
-    const adapter = runtime?.legacyAdapter || null;
-    if (adapter) {
-      adapter.tick(delta, time);
-    }
+    tickRuntime(this, time, delta);
     const snapshot = this.getSnapshot();
     this.lastSnapshot = snapshot;
     this.currentMode = snapshot?.mode || null;
@@ -229,12 +226,7 @@ export class OverlayScene extends Phaser.Scene {
   }
 
   getOverlayApi() {
-    const runtime = this.game.__ABYSS_RUNTIME__ || null;
-    const bridge = runtime?.legacyAdapter?.bridge || null;
-    if (!bridge || typeof bridge.getOverlayApi !== "function") {
-      return null;
-    }
-    return bridge.getOverlayApi();
+    return getOverlayApiFromRuntime(this);
   }
 
   getSnapshot() {

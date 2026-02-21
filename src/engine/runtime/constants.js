@@ -21,4 +21,3 @@ export const STORAGE_KEYS = Object.freeze({
 });
 
 export const MAX_RUN_HISTORY = 24;
-export const MUSIC_STEP_SECONDS = 0.235;

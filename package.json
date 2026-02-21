@@ -2,7 +2,6 @@
   "name": "codex",
   "version": "1.0.0",
   "description": "Blackjack Abyss - roguelike blackjack deck duel",
-  "main": "game.js",
   "scripts": {
     "dev": "vite --host --port 4173 --strictPort",
     "start": "npm run dev",

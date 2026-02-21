@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { SCENE_KEYS } from "../constants.js";
 import { MENU_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
+import { getMenuActions as getMenuActionsFromRuntime } from "./runtime-bridge.js";
 
 const MENU_SPLASH_BUNDLED_URL = new URL("../../assets/splash_art.png", import.meta.url).href;
 const MENU_SPLASH_KEY = "__menu-splash-art__";
@@ -548,12 +549,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   getMenuActions() {
-    const runtime = this.game.__ABYSS_RUNTIME__ || null;
-    const bridge = runtime?.legacyAdapter?.bridge || null;
-    if (!bridge || typeof bridge.getMenuActions !== "function") {
-      return null;
-    }
-    return bridge.getMenuActions();
+    return getMenuActionsFromRuntime(this);
   }
 
   shouldUseFullscreenMobileMenu(width = this.scale.gameSize.width) {

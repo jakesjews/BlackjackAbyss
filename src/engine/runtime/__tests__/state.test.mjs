@@ -17,11 +17,10 @@ describe("runtime state", () => {
   });
 
   it("creates runtime state with viewport and audio defaults", () => {
-    const state = createRuntimeState({ width: 1280, height: 720, musicStepSeconds: 0.235, audioEnabled: true });
+    const state = createRuntimeState({ width: 1280, height: 720, audioEnabled: true });
     expect(state.mode).toBe("menu");
     expect(state.viewport.width).toBe(1280);
     expect(state.viewport.height).toBe(720);
     expect(state.audio.enabled).toBe(true);
-    expect(state.audio.stepTimer).toBe(0.235);
   });
 });
