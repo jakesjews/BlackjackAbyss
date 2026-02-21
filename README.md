@@ -1,6 +1,15 @@
 # Blackjack Abyss
 
-Roguelike blackjack combat game hosted in Phaser 3, with gameplay/runtime logic extracted into modular engine files.
+Blackjack Abyss is a Phaser 3 app: a roguelike blackjack combat game where Phaser scenes are the active renderer/input layer and runtime modules own gameplay/state logic.
+
+## Features
+
+- Blackjack hands resolve as combat damage (player HP vs enemy HP).
+- Floor and room progression with normal, elite, and boss encounters.
+- Relics, rewards, and shop choices that modify run strategy.
+- Run and profile persistence via browser localStorage.
+- Phaser-first rendering and scene flow, with runtime logic bridged into scenes.
+- Mode-driven action button tray with desktop keyboard shortcut hints.
 
 ## Quick Start
 
@@ -20,21 +29,38 @@ npm run start
 
 ## Runtime Architecture
 
-- `src/main.js` boots Phaser and initializes runtime bootstrap.
-- `src/engine/runtime/bootstrap.js` is the runtime entrypoint and bridge registration source.
-- `src/engine/runtime/state/*`, `domain/*`, `persistence/*`, `bridge/*`, `audio/*` contain extracted runtime modules.
-- `game.js` is a thin compatibility wrapper that calls runtime bootstrap.
+- `src/main.js` boots Phaser (`createPhaserApp`) and then boots runtime (`bootstrapRuntime`).
+- Phaser scenes in `src/engine/scenes/*` are the renderer/UI state machine.
+- Runtime modules in `src/engine/runtime/*` own gameplay state, progression, persistence, and bridge APIs.
+- `src/engine/runtime/bootstrap.js` registers scene-facing APIs and test hooks.
+- `game.js` remains a thin compatibility wrapper around runtime bootstrap.
 
 ## Controls
 
-- `Enter`: start new run / confirm / next deal when result lock is active
+### Keyboard
+
+- `Enter`: start run, confirm, deal/continue, restart (context dependent)
 - `R`: resume saved run from menu
-- `A`: hit
-- `B`: stand
-- `Space`: double down (and buy in shop)
-- `Left` / `Right`: pick reward/shop items
+- `A` or `Z`: hit
+- `B` or `X`: stand
+- `C` or `Space`: double down (`Space` also buys in shop)
+- `S`: split (when legal)
+- `Left` / `Right`: reward/shop selection
 - `F`: toggle fullscreen
-- `Esc`: exit fullscreen
+- `Esc`: close overlays, leave collection, or exit fullscreen
+
+### Action Button Tray (Mode-Driven)
+
+The action tray is mode-aware and updates labels/actions as the run state changes.
+
+- `menu`: `Resume`, `New Run`, `Collections`
+- `playing` intro/deal gates: `Continue` or `Deal`
+- `playing` action phase: `Hit`, `Stand`, `Double`, optional `Split`
+- `reward`: selection + `Claim`
+- `shop`: `Prev`/`Next`, `Buy`, `Continue` (leave camp)
+- `gameover` / `victory`: `New Run`
+
+Tray button actions route through runtime bridge APIs registered in `src/engine/runtime/bootstrap.js` and consumed by Phaser scenes.
 
 ## Persistence
 
@@ -44,6 +70,14 @@ Storage keys:
 
 - `blackjack-abyss.profile.v1`
 - `blackjack-abyss.run.v1`
+
+## Documentation Map
+
+- [`PROGRESS.md`](./PROGRESS.md): rolling project state and handoff context
+- [`docs/architecture.md`](./docs/architecture.md): Phaser-first system architecture and data flow
+- [`docs/controls-and-modes.md`](./docs/controls-and-modes.md): mode-specific controls and tray behavior
+- [`docs/runtime-apis.md`](./docs/runtime-apis.md): bridge API contracts and test hooks
+- [`docs/migration-notes.md`](./docs/migration-notes.md): migration status, transitional boundaries, cleanup notes
 
 ## Test Commands
 
