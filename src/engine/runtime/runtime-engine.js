@@ -44,13 +44,6 @@ import { publishRuntimeTestHooks } from "./bridge/snapshots.js";
 import { readRuntimeTestFlags } from "./testing/test-controls.js";
 import { registerBridgeApi } from "./core/api-registry.js";
 import {
-  registerPhaserMenuActions as registerPhaserMenuActionsFromModule,
-  registerPhaserOverlayApi as registerPhaserOverlayApiFromModule,
-  registerPhaserRewardApi as registerPhaserRewardApiFromModule,
-  registerPhaserRunApi as registerPhaserRunApiFromModule,
-  registerPhaserShopApi as registerPhaserShopApiFromModule,
-} from "./core/phaser-bridge-apis.js";
-import {
   BOSS_RELIC,
   RELIC_BY_ID,
   RELIC_RARITY_META,
@@ -58,22 +51,6 @@ import {
   RELICS,
 } from "./core/relic-catalog.js";
 import { buildTransitionSnapshot } from "./core/combat-actions.js";
-import {
-  animatedCardPosition as animatedCardPositionFromModule,
-  beginQueuedEnemyDefeatTransition as beginQueuedEnemyDefeatTransitionFromModule,
-  currentShakeOffset as currentShakeOffsetFromModule,
-  damageFloatAnchor as damageFloatAnchorFromModule,
-  lerp as lerpFromModule,
-  spawnFloatText as spawnFloatTextFromModule,
-  spawnSparkBurst as spawnSparkBurstFromModule,
-  startDefeatTransition as startDefeatTransitionFromModule,
-  triggerFlash as triggerFlashFromModule,
-  triggerHandTackle as triggerHandTackleFromModule,
-  triggerImpactBurst as triggerImpactBurstFromModule,
-  triggerImpactBurstAt as triggerImpactBurstAtFromModule,
-  queueEnemyDefeatTransition as queueEnemyDefeatTransitionFromModule,
-  triggerScreenShake as triggerScreenShakeFromModule,
-} from "./core/combat-effects.js";
 import { createCombatResolution } from "./core/combat-resolution.js";
 import { createCombatTurnActions } from "./core/combat-turn-actions.js";
 import {
@@ -92,8 +69,6 @@ import {
 import { createEncounterOutcomeHandlers } from "./core/encounter-outcome.js";
 import { createRewardShopHandlers } from "./core/reward-shop.js";
 import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./core/serialization.js";
-import { buildPhaserRunSnapshot as buildPhaserRunSnapshotFromModule } from "./core/phaser-run-snapshot.js";
-import { buildPhaserOverlaySnapshot as buildPhaserOverlaySnapshotFromModule } from "./core/overlay-snapshot.js";
 import { createRuntimeLoop as createRuntimeLoopFromModule } from "./core/runtime-loop.js";
 import { bindRuntimeLifecycle as bindRuntimeLifecycleFromModule } from "./core/runtime-lifecycle.js";
 import { createRuntimeAudio as createRuntimeAudioFromModule } from "./core/runtime-audio.js";
@@ -101,10 +76,6 @@ import { createEnemyAvatarLoader as createEnemyAvatarLoaderFromModule } from "./
 import { initializeRuntimeStartup as initializeRuntimeStartupFromModule } from "./core/runtime-startup.js";
 import { createEncounterLifecycleHandlers as createEncounterLifecycleHandlersFromModule } from "./core/encounter-lifecycle.js";
 import { createCombatImpactHandlers as createCombatImpactHandlersFromModule } from "./core/combat-impact.js";
-import {
-  buildPhaserRewardSnapshot as buildPhaserRewardSnapshotFromModule,
-  buildPhaserShopSnapshot as buildPhaserShopSnapshotFromModule,
-} from "./core/shop-reward-snapshots.js";
 import {
   buildAvailableActions as buildAvailableActionsFromModule,
   renderGameToText as renderGameToTextFromModule,
@@ -151,6 +122,10 @@ import {
   MUSIC_TRACK_SOURCES,
   createRuntimeVisualSeeds,
 } from "./core/runtime-content-seeds.js";
+import { createRuntimeResources } from "./core/runtime-resources.js";
+import { createRuntimeSnapshotRegistry } from "./core/runtime-snapshot-registry.js";
+import { createRuntimeEffects } from "./core/runtime-effects.js";
+import { createRuntimeBridgeRegistry } from "./core/runtime-bridge-registry.js";
 
 let runtimeEngineStarted = false;
 
@@ -176,14 +151,15 @@ export function startRuntimeEngine() {
     width: WIDTH,
     height: HEIGHT,
   });
-  const enemyAvatarLoader = createEnemyAvatarLoaderFromModule({
+  const {
+    sanitizeEnemyAvatarKey,
+    ensureEnemyAvatarLoaded,
+    passiveThumbCache,
+  } = createRuntimeResources({
     globalWindow: window,
+    createEnemyAvatarLoader: createEnemyAvatarLoaderFromModule,
     sourceRoots: ["/images/avatars"],
   });
-  const sanitizeEnemyAvatarKey = enemyAvatarLoader.sanitizeEnemyAvatarKey;
-  const ensureEnemyAvatarLoaded = enemyAvatarLoader.ensureEnemyAvatarLoaded;
-
-  const passiveThumbCache = new Map();
 
   const state = createRuntimeState({
     width: WIDTH,
@@ -415,7 +391,6 @@ export function startRuntimeEngine() {
     addLog,
     setAnnouncement,
     clampNumber,
-    lerpFn: lerpFromModule,
   });
   const {
     unlockAudio,
@@ -429,107 +404,33 @@ export function startRuntimeEngine() {
     playGruntSfx,
     updateMusic,
   } = runtimeAudio;
-
-  function spawnFloatText(text, x, y, color, opts = {}) {
-    spawnFloatTextFromModule({
-      state,
-      text,
-      x,
-      y,
-      color,
-      opts,
-    });
-  }
-
-  function lerp(a, b, t) {
-    return lerpFromModule(a, b, t);
-  }
-
-  function easeOutCubic(t) {
-    const clamped = Math.max(0, Math.min(1, t));
-    return 1 - (1 - clamped) ** 3;
-  }
-
-  function animatedCardPosition(card, targetX, targetY) {
-    return animatedCardPositionFromModule({
-      card,
-      targetX,
-      targetY,
-      worldTime: state.worldTime,
-    });
-  }
-
-  function spawnSparkBurst(x, y, color, count = 12, speed = 160) {
-    spawnSparkBurstFromModule({
-      state,
-      x,
-      y,
-      color,
-      count,
-      speed,
-    });
-  }
-
-  function triggerScreenShake(power = 6, duration = 0.2) {
-    triggerScreenShakeFromModule({
-      state,
-      power,
-      duration,
-    });
-  }
-
-  function triggerFlash(color, intensity = 0.08, duration = 0.16) {
-    triggerFlashFromModule({
-      state,
-      color,
-      intensity,
-      duration,
-    });
-  }
-
-  function triggerImpactBurstAt(x, y, amount, color) {
-    triggerImpactBurstAtFromModule({
-      state,
-      x,
-      y,
-      amount,
-      color,
-    });
-  }
-
-  function triggerImpactBurst(side, amount, color) {
-    triggerImpactBurstFromModule({
-      state,
-      side,
-      amount,
-      color,
-      width: WIDTH,
-      height: HEIGHT,
-    });
-  }
-
-  function triggerHandTackle(winner, amount, impactPayload = null) {
-    return triggerHandTackleFromModule({
-      state,
-      winner,
-      amount,
-      impactPayload,
-      cardW: CARD_W,
-      cardH: CARD_H,
-      width: WIDTH,
-      height: HEIGHT,
-      handBoundsFn: handBounds,
-    });
-  }
-
-  function damageFloatAnchor(target) {
-    return damageFloatAnchorFromModule({
-      state,
-      target,
-      width: WIDTH,
-      height: HEIGHT,
-    });
-  }
+  let handBounds = null;
+  const runtimeEffects = createRuntimeEffects({
+    state,
+    width: WIDTH,
+    height: HEIGHT,
+    cardW: CARD_W,
+    cardH: CARD_H,
+    getHandBoundsFn: () => handBounds,
+    playImpactSfxFn: playImpactSfx,
+    enemyDefeatTransitionSeconds: ENEMY_DEFEAT_TRANSITION_SECONDS,
+    playerDefeatTransitionSeconds: PLAYER_DEFEAT_TRANSITION_SECONDS,
+  });
+  const {
+    beginQueuedEnemyDefeatTransition,
+    damageFloatAnchor,
+    easeOutCubic,
+    lerp,
+    queueEnemyDefeatTransition,
+    spawnFloatText,
+    spawnSparkBurst,
+    startDefeatTransition,
+    triggerFlash,
+    triggerHandTackle,
+    triggerImpactBurst,
+    triggerImpactBurstAt,
+    triggerScreenShake,
+  } = runtimeEffects;
 
   const combatImpactHandlers = createCombatImpactHandlersFromModule({
     state,
@@ -548,41 +449,6 @@ export function startRuntimeEngine() {
     finalizeResolveState,
     applyImpactDamage,
   } = combatImpactHandlers;
-
-  function startDefeatTransition(target) {
-    startDefeatTransitionFromModule({
-      state,
-      target,
-      handBoundsFn: handBounds,
-      spawnSparkBurstFn: spawnSparkBurstFromModule,
-      triggerScreenShakeFn: triggerScreenShakeFromModule,
-      triggerFlashFn: triggerFlashFromModule,
-      playImpactSfxFn: playImpactSfx,
-      enemyDefeatTransitionSeconds: ENEMY_DEFEAT_TRANSITION_SECONDS,
-      playerDefeatTransitionSeconds: PLAYER_DEFEAT_TRANSITION_SECONDS,
-    });
-  }
-
-  function queueEnemyDefeatTransition() {
-    queueEnemyDefeatTransitionFromModule({
-      state,
-      enemyDefeatTransitionSeconds: ENEMY_DEFEAT_TRANSITION_SECONDS,
-    });
-  }
-
-  function beginQueuedEnemyDefeatTransition() {
-    return beginQueuedEnemyDefeatTransitionFromModule({
-      state,
-      triggerScreenShakeFn: triggerScreenShakeFromModule,
-      triggerFlashFn: triggerFlashFromModule,
-      playImpactSfxFn: playImpactSfx,
-      enemyDefeatTransitionSeconds: ENEMY_DEFEAT_TRANSITION_SECONDS,
-    });
-  }
-
-  function currentShakeOffset() {
-    return currentShakeOffsetFromModule({ state });
-  }
 
   function createEncounter(run) {
     return createEncounterFromModule({
@@ -623,12 +489,13 @@ export function startRuntimeEngine() {
     resizeCanvasFn: resizeCanvas,
   });
   const {
-    handBounds,
+    handBounds: handBoundsFromLifecycle,
     dealCard,
     startHand,
     beginEncounter,
     startRun,
   } = encounterLifecycleHandlers;
+  handBounds = handBoundsFromLifecycle;
 
   function isEncounterIntroActive(encounter = state.encounter) {
     return isEncounterIntroActiveFromModule({ state, encounter });
@@ -898,22 +765,6 @@ export function startRuntimeEngine() {
     runtimeLoop.startRuntimeLoop();
   }
 
-  function registerPhaserMenuActions() {
-    registerPhaserMenuActionsFromModule({
-      phaserBridge,
-      state,
-      unlockAudio,
-      startRun,
-      hasSavedRun,
-      resumeSavedRun,
-      saveRunSnapshot,
-      openCollection,
-      registerBridgeApi,
-      menuApiMethods: MENU_API_METHODS,
-      assertApiContract,
-    });
-  }
-
   function goHomeFromActiveRun() {
     goHomeFromActiveRunModule({
       state,
@@ -922,130 +773,81 @@ export function startRuntimeEngine() {
     });
   }
 
-  function buildPhaserRunSnapshot() {
-    return buildPhaserRunSnapshotFromModule({
-      state,
-      isEncounterIntroActive,
-      canPlayerAct,
-      canSplitCurrentHand,
-      canAdvanceDeal,
-      canDoubleDown,
-      handTotal,
-      visibleDealerTotal,
-      buildTransitionSnapshot,
-      getRunEventLog,
-      passiveStacksForRun,
-      relicRarityMeta,
-      passiveDescription,
-      passiveThumbUrl,
-    });
-  }
-
-  function registerPhaserRunApi() {
-    registerPhaserRunApiFromModule({
-      phaserBridge,
-      buildPhaserRunSnapshot,
-      unlockAudio,
-      hitAction,
-      standAction,
-      doubleAction,
-      splitAction,
-      advanceToNextDeal,
-      advanceEncounterIntro,
-      playFireballLaunchSfx,
-      playFireballImpactSfx,
-      beginQueuedEnemyDefeatTransition,
-      playUiSfx,
-      goHomeFromActiveRun,
-      registerBridgeApi,
-      runApiMethods: RUN_API_METHODS,
-      assertApiContract,
-    });
-  }
-
-  function buildPhaserRewardSnapshot() {
-    return buildPhaserRewardSnapshotFromModule({
-      state,
-      passiveDescription,
-      passiveThumbUrl,
-      relicRarityMeta,
-      normalizeRelicRarity,
-      getRunEventLog,
-    });
-  }
-
-  function registerPhaserRewardApi() {
-    registerPhaserRewardApiFromModule({
-      phaserBridge,
-      state,
-      buildPhaserRewardSnapshot,
-      moveSelection,
-      claimReward,
-      clampNumber,
-      playUiSfx,
-      unlockAudio,
-      goHomeFromActiveRun,
-      registerBridgeApi,
-      rewardApiMethods: REWARD_API_METHODS,
-      assertApiContract,
-    });
-  }
-
-  function buildPhaserShopSnapshot() {
-    return buildPhaserShopSnapshotFromModule({
-      state,
-      nonNegInt,
-      clampNumber,
-      shopItemName,
-      shopItemDescription,
-      getRunEventLog,
-    });
-  }
-
-  function registerPhaserShopApi() {
-    registerPhaserShopApiFromModule({
-      phaserBridge,
-      state,
-      buildPhaserShopSnapshot,
-      moveSelection,
-      unlockAudio,
-      buyShopItem,
-      leaveShop,
-      clampNumber,
-      playUiSfx,
-      goHomeFromActiveRun,
-      registerBridgeApi,
-      shopApiMethods: SHOP_API_METHODS,
-      assertApiContract,
-    });
-  }
-
-  function buildPhaserOverlaySnapshot() {
-    return buildPhaserOverlaySnapshotFromModule({
-      state,
-      collectionEntries,
-      relicRarityMeta: RELIC_RARITY_META,
-      passiveThumbUrl,
-      passiveDescription,
-    });
-  }
-
-  function registerPhaserOverlayApi() {
-    registerPhaserOverlayApiFromModule({
-      phaserBridge,
-      state,
-      collectionEntries,
-      collectionPageLayout,
-      clampNumber,
-      unlockAudio,
-      playUiSfx,
-      startRun,
-      buildPhaserOverlaySnapshot,
-      registerBridgeApi,
-      overlayApiMethods: OVERLAY_API_METHODS,
-      assertApiContract,
-    });
-  }
+  const runtimeSnapshotRegistry = createRuntimeSnapshotRegistry({
+    state,
+    isEncounterIntroActive,
+    canPlayerAct,
+    canSplitCurrentHand,
+    canAdvanceDeal,
+    canDoubleDown,
+    handTotal,
+    visibleDealerTotal,
+    buildTransitionSnapshot,
+    getRunEventLog,
+    passiveStacksForRun,
+    relicRarityMeta,
+    passiveDescription,
+    passiveThumbUrl,
+    normalizeRelicRarity,
+    nonNegInt,
+    clampNumber,
+    shopItemName,
+    shopItemDescription,
+    collectionEntries,
+    relicRarityMetaTable: RELIC_RARITY_META,
+  });
+  const {
+    buildPhaserRunSnapshot,
+    buildPhaserRewardSnapshot,
+    buildPhaserShopSnapshot,
+    buildPhaserOverlaySnapshot,
+  } = runtimeSnapshotRegistry;
+  const runtimeBridgeRegistry = createRuntimeBridgeRegistry({
+    phaserBridge,
+    state,
+    unlockAudio,
+    startRun,
+    hasSavedRun,
+    resumeSavedRun,
+    saveRunSnapshot,
+    openCollection,
+    registerBridgeApi,
+    menuApiMethods: MENU_API_METHODS,
+    assertApiContract,
+    buildPhaserRunSnapshot,
+    hitAction,
+    standAction,
+    doubleAction,
+    splitAction,
+    advanceToNextDeal,
+    advanceEncounterIntro,
+    playFireballLaunchSfx,
+    playFireballImpactSfx,
+    beginQueuedEnemyDefeatTransition,
+    playUiSfx,
+    goHomeFromActiveRun,
+    runApiMethods: RUN_API_METHODS,
+    buildPhaserRewardSnapshot,
+    moveSelection,
+    claimReward,
+    clampNumber,
+    rewardApiMethods: REWARD_API_METHODS,
+    buildPhaserShopSnapshot,
+    buyShopItem,
+    leaveShop,
+    shopApiMethods: SHOP_API_METHODS,
+    collectionEntries,
+    collectionPageLayout,
+    buildPhaserOverlaySnapshot,
+    overlayApiMethods: OVERLAY_API_METHODS,
+  });
+  const {
+    registerPhaserMenuActions,
+    registerPhaserRunApi,
+    registerPhaserRewardApi,
+    registerPhaserShopApi,
+    registerPhaserOverlayApi,
+  } = runtimeBridgeRegistry;
 
   initializeRuntimeStartupFromModule({
     state,

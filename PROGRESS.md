@@ -8,7 +8,7 @@
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
 - Docs-first checkpoint completed and runtime docs are synced to Phaser-native runtime architecture.
 - Runtime entry now uses `src/engine/runtime/runtime-engine.js` with direct app/runtime seam wiring.
-- Last Updated: 2026-02-21 17:54:07 EST
+- Last Updated: 2026-02-21 18:30:16 EST
 
 ## Current Focus
 
@@ -80,6 +80,13 @@
 - Extracted runtime visual seed/audio source configuration into `src/engine/runtime/core/runtime-content-seeds.js` (ambient orbs, menu motes, grunt/card/music source lists).
 - Added focused tests for runtime seed generation and source lists in `src/engine/runtime/__tests__/runtime-content-seeds.test.mjs`.
 - Reduced `src/engine/runtime/runtime-engine.js` from 1096 lines to 1076 lines in this slice.
+- Extracted runtime resource boot wiring (enemy avatar loader + passive-thumb cache setup) into `src/engine/runtime/core/runtime-resources.js`.
+- Added focused tests for runtime resource creation/fallback behavior in `src/engine/runtime/__tests__/runtime-resources.test.mjs`.
+- Extracted Phaser run/reward/shop/overlay snapshot wiring into `src/engine/runtime/core/runtime-snapshot-registry.js` and added focused registry tests in `src/engine/runtime/__tests__/runtime-snapshot-registry.test.mjs`.
+- Extracted runtime combat/visual effect wrapper wiring into `src/engine/runtime/core/runtime-effects.js` and added focused wrapper tests in `src/engine/runtime/__tests__/runtime-effects.test.mjs`.
+- Reduced `src/engine/runtime/runtime-engine.js` from 1078 lines to 928 lines across the snapshot-registry + runtime-effects extraction slices.
+- Extracted Phaser bridge API wrapper wiring into `src/engine/runtime/core/runtime-bridge-registry.js` and added focused registry tests in `src/engine/runtime/__tests__/runtime-bridge-registry.test.mjs`.
+- Reduced `src/engine/runtime/runtime-engine.js` from 928 lines to 878 lines in this slice.
 
 ## Next Up
 

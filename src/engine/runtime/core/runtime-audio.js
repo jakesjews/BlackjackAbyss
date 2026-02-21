@@ -11,7 +11,7 @@ export function createRuntimeAudio({
   addLog,
   setAnnouncement,
   clampNumber,
-  lerpFn,
+  lerpFn = (a, b, t) => a + (b - a) * t,
 }) {
   function getAudioContextCtor() {
     return globalWindow.AudioContext || globalWindow.webkitAudioContext || null;
