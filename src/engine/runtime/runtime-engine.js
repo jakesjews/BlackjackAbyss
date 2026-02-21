@@ -143,6 +143,7 @@ import {
   sanitizeRun as sanitizeRunFromModule,
 } from "./core/state-sanitizers.js";
 import { installRuntimeTestHooks } from "./core/test-hooks.js";
+import { installRuntimeModeBridge } from "./core/runtime-mode-bridge.js";
 import { bindRuntimeWindowLifecycle, createLandscapeLockRequester } from "./core/audio-system.js";
 
 let runtimeEngineStarted = false;
@@ -211,36 +212,15 @@ export function startRuntimeEngine() {
   });
   const runtimeTestFlags = readRuntimeTestFlags(window);
 
-  function installModeBridge() {
-    let modeValue = typeof state.mode === "string" ? state.mode : "menu";
-    const reportMode = (mode) => {
+  installRuntimeModeBridge({
+    state,
+    reportMode: (mode) => {
       if (phaserBridge && typeof phaserBridge.reportMode === "function") {
         phaserBridge.reportMode(mode);
       }
-    };
-
-    Object.defineProperty(state, "mode", {
-      configurable: true,
-      enumerable: true,
-      get() {
-        return modeValue;
-      },
-      set(nextMode) {
-        if (typeof nextMode !== "string" || nextMode.length === 0 || nextMode === modeValue) {
-          return;
-        }
-        modeValue = nextMode;
-        reportMode(modeValue);
-        // Mode changes can switch between fixed menu canvas size and gameplay aspect ratio.
-        // Resize immediately to avoid transient stretched frames (especially menu -> collection).
-        resizeCanvas();
-      },
-    });
-
-    reportMode(modeValue);
-  }
-
-  installModeBridge();
+    },
+    resizeCanvas,
+  });
 
   const runtimeProfileHandlers = createRuntimeProfileHandlers({
     state,
