@@ -8,7 +8,7 @@
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
 - Docs-first checkpoint completed and runtime docs are synced to Phaser-native runtime architecture.
 - Runtime entry now uses `src/engine/runtime/runtime-engine.js` with direct app/runtime seam wiring.
-- Last Updated: 2026-02-21 18:35:12 EST
+- Last Updated: 2026-02-21 18:48:50 EST
 
 ## Current Focus
 
@@ -89,11 +89,14 @@
 - Reduced `src/engine/runtime/runtime-engine.js` from 928 lines to 878 lines in this slice.
 - Collapsed additional trivial pass-through wrappers in `src/engine/runtime/runtime-engine.js` (module alias + inline callback use for split lifecycle/resolve hookups) to reduce non-essential indirection.
 - Reduced `src/engine/runtime/runtime-engine.js` from 878 lines to 875 lines in this slice.
+- Consolidated wrapper-only runtime resource wiring into `src/engine/runtime/core/enemy-avatars.js` (`createRuntimeResources`) and removed `src/engine/runtime/core/runtime-resources.js`.
+- Consolidated wrapper-only bridge and snapshot registry wiring into `src/engine/runtime/core/phaser-bridge-apis.js` (`createRuntimeBridgeRegistry`, `createRuntimeSnapshotRegistry`) and removed `src/engine/runtime/core/runtime-bridge-registry.js` and `src/engine/runtime/core/runtime-snapshot-registry.js`.
+- Kept `src/engine/runtime/runtime-engine.js` lean while removing extra indirection layers; current size is 867 lines.
 
 ## Next Up
 
 - Reintroduce a reliable long-run balancing probe with explicit guardrails and bounded runtime behavior.
-- Continue decomposing `src/engine/runtime/runtime-engine.js` into smaller modules where it reduces coupling/noise.
+- Continue trimming wrapper-only indirection while keeping `src/engine/runtime/runtime-engine.js` as a thin Phaser runtime orchestrator (avoid both monolith growth and over-abstraction).
 - Decide whether to keep or reduce the global bridge compatibility facade in production once tooling contracts are revisited.
 - Keep docs synced when bridge contracts, test hooks, or mode flows change.
 

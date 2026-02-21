@@ -43,6 +43,7 @@ import {
 import { publishRuntimeTestHooks } from "./bridge/snapshots.js";
 import { readRuntimeTestFlags } from "./testing/test-controls.js";
 import { registerBridgeApi } from "./core/api-registry.js";
+import { createRuntimeBridgeRegistry, createRuntimeSnapshotRegistry } from "./core/phaser-bridge-apis.js";
 import {
   BOSS_RELIC,
   RELIC_BY_ID,
@@ -72,7 +73,7 @@ import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./core/seri
 import { createRuntimeLoop as createRuntimeLoopFromModule } from "./core/runtime-loop.js";
 import { bindRuntimeLifecycle as bindRuntimeLifecycleFromModule } from "./core/runtime-lifecycle.js";
 import { createRuntimeAudio as createRuntimeAudioFromModule } from "./core/runtime-audio.js";
-import { createEnemyAvatarLoader as createEnemyAvatarLoaderFromModule } from "./core/enemy-avatars.js";
+import { createRuntimeResources } from "./core/enemy-avatars.js";
 import { initializeRuntimeStartup as initializeRuntimeStartupFromModule } from "./core/runtime-startup.js";
 import { createEncounterLifecycleHandlers as createEncounterLifecycleHandlersFromModule } from "./core/encounter-lifecycle.js";
 import { createCombatImpactHandlers as createCombatImpactHandlersFromModule } from "./core/combat-impact.js";
@@ -122,10 +123,7 @@ import {
   MUSIC_TRACK_SOURCES,
   createRuntimeVisualSeeds,
 } from "./core/runtime-content-seeds.js";
-import { createRuntimeResources } from "./core/runtime-resources.js";
-import { createRuntimeSnapshotRegistry } from "./core/runtime-snapshot-registry.js";
 import { createRuntimeEffects } from "./core/runtime-effects.js";
-import { createRuntimeBridgeRegistry } from "./core/runtime-bridge-registry.js";
 
 let runtimeEngineStarted = false;
 
@@ -134,9 +132,6 @@ export function startRuntimeEngine() {
     return;
   }
   runtimeEngineStarted = true;
-
-  (() => {
-    "use strict";
 
   const phaserBridge = window.__ABYSS_PHASER_BRIDGE__ || null;
   const gameShell = document.getElementById("game-shell");
@@ -157,7 +152,6 @@ export function startRuntimeEngine() {
     passiveThumbCache,
   } = createRuntimeResources({
     globalWindow: window,
-    createEnemyAvatarLoader: createEnemyAvatarLoaderFromModule,
     sourceRoots: ["/images/avatars"],
   });
 
@@ -870,6 +864,4 @@ export function startRuntimeEngine() {
     advanceTime,
     startRuntimeLoop,
   });
-
-  })();
 }

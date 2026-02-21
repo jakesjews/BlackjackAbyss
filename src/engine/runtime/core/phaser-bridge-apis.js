@@ -1,3 +1,10 @@
+import { buildPhaserRunSnapshot as buildPhaserRunSnapshotFromModule } from "./phaser-run-snapshot.js";
+import {
+  buildPhaserRewardSnapshot as buildPhaserRewardSnapshotFromModule,
+  buildPhaserShopSnapshot as buildPhaserShopSnapshotFromModule,
+} from "./shop-reward-snapshots.js";
+import { buildPhaserOverlaySnapshot as buildPhaserOverlaySnapshotFromModule } from "./overlay-snapshot.js";
+
 export function registerPhaserMenuActions({
   phaserBridge,
   state,
@@ -345,4 +352,233 @@ export function registerPhaserOverlayApi({
     label: "overlay",
     assertApiContract,
   });
+}
+
+export function createRuntimeSnapshotRegistry({
+  state,
+  isEncounterIntroActive,
+  canPlayerAct,
+  canSplitCurrentHand,
+  canAdvanceDeal,
+  canDoubleDown,
+  handTotal,
+  visibleDealerTotal,
+  buildTransitionSnapshot,
+  getRunEventLog,
+  passiveStacksForRun,
+  relicRarityMeta,
+  passiveDescription,
+  passiveThumbUrl,
+  normalizeRelicRarity,
+  nonNegInt,
+  clampNumber,
+  shopItemName,
+  shopItemDescription,
+  collectionEntries,
+  relicRarityMetaTable,
+  buildPhaserRunSnapshotFn = buildPhaserRunSnapshotFromModule,
+  buildPhaserRewardSnapshotFn = buildPhaserRewardSnapshotFromModule,
+  buildPhaserShopSnapshotFn = buildPhaserShopSnapshotFromModule,
+  buildPhaserOverlaySnapshotFn = buildPhaserOverlaySnapshotFromModule,
+}) {
+  function buildPhaserRunSnapshot() {
+    return buildPhaserRunSnapshotFn({
+      state,
+      isEncounterIntroActive,
+      canPlayerAct,
+      canSplitCurrentHand,
+      canAdvanceDeal,
+      canDoubleDown,
+      handTotal,
+      visibleDealerTotal,
+      buildTransitionSnapshot,
+      getRunEventLog,
+      passiveStacksForRun,
+      relicRarityMeta,
+      passiveDescription,
+      passiveThumbUrl,
+    });
+  }
+
+  function buildPhaserRewardSnapshot() {
+    return buildPhaserRewardSnapshotFn({
+      state,
+      passiveDescription,
+      passiveThumbUrl,
+      relicRarityMeta,
+      normalizeRelicRarity,
+      getRunEventLog,
+    });
+  }
+
+  function buildPhaserShopSnapshot() {
+    return buildPhaserShopSnapshotFn({
+      state,
+      nonNegInt,
+      clampNumber,
+      shopItemName,
+      shopItemDescription,
+      getRunEventLog,
+    });
+  }
+
+  function buildPhaserOverlaySnapshot() {
+    return buildPhaserOverlaySnapshotFn({
+      state,
+      collectionEntries,
+      relicRarityMeta: relicRarityMetaTable,
+      passiveThumbUrl,
+      passiveDescription,
+    });
+  }
+
+  return {
+    buildPhaserRunSnapshot,
+    buildPhaserRewardSnapshot,
+    buildPhaserShopSnapshot,
+    buildPhaserOverlaySnapshot,
+  };
+}
+
+export function createRuntimeBridgeRegistry({
+  phaserBridge,
+  state,
+  unlockAudio,
+  startRun,
+  hasSavedRun,
+  resumeSavedRun,
+  saveRunSnapshot,
+  openCollection,
+  registerBridgeApi,
+  menuApiMethods,
+  assertApiContract,
+  buildPhaserRunSnapshot,
+  hitAction,
+  standAction,
+  doubleAction,
+  splitAction,
+  advanceToNextDeal,
+  advanceEncounterIntro,
+  playFireballLaunchSfx,
+  playFireballImpactSfx,
+  beginQueuedEnemyDefeatTransition,
+  playUiSfx,
+  goHomeFromActiveRun,
+  runApiMethods,
+  buildPhaserRewardSnapshot,
+  moveSelection,
+  claimReward,
+  clampNumber,
+  rewardApiMethods,
+  buildPhaserShopSnapshot,
+  buyShopItem,
+  leaveShop,
+  shopApiMethods,
+  collectionEntries,
+  collectionPageLayout,
+  buildPhaserOverlaySnapshot,
+  overlayApiMethods,
+  registerPhaserMenuActionsFn = registerPhaserMenuActions,
+  registerPhaserRunApiFn = registerPhaserRunApi,
+  registerPhaserRewardApiFn = registerPhaserRewardApi,
+  registerPhaserShopApiFn = registerPhaserShopApi,
+  registerPhaserOverlayApiFn = registerPhaserOverlayApi,
+}) {
+  function registerMenu() {
+    registerPhaserMenuActionsFn({
+      phaserBridge,
+      state,
+      unlockAudio,
+      startRun,
+      hasSavedRun,
+      resumeSavedRun,
+      saveRunSnapshot,
+      openCollection,
+      registerBridgeApi,
+      menuApiMethods,
+      assertApiContract,
+    });
+  }
+
+  function registerRun() {
+    registerPhaserRunApiFn({
+      phaserBridge,
+      buildPhaserRunSnapshot,
+      unlockAudio,
+      hitAction,
+      standAction,
+      doubleAction,
+      splitAction,
+      advanceToNextDeal,
+      advanceEncounterIntro,
+      playFireballLaunchSfx,
+      playFireballImpactSfx,
+      beginQueuedEnemyDefeatTransition,
+      playUiSfx,
+      goHomeFromActiveRun,
+      registerBridgeApi,
+      runApiMethods,
+      assertApiContract,
+    });
+  }
+
+  function registerReward() {
+    registerPhaserRewardApiFn({
+      phaserBridge,
+      state,
+      buildPhaserRewardSnapshot,
+      moveSelection,
+      claimReward,
+      clampNumber,
+      playUiSfx,
+      unlockAudio,
+      goHomeFromActiveRun,
+      registerBridgeApi,
+      rewardApiMethods,
+      assertApiContract,
+    });
+  }
+
+  function registerShop() {
+    registerPhaserShopApiFn({
+      phaserBridge,
+      state,
+      buildPhaserShopSnapshot,
+      moveSelection,
+      unlockAudio,
+      buyShopItem,
+      leaveShop,
+      clampNumber,
+      playUiSfx,
+      goHomeFromActiveRun,
+      registerBridgeApi,
+      shopApiMethods,
+      assertApiContract,
+    });
+  }
+
+  function registerOverlay() {
+    registerPhaserOverlayApiFn({
+      phaserBridge,
+      state,
+      collectionEntries,
+      collectionPageLayout,
+      clampNumber,
+      unlockAudio,
+      playUiSfx,
+      startRun,
+      buildPhaserOverlaySnapshot,
+      registerBridgeApi,
+      overlayApiMethods,
+      assertApiContract,
+    });
+  }
+
+  return {
+    registerPhaserMenuActions: registerMenu,
+    registerPhaserRunApi: registerRun,
+    registerPhaserRewardApi: registerReward,
+    registerPhaserShopApi: registerShop,
+    registerPhaserOverlayApi: registerOverlay,
+  };
 }

@@ -64,3 +64,34 @@ export function createEnemyAvatarLoader({
     ensureEnemyAvatarLoaded,
   };
 }
+
+export function createRuntimeResources({
+  globalWindow,
+  createEnemyAvatarLoaderFn = createEnemyAvatarLoader,
+  sourceRoots = ["/images/avatars"],
+}) {
+  const makeEnemyAvatarLoader =
+    typeof createEnemyAvatarLoaderFn === "function"
+      ? createEnemyAvatarLoaderFn
+      : () => ({
+          sanitizeEnemyAvatarKey: () => "",
+          ensureEnemyAvatarLoaded: () => null,
+        });
+
+  const enemyAvatarLoader = makeEnemyAvatarLoader({
+    globalWindow,
+    sourceRoots,
+  });
+
+  return {
+    sanitizeEnemyAvatarKey:
+      typeof enemyAvatarLoader?.sanitizeEnemyAvatarKey === "function"
+        ? enemyAvatarLoader.sanitizeEnemyAvatarKey
+        : () => "",
+    ensureEnemyAvatarLoaded:
+      typeof enemyAvatarLoader?.ensureEnemyAvatarLoaded === "function"
+        ? enemyAvatarLoader.ensureEnemyAvatarLoaded
+        : () => null,
+    passiveThumbCache: new Map(),
+  };
+}

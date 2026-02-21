@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeBridgeRegistry } from "../core/runtime-bridge-registry.js";
+import { createRuntimeBridgeRegistry } from "../core/phaser-bridge-apis.js";
 
-describe("runtime bridge registry", () => {
+describe("phaser bridge registry", () => {
   it("wires Phaser bridge API registration blocks through a single registry", () => {
     const phaserBridge = {};
     const state = { mode: "menu" };

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeResources } from "../core/runtime-resources.js";
+import { createRuntimeResources } from "../core/enemy-avatars.js";
 
-describe("runtime resources", () => {
+describe("enemy avatar resources", () => {
   it("creates avatar helpers and passive thumb cache", () => {
     const sanitizeEnemyAvatarKey = vi.fn((name) => String(name).toLowerCase());
     const ensureEnemyAvatarLoaded = vi.fn((key) => ({ key, status: "ready" }));
@@ -13,7 +13,7 @@ describe("runtime resources", () => {
 
     const resources = createRuntimeResources({
       globalWindow,
-      createEnemyAvatarLoader,
+      createEnemyAvatarLoaderFn: createEnemyAvatarLoader,
       sourceRoots: ["/images/avatars"],
     });
 
@@ -29,6 +29,7 @@ describe("runtime resources", () => {
   it("falls back safely when loader factory is missing", () => {
     const resources = createRuntimeResources({
       globalWindow: {},
+      createEnemyAvatarLoaderFn: null,
     });
 
     expect(resources.sanitizeEnemyAvatarKey("Anything")).toBe("");

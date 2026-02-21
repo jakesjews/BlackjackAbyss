@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeSnapshotRegistry } from "../core/runtime-snapshot-registry.js";
+import { createRuntimeSnapshotRegistry } from "../core/phaser-bridge-apis.js";
 
-describe("runtime snapshot registry", () => {
+describe("phaser snapshot registry", () => {
   it("wires run/reward/shop/overlay snapshot builders through a single registry", () => {
     const state = { mode: "playing" };
     const isEncounterIntroActive = vi.fn();
