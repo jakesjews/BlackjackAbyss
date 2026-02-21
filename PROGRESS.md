@@ -6,7 +6,7 @@
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
-- Last Updated: 2026-02-21 16:40:07 EST
+- Last Updated: 2026-02-21 17:08:18 EST
 
 ## Current Focus
 
@@ -49,11 +49,17 @@
 - Extracted mode-driven action tray + runtime text snapshot serialization into `src/engine/runtime/bootstrap/runtime-text-snapshot.js` and reduced bootstrap `availableActions()`/`renderGameToText()` to delegation wrappers with dedicated unit tests.
 - Extracted overlay snapshot builder into `src/engine/runtime/bootstrap/overlay-snapshot.js` and reduced bootstrap `buildPhaserOverlaySnapshot()` to a delegation wrapper with dedicated unit tests.
 - Extracted Phaser bridge API registration blocks into `src/engine/runtime/bootstrap/phaser-bridge-apis.js` and reduced bootstrap menu/run/reward/shop/overlay API registration functions to delegation wrappers with dedicated unit tests.
+- Extracted runtime loop orchestration into `src/engine/runtime/bootstrap/runtime-loop.js` and reduced bootstrap `advanceTime`/resize/start-loop handling to delegation wrappers with dedicated unit tests.
+- Extracted lifecycle visibility/unload handlers into `src/engine/runtime/bootstrap/runtime-lifecycle.js` and reduced bootstrap lifecycle wiring to a delegation wrapper with dedicated unit tests.
+- Extracted runtime audio stack into `src/engine/runtime/bootstrap/runtime-audio.js` and reduced bootstrap audio/sfx/music methods to delegation wrappers with dedicated unit tests.
+- Extracted encounter run/hand lifecycle orchestration into `src/engine/runtime/bootstrap/encounter-lifecycle.js` and reduced bootstrap shoe/deal/hand/start-run flow to delegation wrappers with dedicated unit tests.
+- Extracted combat impact settlement helpers into `src/engine/runtime/bootstrap/combat-impact.js` and reduced bootstrap `finalizeResolveState`/`applyImpactDamage` to delegation wrappers with dedicated unit tests.
+- Restored explicit `handBounds(...)` bridge helper (now delegated through encounter lifecycle module) to keep defeat-transition fallback math safe.
 
 ## Next Up
 
 - Reintroduce a reliable long-run balancing probe with explicit guardrails and bounded runtime behavior.
-- Continue extracting remaining runtime sections out of `bootstrap.js` (runtime loop + lifecycle wiring and audio stack) into focused modules.
+- Continue extracting remaining runtime sections out of `bootstrap.js` (combat/effects orchestration wrappers and boot orchestration glue) into focused modules.
 - Keep docs synced when bridge contracts, test hooks, or mode flows change.
 
 ## Risks / Blockers

@@ -84,6 +84,11 @@ import { createRewardShopHandlers } from "./bootstrap/reward-shop.js";
 import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./bootstrap/serialization.js";
 import { buildPhaserRunSnapshot as buildPhaserRunSnapshotFromModule } from "./bootstrap/phaser-run-snapshot.js";
 import { buildPhaserOverlaySnapshot as buildPhaserOverlaySnapshotFromModule } from "./bootstrap/overlay-snapshot.js";
+import { createRuntimeLoop as createRuntimeLoopFromModule } from "./bootstrap/runtime-loop.js";
+import { bindRuntimeLifecycle as bindRuntimeLifecycleFromModule } from "./bootstrap/runtime-lifecycle.js";
+import { createRuntimeAudio as createRuntimeAudioFromModule } from "./bootstrap/runtime-audio.js";
+import { createEncounterLifecycleHandlers as createEncounterLifecycleHandlersFromModule } from "./bootstrap/encounter-lifecycle.js";
+import { createCombatImpactHandlers as createCombatImpactHandlersFromModule } from "./bootstrap/combat-impact.js";
 import {
   buildPhaserRewardSnapshot as buildPhaserRewardSnapshotFromModule,
   buildPhaserShopSnapshot as buildPhaserShopSnapshotFromModule,
@@ -663,428 +668,80 @@ export function bootstrapRuntime() {
     );
   }
 
-  function getAudioContextCtor() {
-    return window.AudioContext || window.webkitAudioContext || null;
-  }
-
-  function ensureMusicElement() {
-    if (state.audio.musicElement) {
-      return state.audio.musicElement;
-    }
-    const track = new Audio();
-    track.preload = "auto";
-    track.loop = true;
-    track.volume = 0;
-    track.src = MUSIC_TRACK_SOURCES[state.audio.musicSourceIndex] || MUSIC_TRACK_SOURCES[0];
-    track.addEventListener("error", () => {
-      if (state.audio.musicSourceIndex < MUSIC_TRACK_SOURCES.length - 1) {
-        state.audio.musicSourceIndex += 1;
-        track.src = MUSIC_TRACK_SOURCES[state.audio.musicSourceIndex];
-      }
-    });
-    state.audio.musicElement = track;
-    return track;
-  }
-
-  function musicTargetVolumeForMode(mode) {
-    if (mode === "menu") {
-      return 0.13;
-    }
-    if (mode === "playing") {
-      return 0.17;
-    }
-    return 0.145;
-  }
-
-  function markSfxActivity(weight = 1) {
-    const intensity = Math.max(0.2, Math.min(2, Number(weight) || 1));
-    const duckSeconds = 0.14 + Math.min(0.26, intensity * 0.08);
-    state.audio.musicDuckTimer = Math.max(duckSeconds, Number(state.audio.musicDuckTimer) || 0);
-  }
-
-  function ensureAudioGraph() {
-    if (state.audio.context) {
-      return state.audio.context;
-    }
-
-    const Ctor = getAudioContextCtor();
-    if (!Ctor) {
-      return null;
-    }
-
-    const context = new Ctor();
-    const masterGain = context.createGain();
-    const musicGain = context.createGain();
-    const sfxGain = context.createGain();
-
-    masterGain.gain.value = 0;
-    musicGain.gain.value = 0.19;
-    sfxGain.gain.value = 0.5;
-
-    musicGain.connect(masterGain);
-    sfxGain.connect(masterGain);
-    masterGain.connect(context.destination);
-
-    state.audio.context = context;
-    state.audio.masterGain = masterGain;
-    state.audio.musicGain = musicGain;
-    state.audio.sfxGain = sfxGain;
-    return context;
-  }
-
-  function syncAudioEnabled() {
-    if (!state.audio.context || !state.audio.masterGain) {
-      return;
-    }
-    const target = state.audio.enabled ? 0.86 : 0;
-    state.audio.masterGain.gain.setTargetAtTime(target, state.audio.context.currentTime, 0.08);
-    const track = ensureMusicElement();
-    if (!track) {
-      return;
-    }
-    if (!state.audio.enabled) {
-      track.volume = 0;
-      if (!track.paused) {
-        track.pause();
-      }
-    }
-  }
+  const runtimeAudio = createRuntimeAudioFromModule({
+    state,
+    globalWindow: window,
+    createAudioElement: () => new Audio(),
+    storageKeys: STORAGE_KEYS,
+    saveAudioEnabled,
+    musicTrackSources: MUSIC_TRACK_SOURCES,
+    gruntSources: GRUNT_SOURCES,
+    cardSources: CARD_SOURCES,
+    isExternalModeRendering,
+    addLog,
+    setAnnouncement,
+    clampNumber,
+    lerpFn: lerpFromModule,
+  });
 
   function unlockAudio() {
-    const context = ensureAudioGraph();
-    if (!context) {
-      return;
-    }
-    state.audio.started = true;
-    const prime = () => {
-      if (!state.audio.primed) {
-        try {
-          const osc = context.createOscillator();
-          const gain = context.createGain();
-          gain.gain.value = 0.00001;
-          osc.frequency.setValueAtTime(440, context.currentTime);
-          osc.connect(gain);
-          gain.connect(state.audio.masterGain);
-          osc.start(context.currentTime);
-          osc.stop(context.currentTime + 0.03);
-          state.audio.primed = true;
-        } catch {
-          // Ignore priming failures on browsers with stricter policies.
-        }
-      }
-      syncAudioEnabled();
-      const track = ensureMusicElement();
-      if (track && state.audio.enabled && track.paused) {
-        const playPromise = track.play();
-        if (playPromise && typeof playPromise.catch === "function") {
-          playPromise.catch(() => {});
-        }
-      }
-    };
-
-    if (context.state !== "running" && state.audio.enabled) {
-      context.resume().then(prime).catch(() => {});
-    } else {
-      prime();
-    }
+    runtimeAudio.unlockAudio();
   }
 
   function setAudioEnabled(enabled) {
-    state.audio.enabled = Boolean(enabled);
-    saveAudioEnabled(state.audio.enabled, STORAGE_KEYS);
-    if (state.audio.enabled) {
-      unlockAudio();
-    }
-    syncAudioEnabled();
-    const line = state.audio.enabled ? "Sound enabled." : "Sound muted.";
-    if (state.run) {
-      addLog(line);
-    } else {
-      setAnnouncement(line, 1.1);
-    }
+    runtimeAudio.setAudioEnabled(enabled);
   }
 
   function toggleAudio() {
-    setAudioEnabled(!state.audio.enabled);
+    runtimeAudio.toggleAudio();
   }
 
   function canPlayAudio() {
-    return (
-      state.audio.enabled &&
-      state.audio.started &&
-      Boolean(state.audio.context) &&
-      state.audio.context.state === "running"
-    );
+    return runtimeAudio.canPlayAudio();
   }
 
   function playTone(freq, duration, opts = {}) {
-    if (!canPlayAudio()) {
-      return;
-    }
-    const context = state.audio.context;
-    const isMusicBus = opts.bus === "music";
-    const bus = isMusicBus ? state.audio.musicGain : state.audio.sfxGain;
-    if (!context || !bus) {
-      return;
-    }
-
-    const when = Math.max(context.currentTime, Number(opts.when) || context.currentTime);
-    const attack = Math.max(0.001, Number(opts.attack) || 0.002);
-    const release = Math.max(0.012, Number(opts.release) || 0.09);
-    const gainLevel = Math.max(0.001, Number(opts.gain) || 0.08);
-    const sustainLevel = Math.max(0, Math.min(gainLevel, Number(opts.sustainGain) || gainLevel * 0.72));
-    if (!isMusicBus) {
-      markSfxActivity(Math.max(0.3, gainLevel * 9));
-    }
-
-    const osc = context.createOscillator();
-    const gain = context.createGain();
-    osc.type = opts.type || "triangle";
-    osc.frequency.setValueAtTime(Math.max(20, freq), when);
-    if (Number.isFinite(opts.detune)) {
-      osc.detune.setValueAtTime(opts.detune, when);
-    }
-
-    gain.gain.setValueAtTime(0.0001, when);
-    gain.gain.linearRampToValueAtTime(gainLevel, when + attack);
-    gain.gain.linearRampToValueAtTime(sustainLevel, when + Math.max(attack + 0.01, duration * 0.55));
-    gain.gain.exponentialRampToValueAtTime(0.0001, when + duration + release);
-
-    osc.connect(gain);
-    gain.connect(bus);
-
-    osc.start(when);
-    osc.stop(when + duration + release + 0.01);
+    runtimeAudio.playTone(freq, duration, opts);
   }
 
   function playImpactSfx(amount, target) {
-    const hit = Math.max(1, Number(amount) || 1);
-    const base = target === "enemy" ? 168 : 110;
-    const length = Math.min(0.28, 0.09 + hit * 0.009);
-    playTone(base, length, { type: "triangle", gain: Math.min(0.25, 0.08 + hit * 0.01), release: 0.18 });
-    playTone(base * 1.62, Math.max(0.05, length * 0.7), {
-      type: "square",
-      gain: Math.min(0.14, 0.035 + hit * 0.006),
-      release: 0.08,
-      detune: target === "enemy" ? 6 : -9,
-    });
+    runtimeAudio.playImpactSfx(amount, target);
   }
 
   function playDealSfx(target) {
-    const base = target === "player" ? 590 : 470;
-    playTone(base, 0.05, { type: "square", gain: 0.04, release: 0.03 });
+    runtimeAudio.playDealSfx(target);
   }
 
   function playFireballLaunchSfx(attacker = "player", target = "enemy", amount = 1) {
-    const power = Math.max(1, Number(amount) || 1);
-    const towardEnemy = target === "enemy";
-    const now = state.audio.context?.currentTime || 0;
-    const base = towardEnemy ? 412 : 332;
-    playTone(base + (attacker === "enemy" ? -24 : 24), 0.08, {
-      type: "sawtooth",
-      gain: Math.min(0.13, 0.055 + power * 0.002),
-      release: 0.06,
-      when: now,
-      detune: towardEnemy ? 14 : -14,
-    });
-    playTone(base * 1.52, 0.12, {
-      type: "triangle",
-      gain: Math.min(0.11, 0.045 + power * 0.0015),
-      release: 0.1,
-      when: now + 0.03,
-      detune: towardEnemy ? 8 : -8,
-    });
+    runtimeAudio.playFireballLaunchSfx(attacker, target, amount);
   }
 
   function playFireballImpactSfx(amount = 1, target = "enemy") {
-    const power = Math.max(1, Number(amount) || 1);
-    const now = state.audio.context?.currentTime || 0;
-    playImpactSfx(power, target);
-    playTone(target === "enemy" ? 148 : 132, Math.min(0.22, 0.1 + power * 0.004), {
-      type: "square",
-      gain: Math.min(0.16, 0.055 + power * 0.0024),
-      release: 0.1,
-      when: now + 0.01,
-    });
-    playTone(target === "enemy" ? 220 : 196, Math.min(0.3, 0.12 + power * 0.005), {
-      type: "triangle",
-      gain: Math.min(0.12, 0.04 + power * 0.0018),
-      release: 0.18,
-      when: now + 0.05,
-    });
+    runtimeAudio.playFireballImpactSfx(amount, target);
   }
 
   function playUiSfx(kind) {
-    if (kind === "card") {
-      playCardSfx();
-      return;
-    }
-    if (kind === "select") {
-      playTone(820, 0.045, { type: "sine", gain: 0.034, release: 0.025 });
-      return;
-    }
-    if (kind === "confirm") {
-      const now = state.audio.context?.currentTime || 0;
-      playTone(600, 0.06, { type: "triangle", gain: 0.06, release: 0.04 });
-      playTone(900, 0.09, { type: "sine", gain: 0.05, release: 0.06, when: now + 0.045 });
-      return;
-    }
-    if (kind === "error") {
-      playTone(230, 0.09, { type: "square", gain: 0.06, release: 0.08 });
-      return;
-    }
-    if (kind === "coin") {
-      const now = state.audio.context?.currentTime || 0;
-      playTone(760, 0.06, { type: "triangle", gain: 0.06, release: 0.04, when: now });
-      playTone(1180, 0.08, { type: "sine", gain: 0.055, release: 0.06, when: now + 0.05 });
-    }
+    runtimeAudio.playUiSfx(kind);
   }
 
   function playActionSfx(action) {
-    if (action === "hit") {
-      playTone(510, 0.05, { type: "square", gain: 0.05, release: 0.04 });
-      return;
-    }
-    if (action === "stand") {
-      playTone(360, 0.08, { type: "triangle", gain: 0.055, release: 0.08 });
-      return;
-    }
-    if (action === "double") {
-      const now = state.audio.context?.currentTime || 0;
-      playTone(460, 0.09, { type: "square", gain: 0.08, release: 0.08, when: now });
-      playTone(690, 0.12, { type: "triangle", gain: 0.07, release: 0.1, when: now + 0.06 });
-    }
+    runtimeAudio.playActionSfx(action);
   }
 
   function playOutcomeSfx(outcome, outgoing, incoming) {
-    if (outcome === "blackjack") {
-      const now = state.audio.context?.currentTime || 0;
-      playTone(440, 0.12, { type: "triangle", gain: 0.085, release: 0.1, when: now });
-      playTone(660, 0.14, { type: "triangle", gain: 0.075, release: 0.12, when: now + 0.05 });
-      playTone(990, 0.2, { type: "sine", gain: 0.07, release: 0.16, when: now + 0.1 });
-      return;
-    }
-
-    if (!isExternalModeRendering()) {
-      if (outgoing > 0) {
-        playImpactSfx(outgoing, "enemy");
-      }
-      if (incoming > 0) {
-        playImpactSfx(incoming, "player");
-      }
-    }
-
-    if (outcome === "push") {
-      playTone(420, 0.06, { type: "sine", gain: 0.03, release: 0.04 });
-    }
-  }
-
-  function ensureGruntElement() {
-    if (state.audio.gruntElement) {
-      return state.audio.gruntElement;
-    }
-    const clip = new Audio();
-    clip.preload = "auto";
-    clip.src = GRUNT_SOURCES[state.audio.gruntSourceIndex] || GRUNT_SOURCES[0];
-    clip.addEventListener("error", () => {
-      if (state.audio.gruntSourceIndex < GRUNT_SOURCES.length - 1) {
-        state.audio.gruntSourceIndex += 1;
-        clip.src = GRUNT_SOURCES[state.audio.gruntSourceIndex];
-      }
-    });
-    state.audio.gruntElement = clip;
-    return clip;
-  }
-
-  function ensureCardElements() {
-    if (Array.isArray(state.audio.cardElements) && state.audio.cardElements.length > 0) {
-      return state.audio.cardElements;
-    }
-    const poolSize = 3;
-    const clips = [];
-    for (let i = 0; i < poolSize; i += 1) {
-      const clip = new Audio();
-      clip.preload = "auto";
-      clip.src = CARD_SOURCES[state.audio.cardSourceIndex] || CARD_SOURCES[0];
-      clip.addEventListener("error", () => {
-        if (state.audio.cardSourceIndex < CARD_SOURCES.length - 1) {
-          state.audio.cardSourceIndex += 1;
-          clip.src = CARD_SOURCES[state.audio.cardSourceIndex];
-        }
-      });
-      clips.push(clip);
-    }
-    state.audio.cardElements = clips;
-    return clips;
+    runtimeAudio.playOutcomeSfx(outcome, outgoing, incoming);
   }
 
   function playCardSfx() {
-    if (!canPlayAudio()) {
-      return;
-    }
-    markSfxActivity(1.25);
-    const clips = ensureCardElements();
-    if (!Array.isArray(clips) || clips.length === 0) {
-      return;
-    }
-    const index = Math.max(0, Math.floor(state.audio.cardNextIndex || 0)) % clips.length;
-    const clip = clips[index];
-    state.audio.cardNextIndex = (index + 1) % clips.length;
-    if (!clip) {
-      return;
-    }
-    clip.currentTime = 0;
-    clip.volume = 0.62;
-    const playPromise = clip.play();
-    if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch(() => {});
-    }
+    runtimeAudio.playCardSfx();
   }
 
   function playGruntSfx() {
-    if (!canPlayAudio()) {
-      return;
-    }
-    markSfxActivity(1.35);
-    const clip = ensureGruntElement();
-    if (!clip) {
-      return;
-    }
-    clip.currentTime = 0;
-    clip.volume = 0.72;
-    const playPromise = clip.play();
-    if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch(() => {});
-    }
+    runtimeAudio.playGruntSfx();
   }
 
   function updateMusic(dt) {
-    const track = ensureMusicElement();
-    if (!track) {
-      return;
-    }
-    if (!canPlayAudio()) {
-      track.volume = 0;
-      if (!track.paused) {
-        track.pause();
-      }
-      return;
-    }
-
-    if (track.paused) {
-      const playPromise = track.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch(() => {});
-      }
-    }
-
-    state.audio.musicDuckTimer = Math.max(0, (Number(state.audio.musicDuckTimer) || 0) - dt);
-    const ducking = state.audio.musicDuckTimer > 0 ? 0.4 : 1;
-    const targetVolume = musicTargetVolumeForMode(state.mode) * ducking;
-    const currentVolume = clampNumber(track.volume, 0, 1, 0);
-    const easedVolume = lerp(currentVolume, targetVolume, Math.min(1, Math.max(0, dt * 7.2)));
-    track.volume = clampNumber(easedVolume, 0, 1, targetVolume);
-    state.audio.lastMusicMode = state.mode;
+    runtimeAudio.updateMusic(dt);
   }
 
   function spawnFloatText(text, x, y, color, opts = {}) {
@@ -1188,77 +845,26 @@ export function bootstrapRuntime() {
     });
   }
 
+  const combatImpactHandlers = createCombatImpactHandlersFromModule({
+    state,
+    width: WIDTH,
+    height: HEIGHT,
+    startDefeatTransitionFn: startDefeatTransition,
+    setAnnouncementFn: setAnnouncement,
+    addLogFn: addLog,
+    saveRunSnapshotFn: saveRunSnapshot,
+    isExternalModeRenderingFn: isExternalModeRendering,
+    queueEnemyDefeatTransitionFn: queueEnemyDefeatTransition,
+    damageFloatAnchorFn: damageFloatAnchor,
+    spawnFloatTextFn: spawnFloatText,
+  });
+
   function finalizeResolveState() {
-    if (!state.run || !state.encounter || state.pendingTransition) {
-      return;
-    }
-
-    const run = state.run;
-    const encounter = state.encounter;
-    const enemy = encounter.enemy;
-    if (!enemy) {
-      return;
-    }
-
-    if (run.player.hp <= 0) {
-      startDefeatTransition("player");
-      setAnnouncement("You were defeated.", 1.2);
-      addLog("You were defeated.");
-      saveRunSnapshot();
-      return;
-    }
-
-    if (enemy.hp <= 0) {
-      if (isExternalModeRendering("playing")) {
-        queueEnemyDefeatTransition();
-      } else {
-        startDefeatTransition("enemy");
-      }
-      setAnnouncement(`${enemy.name} down!`, 1.2);
-      addLog(`${enemy.name} is down.`);
-      saveRunSnapshot();
-      return;
-    }
-
-    encounter.phase = "resolve";
-    encounter.nextDealPrompted = false;
-    encounter.resolveTimer = 0;
-    saveRunSnapshot();
+    combatImpactHandlers.finalizeResolveState();
   }
 
   function applyImpactDamage(payload) {
-    if (!payload || !state.run || !state.encounter || !state.encounter.enemy) {
-      return;
-    }
-
-    const amount = Math.max(1, Number(payload.amount) || 1);
-    const run = state.run;
-    const enemy = state.encounter.enemy;
-    const anchor = damageFloatAnchor(payload.target);
-
-    if (payload.target === "enemy") {
-      enemy.hp = Math.max(0, enemy.hp - amount);
-      run.player.totalDamageDealt += amount;
-      if (payload.crit) {
-        spawnFloatText(`CRIT -${amount}`, anchor.x, anchor.y, "#ffe4a8", {
-          size: 58,
-          life: 1.45,
-          vy: 9,
-          weight: 800,
-          jitter: true,
-          glow: "#ffb86a",
-        });
-      } else {
-        spawnFloatText(`-${amount}`, anchor.x, anchor.y, payload.color || "#ff916e");
-      }
-    } else if (payload.target === "player") {
-      run.player.hp = Math.max(0, run.player.hp - amount);
-      run.player.totalDamageTaken += amount;
-      run.player.streak = 0;
-      spawnFloatText(`-${amount}`, anchor.x, anchor.y, payload.color || "#ff86aa");
-    }
-
-    finalizeResolveState();
+    combatImpactHandlers.applyImpactDamage(payload);
   }
 
   function startDefeatTransition(target) {
@@ -1296,85 +902,6 @@ export function bootstrapRuntime() {
     return currentShakeOffsetFromModule({ state });
   }
 
-  function drawFromShoe(encounter) {
-    if (encounter.shoe.length < 6) {
-      if (encounter.discard.length > 0) {
-        encounter.shoe = shuffle(encounter.discard.splice(0));
-      } else {
-        encounter.shoe = shuffle(createDeck(4));
-      }
-    }
-    return encounter.shoe.pop();
-  }
-
-  function luckyCardUpgrade(encounter, target, card) {
-    if (!state.run || target !== "player") {
-      return card;
-    }
-
-    const luckyStart = state.run.player.stats.luckyStart;
-    if (luckyStart <= 0 || encounter.playerHand.length >= luckyStart) {
-      return card;
-    }
-
-    let upgraded = card;
-    let attempts = 0;
-    while (rankValue(upgraded.rank) < 8 && attempts < 7) {
-      encounter.discard.push(upgraded);
-      upgraded = drawFromShoe(encounter);
-      attempts += 1;
-    }
-    return upgraded;
-  }
-
-  function handLayout(count, layoutScale = 1) {
-    return computeHandLayout({ count, layoutScale, cardW: CARD_W, cardH: CARD_H });
-  }
-
-  function handCardPosition(handType, index, count, layoutScale = 1) {
-    return computeHandCardPosition({
-      handType,
-      index,
-      count,
-      layoutScale,
-      cardW: CARD_W,
-      cardH: CARD_H,
-      width: WIDTH,
-      portraitZoomed: Boolean(state.viewport?.portraitZoomed),
-    });
-  }
-
-  function dealCard(encounter, target) {
-    let card = drawFromShoe(encounter);
-    card = luckyCardUpgrade(encounter, target, card);
-
-    const hand = target === "player" ? encounter.playerHand : encounter.dealerHand;
-    const spawnX = WIDTH * 0.5 - CARD_W * 0.5 + (target === "player" ? 64 : -64);
-    const spawnY = target === "player" ? HEIGHT - CARD_H - 30 : 30;
-    hand.push({
-      ...card,
-      dealtAt: state.worldTime,
-      fromX: spawnX,
-      fromY: spawnY,
-    });
-    if (!isExternalModeRendering("playing")) {
-      playUiSfx("card");
-    }
-
-    const pos = handCardPosition(target, hand.length - 1, hand.length);
-    state.cardBursts.push({
-      x: pos.x + pos.w * 0.5,
-      y: pos.y + pos.h * 0.5,
-      color: target === "player" ? "#67ddff" : "#ffa562",
-      life: 0.28,
-      maxLife: 0.28,
-    });
-    spawnSparkBurst(pos.x + pos.w * 0.5, pos.y + pos.h * 0.5, target === "player" ? "#76e5ff" : "#ffbb84", 5, 88);
-    playDealSfx(target);
-
-    return hand[hand.length - 1];
-  }
-
   function createEncounter(run) {
     return createEncounterFromModule({
       run,
@@ -1384,105 +911,70 @@ export function bootstrapRuntime() {
     });
   }
 
+  const encounterLifecycleHandlers = createEncounterLifecycleHandlersFromModule({
+    state,
+    width: WIDTH,
+    height: HEIGHT,
+    cardW: CARD_W,
+    cardH: CARD_H,
+    createDeckFn: createDeck,
+    shuffleFn: shuffle,
+    rankValueFn: rankValue,
+    computeHandLayoutFn: computeHandLayout,
+    computeHandCardPositionFn: computeHandCardPosition,
+    isExternalModeRenderingFn: isExternalModeRendering,
+    playUiSfxFn: playUiSfx,
+    playDealSfxFn: playDealSfx,
+    spawnSparkBurstFn: spawnSparkBurst,
+    isBlackjackFn: isBlackjack,
+    saveRunSnapshotFn: saveRunSnapshot,
+    clampNumberFn: clampNumber,
+    createEncounterFn: createEncounter,
+    resolveDealerThenShowdownFn: resolveDealerThenShowdown,
+    spawnFloatTextFn: spawnFloatText,
+    addLogFn: addLog,
+    unlockAudioFn: unlockAudio,
+    saveProfileFn: saveProfile,
+    createRunFn: createRun,
+    applyTestEconomyToNewRunFn: applyTestEconomyToNewRun,
+    clearSavedRunFn: clearSavedRun,
+    resizeCanvasFn: resizeCanvas,
+  });
+
+  function drawFromShoe(encounter) {
+    return encounterLifecycleHandlers.drawFromShoe(encounter);
+  }
+
+  function luckyCardUpgrade(encounter, target, card) {
+    return encounterLifecycleHandlers.luckyCardUpgrade(encounter, target, card);
+  }
+
+  function handLayout(count, layoutScale = 1) {
+    return encounterLifecycleHandlers.handLayout(count, layoutScale);
+  }
+
+  function handCardPosition(handType, index, count, layoutScale = 1) {
+    return encounterLifecycleHandlers.handCardPosition(handType, index, count, layoutScale);
+  }
+
+  function handBounds(handType, count, index = 0, layoutScale = 1) {
+    return encounterLifecycleHandlers.handBounds(handType, count, index, layoutScale);
+  }
+
+  function dealCard(encounter, target) {
+    return encounterLifecycleHandlers.dealCard(encounter, target);
+  }
+
   function startHand() {
-    const encounter = state.encounter;
-    if (!encounter) {
-      return;
-    }
-
-    encounter.playerHand = [];
-    encounter.dealerHand = [];
-    encounter.splitQueue = [];
-    encounter.splitUsed = false;
-    encounter.splitHandsTotal = 1;
-    encounter.splitHandsResolved = 0;
-    encounter.dealerResolved = false;
-    encounter.hideDealerHole = !encounter.dealerResolved;
-    encounter.phase = "player";
-    encounter.resultText = "";
-    encounter.resultTone = "neutral";
-    encounter.resolveTimer = 0;
-    encounter.nextDealPrompted = false;
-    encounter.doubleDown = false;
-    encounter.bustGuardTriggered = false;
-    encounter.critTriggered = false;
-    encounter.lastPlayerAction = "none";
-    state.handTackles = [];
-    state.handMessageAnchor = null;
-
-    dealCard(encounter, "player");
-    dealCard(encounter, "dealer");
-    dealCard(encounter, "player");
-    dealCard(encounter, "dealer");
-
-    const playerNatural = isBlackjack(encounter.playerHand);
-    const dealerNatural = isBlackjack(encounter.dealerHand);
-    if (playerNatural || dealerNatural) {
-      resolveDealerThenShowdown(true);
-      return;
-    }
-
-    saveRunSnapshot();
+    encounterLifecycleHandlers.startHand();
   }
 
   function beginEncounter() {
-    if (!state.run) {
-      return;
-    }
-
-    state.mode = "playing";
-    state.encounter = createEncounter(state.run);
-    state.handTackles = [];
-    state.combatLayout = null;
-    state.handMessageAnchor = null;
-    state.run.player.hp = clampNumber(state.run.player.hp, 0, state.run.player.maxHp, state.run.player.maxHp);
-    state.pendingTransition = null;
-    state.run.player.bustGuardsLeft = state.run.player.stats.bustGuardPerEncounter;
-    if (state.run.player.stats.healOnEncounterStart > 0) {
-      const heal = Math.min(state.run.player.stats.healOnEncounterStart, state.run.player.maxHp - state.run.player.hp);
-      if (heal > 0) {
-        state.run.player.hp += heal;
-        spawnFloatText(`+${heal}`, WIDTH * 0.26, 540, "#8df0b2");
-        addLog(`Life Thread restores ${heal} HP.`);
-      }
-    }
-    state.selectionIndex = 0;
-
-    const enemy = state.encounter.enemy;
-    state.announcement = "";
-    state.announcementTimer = 0;
-    state.announcementDuration = 0;
-    addLog(`${enemy.name} enters the table.`);
-    saveRunSnapshot();
+    encounterLifecycleHandlers.beginEncounter();
   }
 
   function startRun() {
-    unlockAudio();
-    playUiSfx("confirm");
-    if (state.profile) {
-      state.profile.totals.runsStarted += 1;
-      saveProfile();
-    }
-    state.autosaveTimer = 0;
-    state.run = createRun();
-    applyTestEconomyToNewRun(state.run);
-    state.run.player.hp = state.run.player.maxHp;
-    state.rewardOptions = [];
-    state.shopStock = [];
-    state.selectionIndex = 0;
-    state.floatingTexts = [];
-    state.cardBursts = [];
-    state.sparkParticles = [];
-    state.handTackles = [];
-    state.flashOverlays = [];
-    state.screenShakeTime = 0;
-    state.screenShakeDuration = 0;
-    state.screenShakePower = 0;
-    state.pendingTransition = null;
-    state.combatLayout = null;
-    clearSavedRun();
-    beginEncounter();
-    resizeCanvas();
+    encounterLifecycleHandlers.startRun();
   }
 
   function isEncounterIntroActive(encounter = state.encounter) {
@@ -1778,6 +1270,21 @@ export function bootstrapRuntime() {
     // Phaser scenes are the renderer of record.
   }
 
+  const runtimeLoop = createRuntimeLoopFromModule({
+    state,
+    width: WIDTH,
+    height: HEIGHT,
+    gameShell,
+    canvas,
+    phaserBridge,
+    globalWindow: window,
+    globalDocument: document,
+    update,
+    render,
+    performanceNow: () => performance.now(),
+    requestAnimationFrameFn: (callback) => requestAnimationFrame(callback),
+  });
+
   function availableActions() {
     return buildAvailableActionsFromModule({
       state,
@@ -1807,79 +1314,15 @@ export function bootstrapRuntime() {
   }
 
   function advanceTime(ms) {
-    const step = 1000 / 60;
-    const steps = Math.max(1, Math.round(ms / step));
-    for (let i = 0; i < steps; i += 1) {
-      update(1 / 60);
-    }
-    render();
+    runtimeLoop.advanceTime(ms);
   }
 
   function resizeCanvas() {
-    const viewportWidth = Math.max(
-      1,
-      Math.floor(window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || WIDTH)
-    );
-    const viewportHeight = Math.max(
-      120,
-      Math.floor(window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || HEIGHT)
-    );
-    gameShell.style.width = `${viewportWidth}px`;
-    gameShell.style.height = `${viewportHeight}px`;
-    canvas.style.width = `${viewportWidth}px`;
-    canvas.style.height = `${viewportHeight}px`;
-    canvas.style.left = "0px";
-    canvas.style.top = "0px";
-    state.viewport = {
-      width: viewportWidth,
-      height: viewportHeight,
-      scale: 1,
-      cropWorldX: 0,
-      portraitZoomed: false,
-    };
-
-    const phaserGame = window.__ABYSS_PHASER_GAME__;
-    if (phaserGame?.scale && typeof phaserGame.scale.resize === "function") {
-      const currentW = Math.round(phaserGame.scale.gameSize?.width || 0);
-      const currentH = Math.round(phaserGame.scale.gameSize?.height || 0);
-      if (currentW !== viewportWidth || currentH !== viewportHeight) {
-        phaserGame.scale.resize(viewportWidth, viewportHeight);
-      }
-    }
-  }
-
-  function tickFrame(dt) {
-    update(dt);
-    render();
-  }
-
-  let lastFrame = performance.now();
-  function gameLoop(now) {
-    const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000));
-    lastFrame = now;
-    tickFrame(dt);
-    requestAnimationFrame(gameLoop);
+    runtimeLoop.resizeCanvas();
   }
 
   function startRuntimeLoop() {
-    resizeCanvas();
-    render();
-    if (phaserBridge && typeof phaserBridge.setStepHandler === "function") {
-      let priorTime = performance.now();
-      phaserBridge.setStepHandler((dtSeconds, timeMs) => {
-        let dt = dtSeconds;
-        if (!Number.isFinite(dt) || dt < 0) {
-          const now = Number.isFinite(timeMs) ? timeMs : performance.now();
-          dt = Math.max(0, (now - priorTime) / 1000);
-          priorTime = now;
-        } else if (Number.isFinite(timeMs)) {
-          priorTime = timeMs;
-        }
-        tickFrame(Math.min(0.05, Math.max(0, dt)));
-      });
-      return;
-    }
-    requestAnimationFrame(gameLoop);
+    runtimeLoop.startRuntimeLoop();
   }
 
   function registerPhaserMenuActions() {
@@ -2041,41 +1484,16 @@ export function bootstrapRuntime() {
 
   const requestLandscapeLock = createLandscapeLockRequester(window);
 
-  bindRuntimeWindowLifecycle({
+  bindRuntimeLifecycleFromModule({
+    bindRuntimeWindowLifecycle,
     globalWindow: window,
     globalDocument: document,
     unlockAudio,
     requestLandscapeLock,
     resizeCanvas,
-    onHidden: () => {
-      if (document.hidden) {
-        saveRunSnapshot();
-        saveProfile();
-        if (state.audio.context && state.audio.context.state === "running") {
-          state.audio.context.suspend().catch(() => {});
-        }
-        if (state.audio.musicElement && !state.audio.musicElement.paused) {
-          state.audio.musicElement.pause();
-        }
-      }
-    },
-    onVisible: () => {
-      if (state.audio.enabled && state.audio.started && state.audio.context && state.audio.context.state === "suspended") {
-        state.audio.context.resume().then(() => {
-          if (state.audio.musicElement && state.audio.musicElement.paused) {
-            const playPromise = state.audio.musicElement.play();
-            if (playPromise && typeof playPromise.catch === "function") {
-              playPromise.catch(() => {});
-            }
-          }
-        }).catch(() => {});
-      }
-      requestLandscapeLock();
-    },
-    onBeforeUnload: () => {
-      saveRunSnapshot();
-      saveProfile();
-    },
+    state,
+    saveRunSnapshot,
+    saveProfile,
   });
 
   installRuntimeTestHooks({
