@@ -15,6 +15,9 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - Phaser host/app setup: `src/engine/app.js`
 - Runtime bootstrap: `src/engine/runtime/bootstrap.js`
 - Runtime modules: `src/engine/runtime/{state,domain,persistence,bridge,testing,bootstrap}/*`
+- Runtime content modules: `src/engine/runtime/bootstrap/{relic-catalog,encounter-content}.js`
+- Runtime factory modules: `src/engine/runtime/bootstrap/{run-factory,encounter-factory}.js`
+- Runtime hydration/sanitization module: `src/engine/runtime/bootstrap/state-sanitizers.js`
 - Scene layer: `src/engine/scenes/*`
 
 ## Boot Flow
@@ -37,6 +40,7 @@ Runtime responsibilities:
 
 - Own canonical run/profile state.
 - Resolve combat/progression/reward/shop transitions.
+- Provide reusable combat/card primitives in runtime domain modules (`domain/combat.js`).
 - Persist state and profile snapshots.
 - Expose snapshots and mutating actions via bridge contracts.
 - Own runtime audio behavior (MP3 BGM + SFX mixing policy).

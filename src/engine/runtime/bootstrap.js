@@ -2,11 +2,20 @@ import { MAX_RUN_HISTORY, STORAGE_KEYS } from "./constants.js";
 import { createRuntimeState, createProfile, defaultPlayerStats } from "./state/store.js";
 import { loadAudioEnabled, safeGetStorage, safeRemoveStorage, safeSetStorage, saveAudioEnabled } from "./persistence/storage.js";
 import {
+  CARD_RANKS as RANKS,
+  CARD_SUITS as SUITS,
+  cardToText,
   canDoubleDown,
   canSplitHand,
   computeHandCardPosition,
   computeHandLayout,
+  createDeck,
+  handTotal,
+  isBlackjack,
+  rankValue,
   resolveShowdownOutcome,
+  shuffle,
+  visibleDealerTotal,
 } from "./domain/combat.js";
 import { nextModeAfterRewardClaim, nextModeAfterShopContinue, resolveRoomType } from "./domain/progression.js";
 import {
@@ -26,9 +35,29 @@ import {
 import { publishRuntimeTestHooks } from "./bridge/snapshots.js";
 import { readRuntimeTestFlags } from "./testing/test-controls.js";
 import { registerBridgeApi } from "./bootstrap/api-registry.js";
+import {
+  BOSS_RELIC,
+  RELIC_BY_ID,
+  RELIC_RARITY_META,
+  RELIC_RARITY_ORDER,
+  RELICS,
+} from "./bootstrap/relic-catalog.js";
 import { buildTransitionSnapshot } from "./bootstrap/combat-actions.js";
+import {
+  buildEnemyIntroDialogue as buildEnemyIntroDialogueFromModule,
+  createEncounter as createEncounterFromModule,
+  createEncounterIntroState as createEncounterIntroStateFromModule,
+  createEnemy as createEnemyFromModule,
+} from "./bootstrap/encounter-factory.js";
 import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./bootstrap/serialization.js";
 import { goHomeFromActiveRun as goHomeFromActiveRunModule } from "./bootstrap/run-lifecycle.js";
+import { applyTestEconomyToNewRun as applyTestEconomyToNewRunFromModule, createRun as createRunFromModule } from "./bootstrap/run-factory.js";
+import {
+  sanitizeCard as sanitizeCardFromModule,
+  sanitizeCardList as sanitizeCardListFromModule,
+  sanitizeEncounter as sanitizeEncounterFromModule,
+  sanitizeRun as sanitizeRunFromModule,
+} from "./bootstrap/state-sanitizers.js";
 import { installRuntimeTestHooks } from "./bootstrap/test-hooks.js";
 import { bindRuntimeWindowLifecycle, createLandscapeLockRequester } from "./bootstrap/audio-system.js";
 
@@ -57,9 +86,7 @@ export function bootstrapRuntime() {
   const PLAYER_DEFEAT_TRANSITION_SECONDS = 1.02;
   const CARD_W = 88;
   const CARD_H = 124;
-  const SUITS = ["S", "H", "D", "C"];
   const SUIT_SYMBOL = { S: "♠", H: "♥", D: "♦", C: "♣" };
-  const RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
   const AMBIENT_ORBS = Array.from({ length: 44 }, () => ({
     x: Math.random() * WIDTH,
     y: Math.random() * HEIGHT,
@@ -150,745 +177,59 @@ export function bootstrapRuntime() {
 
   const passiveThumbCache = new Map();
 
-  const RELIC_RARITY_META = {
-    common: { label: "Common", shopMarkup: 0, glow: "#8ab3da" },
-    uncommon: { label: "Uncommon", shopMarkup: 3, glow: "#71d8b4" },
-    rare: { label: "Rare", shopMarkup: 8, glow: "#f2c46f" },
-    legendary: { label: "Legendary", shopMarkup: 14, glow: "#ff967c" },
-  };
-  const RELIC_RARITY_ORDER = ["common", "uncommon", "rare", "legendary"];
+  const state = createRuntimeState({
+    width: WIDTH,
+    height: HEIGHT,
+    audioEnabled: loadAudioEnabled(STORAGE_KEYS),
+  });
+  const runtimeTestFlags = readRuntimeTestFlags(window);
 
-  const RELICS = [
-    {
-      id: "razor-chip",
-      name: "Razor Chip",
-      rarity: "common",
-      description: "+2 outgoing damage each hand.",
-      color: "#f07464",
-      shopCost: 16,
-      apply: (run) => {
-        run.player.stats.flatDamage += 2;
-      },
-    },
-    {
-      id: "steel-shell",
-      name: "Steel Shell",
-      rarity: "common",
-      description: "Reduce incoming damage by 2.",
-      color: "#7fb6ff",
-      shopCost: 18,
-      apply: (run) => {
-        run.player.stats.block += 2;
-      },
-    },
-    {
-      id: "lucky-opener",
-      name: "Lucky Opener",
-      rarity: "common",
-      description: "Your first two cards trend to 8 or higher.",
-      color: "#8ddf7d",
-      shopCost: 18,
-      apply: (run) => {
-        run.player.stats.luckyStart += 2;
-      },
-    },
-    {
-      id: "velvet-wallet",
-      name: "Velvet Wallet",
-      rarity: "common",
-      description: "+25% chips from enemy payouts.",
-      color: "#f2a85d",
-      shopCost: 18,
-      apply: (run) => {
-        run.player.stats.goldMultiplier += 0.25;
-      },
-    },
-    {
-      id: "dealer-tell",
-      name: "Dealer Tell",
-      rarity: "common",
-      description: "+2 damage when you Stand and win.",
-      color: "#84b7ff",
-      shopCost: 16,
-      apply: (run) => {
-        run.player.stats.standWinDamage += 2;
-      },
-    },
-    {
-      id: "counterweight",
-      name: "Counterweight",
-      rarity: "common",
-      description: "Busting takes 2 less damage.",
-      color: "#8eb2d3",
-      shopCost: 16,
-      apply: (run) => {
-        run.player.stats.bustBlock += 2;
-      },
-    },
-    {
-      id: "first-spark",
-      name: "First Spark",
-      rarity: "common",
-      description: "+2 damage on the first hand of each encounter.",
-      color: "#ffd167",
-      shopCost: 16,
-      apply: (run) => {
-        run.player.stats.firstHandDamage += 2;
-      },
-    },
-    {
-      id: "coin-magnet",
-      name: "Coin Magnet",
-      rarity: "common",
-      description: "Gain +2 chips whenever you win a hand.",
-      color: "#f6c66b",
-      shopCost: 16,
-      apply: (run) => {
-        run.player.stats.chipsOnWinHand += 2;
-      },
-    },
-    {
-      id: "push-protocol",
-      name: "Push Protocol",
-      rarity: "common",
-      description: "Pushes grant +3 chips.",
-      color: "#9ec6dd",
-      shopCost: 14,
-      apply: (run) => {
-        run.player.stats.chipsOnPush += 3;
-      },
-    },
-    {
-      id: "chipped-edge",
-      name: "Chipped Edge",
-      rarity: "common",
-      description: "+1 outgoing damage and +1 chips on win.",
-      color: "#f79972",
-      shopCost: 14,
-      apply: (run) => {
-        run.player.stats.flatDamage += 1;
-        run.player.stats.chipsOnWinHand += 1;
-      },
-    },
-    {
-      id: "bunker-chip",
-      name: "Bunker Chip",
-      rarity: "common",
-      description: "+1 block and +1 bust block.",
-      color: "#7aa7cf",
-      shopCost: 14,
-      apply: (run) => {
-        run.player.stats.block += 1;
-        run.player.stats.bustBlock += 1;
-      },
-    },
-    {
-      id: "mercy-thread",
-      name: "Mercy Thread",
-      rarity: "common",
-      unlock: { key: "runsStarted", min: 2, label: "Start 2 runs" },
-      description: "Heal 1 HP when winning a hand.",
-      color: "#8ce4bd",
-      shopCost: 14,
-      apply: (run) => {
-        run.player.stats.healOnWinHand += 1;
-      },
-    },
-    {
-      id: "calm-breath",
-      name: "Calm Breath",
-      rarity: "common",
-      unlock: { key: "handsPlayed", min: 20, label: "Play 20 hands" },
-      description: "Heal 1 HP at the start of each encounter.",
-      color: "#7fdcc1",
-      shopCost: 15,
-      apply: (run) => {
-        run.player.stats.healOnEncounterStart += 1;
-      },
-    },
-    {
-      id: "split-primer",
-      name: "Split Primer",
-      rarity: "common",
-      unlock: { key: "splitsUsed", min: 1, label: "Use Split once" },
-      description: "+2 damage when a split hand wins.",
-      color: "#9fd8ef",
-      shopCost: 15,
-      apply: (run) => {
-        run.player.stats.splitWinDamage += 2;
-      },
-    },
-    {
-      id: "double-fuse",
-      name: "Double Fuse",
-      rarity: "common",
-      unlock: { key: "doublesWon", min: 2, label: "Win 2 doubled hands" },
-      description: "+1 damage on successful Double Down hands.",
-      color: "#f6be7c",
-      shopCost: 15,
-      apply: (run) => {
-        run.player.stats.doubleWinDamage += 1;
-      },
-    },
-    {
-      id: "stake-lantern",
-      name: "Stake Lantern",
-      rarity: "common",
-      description: "+18% chips from enemy payouts.",
-      color: "#e0b97f",
-      shopCost: 14,
-      apply: (run) => {
-        run.player.stats.goldMultiplier += 0.18;
-      },
-    },
-    {
-      id: "steady-stance",
-      name: "Steady Stance",
-      rarity: "common",
-      description: "+1 block and +1 Stand win damage.",
-      color: "#8fb6d9",
-      shopCost: 15,
-      apply: (run) => {
-        run.player.stats.block += 1;
-        run.player.stats.standWinDamage += 1;
-      },
-    },
-    {
-      id: "side-bet-ledger",
-      name: "Side Bet Ledger",
-      rarity: "common",
-      unlock: { key: "pushes", min: 4, label: "Reach 4 pushes" },
-      description: "Pushes grant +2 chips and +1 win-hand damage.",
-      color: "#a9cadf",
-      shopCost: 15,
-      apply: (run) => {
-        run.player.stats.chipsOnPush += 2;
-        run.player.stats.flatDamage += 1;
-      },
-    },
-    {
-      id: "clean-cut",
-      name: "Clean Cut",
-      rarity: "common",
-      unlock: { key: "handsPlayed", min: 28, label: "Play 28 hands" },
-      description: "+1 outgoing damage and +1 double-win damage.",
-      color: "#ef8d77",
-      shopCost: 15,
-      apply: (run) => {
-        run.player.stats.flatDamage += 1;
-        run.player.stats.doubleWinDamage += 1;
-      },
-    },
-    {
-      id: "blood-prism",
-      name: "Blood Prism",
-      rarity: "uncommon",
-      unlock: { key: "handsPlayed", min: 35, label: "Play 35 hands" },
-      description: "+3 damage while under 50% HP.",
-      color: "#f05a76",
-      shopCost: 20,
-      apply: (run) => {
-        run.player.stats.lowHpDamage += 3;
-      },
-    },
-    {
-      id: "loaded-die",
-      name: "Loaded Die",
-      rarity: "uncommon",
-      unlock: { key: "enemiesDefeated", min: 8, label: "Defeat 8 enemies" },
-      description: "+12% crit chance for outgoing damage.",
-      color: "#f5ca67",
-      shopCost: 22,
-      apply: (run) => {
-        run.player.stats.critChance += 0.12;
-      },
-    },
-    {
-      id: "soul-leech",
-      name: "Soul Leech",
-      rarity: "uncommon",
-      unlock: { key: "handsPlayed", min: 45, label: "Play 45 hands" },
-      description: "Heal 2 HP when winning a hand.",
-      color: "#bf8cff",
-      shopCost: 24,
-      apply: (run) => {
-        run.player.stats.healOnWinHand += 2;
-      },
-    },
-    {
-      id: "all-in-marker",
-      name: "All-In Marker",
-      rarity: "uncommon",
-      unlock: { key: "doublesWon", min: 5, label: "Win 5 doubled hands" },
-      description: "+2 damage on successful Double Down hands.",
-      color: "#ffb470",
-      shopCost: 20,
-      apply: (run) => {
-        run.player.stats.doubleWinDamage += 2;
-      },
-    },
-    {
-      id: "life-thread",
-      name: "Life Thread",
-      rarity: "uncommon",
-      unlock: { key: "runsStarted", min: 3, label: "Start 3 runs" },
-      description: "Heal 2 HP at the start of each encounter.",
-      color: "#79e5b5",
-      shopCost: 20,
-      apply: (run) => {
-        run.player.stats.healOnEncounterStart += 2;
-      },
-    },
-    {
-      id: "ace-sleeve",
-      name: "Ace Sleeve",
-      rarity: "uncommon",
-      unlock: { key: "blackjacks", min: 6, label: "Hit 6 blackjacks" },
-      description: "+1 Lucky Opener card and +4% crit chance.",
-      color: "#bce58b",
-      shopCost: 21,
-      apply: (run) => {
-        run.player.stats.luckyStart += 1;
-        run.player.stats.critChance += 0.04;
-      },
-    },
-    {
-      id: "dealer-tax-stamp",
-      name: "Dealer Tax Stamp",
-      rarity: "uncommon",
-      unlock: { key: "enemiesDefeated", min: 12, label: "Defeat 12 enemies" },
-      description: "Dealer busts take +4 extra damage.",
-      color: "#ff8d72",
-      shopCost: 20,
-      apply: (run) => {
-        run.player.stats.dealerBustBonusDamage += 4;
-      },
-    },
-    {
-      id: "pocket-anvil",
-      name: "Pocket Anvil",
-      rarity: "uncommon",
-      unlock: { key: "chipsEarned", min: 500, label: "Earn 500 chips total" },
-      description: "+5 max HP, heal 5, and +1 damage.",
-      color: "#9ab2c5",
-      shopCost: 25,
-      apply: (run) => {
-        run.player.maxHp += 5;
-        run.player.hp = Math.min(run.player.maxHp, run.player.hp + 5);
-        run.player.stats.flatDamage += 1;
-      },
-    },
-    {
-      id: "iron-oath",
-      name: "Iron Oath",
-      rarity: "uncommon",
-      unlock: { key: "bestFloor", min: 2, label: "Reach floor 2" },
-      description: "+1 bust guard each encounter and +1 block.",
-      color: "#82c4d8",
-      shopCost: 23,
-      apply: (run) => {
-        run.player.stats.bustGuardPerEncounter += 1;
-        run.player.stats.block += 1;
-      },
-    },
-    {
-      id: "stitch-engine",
-      name: "Stitch Engine",
-      rarity: "uncommon",
-      unlock: { key: "damageTaken", min: 220, label: "Take 220 total damage" },
-      description: "Heal 3 HP at the start of each encounter.",
-      color: "#74d0b4",
-      shopCost: 22,
-      apply: (run) => {
-        run.player.stats.healOnEncounterStart += 3;
-      },
-    },
-    {
-      id: "blackjack-ointment",
-      name: "Blackjack Ointment",
-      rarity: "uncommon",
-      unlock: { key: "blackjacks", min: 10, label: "Hit 10 blackjacks" },
-      description: "Blackjacks heal 2 HP and deal +2 damage.",
-      color: "#ffd386",
-      shopCost: 23,
-      apply: (run) => {
-        run.player.stats.blackjackHeal += 2;
-        run.player.stats.blackjackBonusDamage += 2;
-      },
-    },
-    {
-      id: "market-lantern",
-      name: "Market Lantern",
-      rarity: "uncommon",
-      unlock: { key: "chipsEarned", min: 800, label: "Earn 800 chips total" },
-      description: "+22% chips from payouts and +1 chips on win.",
-      color: "#e8bf78",
-      shopCost: 22,
-      apply: (run) => {
-        run.player.stats.goldMultiplier += 0.22;
-        run.player.stats.chipsOnWinHand += 1;
-      },
-    },
-    {
-      id: "risk-hedge",
-      name: "Risk Hedge",
-      rarity: "uncommon",
-      unlock: { key: "doublesWon", min: 8, label: "Win 8 doubled hands" },
-      description: "Failed doubles take 3 less damage.",
-      color: "#98b7db",
-      shopCost: 21,
-      apply: (run) => {
-        run.player.stats.doubleLossBlock += 3;
-      },
-    },
-    {
-      id: "bruise-battery",
-      name: "Bruise Battery",
-      rarity: "uncommon",
-      unlock: { key: "damageTaken", min: 260, label: "Take 260 total damage" },
-      description: "+2 low-HP damage and +1 flat damage.",
-      color: "#d88b86",
-      shopCost: 23,
-      apply: (run) => {
-        run.player.stats.lowHpDamage += 2;
-        run.player.stats.flatDamage += 1;
-      },
-    },
-    {
-      id: "push-siphon",
-      name: "Push Siphon",
-      rarity: "uncommon",
-      unlock: { key: "pushes", min: 8, label: "Reach 8 pushes" },
-      description: "Pushes grant +5 chips.",
-      color: "#9dc7e8",
-      shopCost: 19,
-      apply: (run) => {
-        run.player.stats.chipsOnPush += 5;
-      },
-    },
-    {
-      id: "ghost-shoe",
-      name: "Ghost Shoe",
-      rarity: "uncommon",
-      unlock: { key: "handsPlayed", min: 55, label: "Play 55 hands" },
-      description: "+1 Lucky Opener card and +1 bust block.",
-      color: "#9ed9f3",
-      shopCost: 21,
-      apply: (run) => {
-        run.player.stats.luckyStart += 1;
-        run.player.stats.bustBlock += 1;
-      },
-    },
-    {
-      id: "leech-tax",
-      name: "Leech Tax",
-      rarity: "uncommon",
-      unlock: { key: "damageTaken", min: 180, label: "Take 180 total damage" },
-      description: "Heal +2 on hand wins, but payouts are 15% lower.",
-      color: "#9ad89f",
-      shopCost: 20,
-      apply: (run) => {
-        run.player.stats.healOnWinHand += 2;
-        run.player.stats.goldMultiplier -= 0.15;
-      },
-    },
-    {
-      id: "fuse-link",
-      name: "Fuse Link",
-      rarity: "uncommon",
-      unlock: { key: "splitsUsed", min: 6, label: "Use Split 6 times" },
-      description: "+2 split-win damage and +1 chips on hand wins.",
-      color: "#84c8ea",
-      shopCost: 21,
-      apply: (run) => {
-        run.player.stats.splitWinDamage += 2;
-        run.player.stats.chipsOnWinHand += 1;
-      },
-    },
-    {
-      id: "insurance-sigil",
-      name: "Insurance Sigil",
-      rarity: "rare",
-      unlock: { key: "enemiesDefeated", min: 24, label: "Defeat 24 enemies" },
-      description: "Gain +2 bust guards each encounter.",
-      color: "#71e2ca",
-      shopCost: 24,
-      apply: (run) => {
-        run.player.stats.bustGuardPerEncounter += 2;
-      },
-    },
-    {
-      id: "vitality-coil",
-      name: "Vitality Coil",
-      rarity: "rare",
-      unlock: { key: "bestFloor", min: 2, label: "Reach floor 2" },
-      description: "+8 max HP and heal 8.",
-      color: "#55ddb6",
-      shopCost: 28,
-      apply: (run) => {
-        run.player.maxHp += 8;
-        run.player.hp = Math.min(run.player.maxHp, run.player.hp + 8);
-      },
-    },
-    {
-      id: "royal-wedge",
-      name: "Royal Wedge",
-      rarity: "rare",
-      unlock: { key: "blackjacks", min: 18, label: "Hit 18 blackjacks" },
-      description: "Blackjacks deal +4 extra damage.",
-      color: "#ffd995",
-      shopCost: 24,
-      apply: (run) => {
-        run.player.stats.blackjackBonusDamage += 4;
-      },
-    },
-    {
-      id: "safety-net",
-      name: "Safety Net",
-      rarity: "rare",
-      unlock: { key: "runsWon", min: 1, label: "Win 1 run" },
-      description: "+1 bust guard each encounter and +1 block.",
-      color: "#7fd7d7",
-      shopCost: 24,
-      apply: (run) => {
-        run.player.stats.bustGuardPerEncounter += 1;
-        run.player.stats.block += 1;
-      },
-    },
-    {
-      id: "croupier-bane",
-      name: "Croupier Bane",
-      rarity: "rare",
-      unlock: { key: "enemiesDefeated", min: 28, label: "Defeat 28 enemies" },
-      description: "Dealer busts deal +4 damage and all wins gain +1 damage.",
-      color: "#ff9c7e",
-      shopCost: 25,
-      apply: (run) => {
-        run.player.stats.dealerBustBonusDamage += 4;
-        run.player.stats.flatDamage += 1;
-      },
-    },
-    {
-      id: "fortress-heart",
-      name: "Fortress Heart",
-      rarity: "rare",
-      unlock: { key: "damageTaken", min: 420, label: "Take 420 total damage" },
-      description: "+12 max HP, heal 6, and +2 block.",
-      color: "#9bb7cf",
-      shopCost: 30,
-      apply: (run) => {
-        run.player.maxHp += 12;
-        run.player.hp = Math.min(run.player.maxHp, run.player.hp + 6);
-        run.player.stats.block += 2;
-      },
-    },
-    {
-      id: "redline-core",
-      name: "Redline Core",
-      rarity: "rare",
-      unlock: { key: "doublesWon", min: 12, label: "Win 12 doubled hands" },
-      description: "+3 double-win damage, +1 damage, and +2 double-loss block.",
-      color: "#ffae74",
-      shopCost: 27,
-      apply: (run) => {
-        run.player.stats.doubleWinDamage += 3;
-        run.player.stats.flatDamage += 1;
-        run.player.stats.doubleLossBlock += 2;
-      },
-    },
-    {
-      id: "mirror-plate",
-      name: "Mirror Plate",
-      rarity: "rare",
-      unlock: { key: "relicsCollected", min: 22, label: "Collect 22 relic copies" },
-      description: "+3 block and +1 heal on winning a hand.",
-      color: "#9ec8ef",
-      shopCost: 27,
-      apply: (run) => {
-        run.player.stats.block += 3;
-        run.player.stats.healOnWinHand += 1;
-      },
-    },
-    {
-      id: "boss-hunter",
-      name: "Boss Hunter",
-      rarity: "rare",
-      unlock: { key: "bestFloor", min: 3, label: "Reach floor 3" },
-      description: "+3 damage versus elite and boss enemies.",
-      color: "#f0c47b",
-      shopCost: 25,
-      apply: (run) => {
-        run.player.stats.eliteDamage += 3;
-      },
-    },
-    {
-      id: "glass-dice",
-      name: "Glass Dice",
-      rarity: "rare",
-      unlock: { key: "runsStarted", min: 8, label: "Start 8 runs" },
-      description: "+5 outgoing damage, but lose 2 block.",
-      color: "#ff9988",
-      shopCost: 26,
-      apply: (run) => {
-        run.player.stats.flatDamage += 5;
-        run.player.stats.block -= 2;
-      },
-    },
-    {
-      id: "martyr-token",
-      name: "Martyr Token",
-      rarity: "rare",
-      unlock: { key: "damageTaken", min: 520, label: "Take 520 total damage" },
-      description: "+2 block, +2 low-HP damage, and +1 bust guard each encounter.",
-      color: "#ffb182",
-      shopCost: 28,
-      apply: (run) => {
-        run.player.stats.block += 2;
-        run.player.stats.lowHpDamage += 2;
-        run.player.stats.bustGuardPerEncounter += 1;
-      },
-    },
-    {
-      id: "dealer-cage",
-      name: "Dealer Cage",
-      rarity: "rare",
-      unlock: { key: "enemiesDefeated", min: 36, label: "Defeat 36 enemies" },
-      description: "+3 dealer-bust damage and +2 stand-win damage.",
-      color: "#f8bc7f",
-      shopCost: 26,
-      apply: (run) => {
-        run.player.stats.dealerBustBonusDamage += 3;
-        run.player.stats.standWinDamage += 2;
-      },
-    },
-    {
-      id: "stacked-vault",
-      name: "Stacked Vault",
-      rarity: "rare",
-      unlock: { key: "chipsEarned", min: 1600, label: "Earn 1600 chips total" },
-      description: "+40% chips from enemy payouts and +2 chips on win.",
-      color: "#f0c27e",
-      shopCost: 29,
-      apply: (run) => {
-        run.player.stats.goldMultiplier += 0.4;
-        run.player.stats.chipsOnWinHand += 2;
-      },
-    },
-    {
-      id: "abyss-contract",
-      name: "Abyss Contract",
-      rarity: "legendary",
-      unlock: { key: "runsWon", min: 3, label: "Win 3 runs" },
-      description: "+2 damage, +1 block, +8% crit, and +2 first-hand damage.",
-      color: "#ff8e79",
-      shopCost: 38,
-      apply: (run) => {
-        run.player.stats.flatDamage += 2;
-        run.player.stats.block += 1;
-        run.player.stats.critChance += 0.08;
-        run.player.stats.firstHandDamage += 2;
-      },
-    },
-    {
-      id: "gambler-royale",
-      name: "Gambler Royale",
-      rarity: "legendary",
-      unlock: { key: "blackjacks", min: 30, label: "Hit 30 blackjacks" },
-      description: "+4 blackjack damage, +3 double-win damage, and +1 split-win damage.",
-      color: "#f9b671",
-      shopCost: 40,
-      apply: (run) => {
-        run.player.stats.blackjackBonusDamage += 4;
-        run.player.stats.doubleWinDamage += 3;
-        run.player.stats.splitWinDamage += 1;
-      },
-    },
-    {
-      id: "time-bank",
-      name: "Time Bank",
-      rarity: "legendary",
-      unlock: { key: "enemiesDefeated", min: 90, label: "Defeat 90 enemies" },
-      description: "+1 bust guard each encounter, +3 heal at encounter start, and +3 chips on push.",
-      color: "#89f1d0",
-      shopCost: 37,
-      apply: (run) => {
-        run.player.stats.bustGuardPerEncounter += 1;
-        run.player.stats.healOnEncounterStart += 3;
-        run.player.stats.chipsOnPush += 3;
-      },
-    },
-    {
-      id: "null-wallet",
-      name: "Null Wallet",
-      rarity: "legendary",
-      unlock: { key: "chipsEarned", min: 5000, label: "Earn 5000 chips total" },
-      description: "+55% payout chips, +3 chips on win, and +2 chips on push.",
-      color: "#ffcc89",
-      shopCost: 42,
-      apply: (run) => {
-        run.player.stats.goldMultiplier += 0.55;
-        run.player.stats.chipsOnWinHand += 3;
-        run.player.stats.chipsOnPush += 2;
-      },
-    },
-    {
-      id: "house-edge-breaker",
-      name: "House Edge Breaker",
-      rarity: "legendary",
-      unlock: { key: "runsWon", min: 4, label: "Win 4 runs" },
-      description: "+3 elite/boss damage, +1 damage, and +2 block.",
-      color: "#ff9d84",
-      shopCost: 39,
-      apply: (run) => {
-        run.player.stats.eliteDamage += 3;
-        run.player.stats.flatDamage += 1;
-        run.player.stats.block += 2;
-      },
-    },
-    {
-      id: "kings-insurance",
-      name: "King's Insurance",
-      rarity: "legendary",
-      unlock: { key: "runsWon", min: 5, label: "Win 5 runs" },
-      description: "+2 bust guards each encounter and +3 double-loss block.",
-      color: "#79d9db",
-      shopCost: 40,
-      apply: (run) => {
-        run.player.stats.bustGuardPerEncounter += 2;
-        run.player.stats.doubleLossBlock += 3;
-      },
-    },
-    {
-      id: "void-credit",
-      name: "Void Credit",
-      rarity: "legendary",
-      unlock: { key: "chipsEarned", min: 6500, label: "Earn 6500 chips total" },
-      description: "+2 damage, +35% chips from payouts, and +2 chips on pushes.",
-      color: "#ffb384",
-      shopCost: 41,
-      apply: (run) => {
-        run.player.stats.flatDamage += 2;
-        run.player.stats.goldMultiplier += 0.35;
-        run.player.stats.chipsOnPush += 2;
-      },
-    },
-  ];
+  function installModeBridge() {
+    let modeValue = typeof state.mode === "string" ? state.mode : "menu";
+    const reportMode = (mode) => {
+      if (phaserBridge && typeof phaserBridge.reportMode === "function") {
+        phaserBridge.reportMode(mode);
+      }
+    };
 
-  const BOSS_RELIC = {
-    id: "crown-of-odds",
-    name: "Crown of Odds",
-    rarity: "legendary",
-    description: "+3 damage, +2 block, +15% crit chance.",
-    color: "#ffe082",
-    shopCost: 99,
-    apply: (run) => {
-      run.player.stats.flatDamage += 3;
-      run.player.stats.block += 2;
-      run.player.stats.critChance += 0.15;
-    },
-  };
+    Object.defineProperty(state, "mode", {
+      configurable: true,
+      enumerable: true,
+      get() {
+        return modeValue;
+      },
+      set(nextMode) {
+        if (typeof nextMode !== "string" || nextMode.length === 0 || nextMode === modeValue) {
+          return;
+        }
+        modeValue = nextMode;
+        reportMode(modeValue);
+        // Mode changes can switch between fixed menu canvas size and gameplay aspect ratio.
+        // Resize immediately to avoid transient stretched frames (especially menu -> collection).
+        resizeCanvas();
+      },
+    });
 
-  const RELIC_BY_ID = new Map([...RELICS, BOSS_RELIC].map((r) => [r.id, r]));
+    reportMode(modeValue);
+  }
+
+  installModeBridge();
+
+  function clampNumber(value, min, max, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+      return fallback;
+    }
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function nonNegInt(value, fallback = 0) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+      return fallback;
+    }
+    return Math.max(0, Math.floor(n));
+  }
 
   function normalizeRelicRarity(rarity) {
     return normalizeRelicRarityFromDomain(rarity, RELIC_RARITY_META);
@@ -946,179 +287,6 @@ export function bootstrapRuntime() {
       return "Unlocked";
     }
     return `${progress.label} (${progress.current}/${progress.target})`;
-  }
-
-  const ENEMY_NAMES = {
-    normal: [
-      "Pit Croupier",
-      "Tin Dealer",
-      "Shiv Shark",
-      "Brick Smiler",
-      "Card Warden",
-      "Ash Gambler",
-    ],
-    elite: ["Velvet Reaper", "Latch Queen", "Bone Accountant", "Stack Baron"],
-    boss: ["The House", "Abyss Banker", "Null Dealer"],
-  };
-  const ENEMY_AVATAR_BY_NAME = {
-    "Pit Croupier": "pit-croupier",
-    "Tin Dealer": "tin-dealer",
-    "Shiv Shark": "shiv-shark",
-    "Brick Smiler": "brick-smiler",
-    "Card Warden": "card-warden",
-    "Ash Gambler": "ash-gambler",
-    "Velvet Reaper": "velvet-reaper",
-    "Latch Queen": "latch-queen",
-    "Bone Accountant": "bone-accountant",
-    "Stack Baron": "stack-baron",
-    "The House": "the-house",
-    "Abyss Banker": "abyss-banker",
-    "Null Dealer": "null-dealer",
-  };
-  const DEALER_DIALOGUE_VERBATIM = Object.freeze([
-    "Hey, whats the big deal? OH, it’s me!!",
-    "I got 21 problems, but winning this game ain’t one!",
-    "Hit me, if you dare!!",
-    "Oh you wont be able to stand me!",
-    "I dont know jack, but I DO know blackjack!!",
-    "If you're gonna beat me, you'll need an ace in the hole!",
-    "Now shove this ace up your hole!",
-    "I've got nothing up my sleeves. Stop looking at them!",
-    "I'm gonna split you in half!",
-    "You're the hero? Well, I'm the ante-hero!",
-    "I'm kind of a big deal.",
-    "I'm gonna club you to death!",
-    "You're in trouble, cuz I don't have a heart!",
-  ]);
-  const DEALER_DIALOGUE_VERBATIM_SET = new Set(DEALER_DIALOGUE_VERBATIM);
-  const DEALER_DIALOGUE_EXTRA = Object.freeze([
-    "I only deal two things: cards and busts.",
-    "Welcome to Blackjack: where hope hits and dies.",
-    "I count to 21 better than you count blessings.",
-    "You can hit, stand, or panic. I recommend panic.",
-    "This shoe has your bust written all over it.",
-    "Split the pair, split your destiny.",
-    "Double down? Double regret.",
-    "I don't fold, I just watch players bust.",
-    "If confidence were chips, you'd still be short-stacked.",
-    "I came to deal cards and break 20s.",
-    "The house edge is my love language.",
-    "You bring vibes, I bring dealer math.",
-    "Your 16 is cute. My 10 showing is cuter.",
-    "Stand on 12. I dare you.",
-    "Hit again. I love repeat customers.",
-    "You blink, I flip a face card.",
-    "This hand has your bust on speed dial.",
-    "Insurance? I sell disappointment by the ounce.",
-    "Every ace you draw is pre-taxed by fate.",
-    "The only thing softer than your total is that excuse.",
-  ]);
-  const ENCOUNTER_INTRO_OPENERS = Object.freeze({
-    normal: [
-      "You walked into my lane, now play this blackjack clean.",
-      "I deal fast and punish slow hits.",
-      "This table eats busted nerves for breakfast.",
-      "Keep your pulse steady if you want out of this shoe alive.",
-      ...DEALER_DIALOGUE_VERBATIM,
-      ...DEALER_DIALOGUE_EXTRA,
-    ],
-    elite: [
-      "You've reached an elite blackjack table, and the stakes bite back.",
-      "I break hopeful runs one busted hand at a time.",
-      "One mistake here and your chips turn to smoke.",
-      "You've climbed high enough to lose to a cold shoe.",
-      "I collect win streaks and cash them as busts.",
-      "I don't count cards, I count broken doubles.",
-      "Your confidence looks expensive. This hand is cash only.",
-      "You brought courage to a hard-17 fight.",
-      "I don't bluff. I flip and collect.",
-      "Try a hero hit. I need a laugh.",
-    ],
-    boss: [
-      "So you finally reached the heart of blackjack abyss.",
-      "Every deal ends in debt when I run the table.",
-      "This is where winning runs come to bust.",
-      "The house is watching every hit and stand.",
-      "I am the reason the odds stay house-favored.",
-      "You don't beat me, you hope I bust first.",
-      "The last hero stood on 16. Briefly.",
-      "When I say all in, I mean all your chips.",
-      "I don't fear aces. I bury them in dealer 21s.",
-      "This isn't a duel, it's a final table sentence.",
-    ],
-  });
-  const ENCOUNTER_INTRO_CLOSERS = Object.freeze({
-    normal: [
-      "Show me your best hand.",
-      "Deal if you dare.",
-      "Try not to fold under pressure.",
-    ],
-    elite: [
-      "Bring your best, because I won't blink.",
-      "Show me a hand worth remembering.",
-      "Survive this round and maybe you belong here.",
-      "Step up and prove you're not bluffing.",
-    ],
-    boss: [
-      "Play now and earn your way out.",
-      "Show me a hand strong enough to break the house.",
-      "No more warmups, this is the final test.",
-      "Deal and face the table's true owner.",
-    ],
-  });
-
-  const state = createRuntimeState({
-    width: WIDTH,
-    height: HEIGHT,
-    audioEnabled: loadAudioEnabled(STORAGE_KEYS),
-  });
-  const runtimeTestFlags = readRuntimeTestFlags(window);
-
-  function installModeBridge() {
-    let modeValue = typeof state.mode === "string" ? state.mode : "menu";
-    const reportMode = (mode) => {
-      if (phaserBridge && typeof phaserBridge.reportMode === "function") {
-        phaserBridge.reportMode(mode);
-      }
-    };
-
-    Object.defineProperty(state, "mode", {
-      configurable: true,
-      enumerable: true,
-      get() {
-        return modeValue;
-      },
-      set(nextMode) {
-        if (typeof nextMode !== "string" || nextMode.length === 0 || nextMode === modeValue) {
-          return;
-        }
-        modeValue = nextMode;
-        reportMode(modeValue);
-        // Mode changes can switch between fixed menu canvas size and gameplay aspect ratio.
-        // Resize immediately to avoid transient stretched frames (especially menu -> collection).
-        resizeCanvas();
-      },
-    });
-
-    reportMode(modeValue);
-  }
-
-  installModeBridge();
-
-  function clampNumber(value, min, max, fallback) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) {
-      return fallback;
-    }
-    return Math.max(min, Math.min(max, n));
-  }
-
-  function nonNegInt(value, fallback = 0) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) {
-      return fallback;
-    }
-    return Math.max(0, Math.floor(n));
   }
 
   function mergePlayerStats(statsLike) {
@@ -1202,156 +370,35 @@ export function bootstrapRuntime() {
   }
 
   function sanitizeCard(cardLike) {
-    if (!cardLike || typeof cardLike !== "object") {
-      return null;
-    }
-    if (!RANKS.includes(cardLike.rank) || !SUITS.includes(cardLike.suit)) {
-      return null;
-    }
-    return { rank: cardLike.rank, suit: cardLike.suit };
+    return sanitizeCardFromModule(cardLike, { ranks: RANKS, suits: SUITS });
   }
 
   function sanitizeCardList(listLike) {
-    if (!Array.isArray(listLike)) {
-      return [];
-    }
-    return listLike.map(sanitizeCard).filter(Boolean);
+    return sanitizeCardListFromModule(listLike, { ranks: RANKS, suits: SUITS });
   }
 
   function sanitizeRun(runLike) {
-    if (!runLike || typeof runLike !== "object") {
-      return null;
-    }
-
-    const run = createRun();
-    run.floor = nonNegInt(runLike.floor, run.floor) || 1;
-    run.maxFloor = nonNegInt(runLike.maxFloor, run.maxFloor) || run.maxFloor;
-    run.room = Math.max(1, nonNegInt(runLike.room, run.room));
-    run.roomsPerFloor = Math.max(3, nonNegInt(runLike.roomsPerFloor, run.roomsPerFloor));
-    run.enemiesDefeated = nonNegInt(runLike.enemiesDefeated, 0);
-    run.totalHands = nonNegInt(runLike.totalHands, 0);
-    run.chipsEarnedRun = nonNegInt(runLike.chipsEarnedRun, 0);
-    run.chipsSpentRun = nonNegInt(runLike.chipsSpentRun, 0);
-    run.maxStreak = nonNegInt(runLike.maxStreak, 0);
-    run.shopPurchaseMade = Boolean(runLike.shopPurchaseMade);
-    run.blackjacks = nonNegInt(runLike.blackjacks, 0);
-    run.doublesWon = nonNegInt(runLike.doublesWon, 0);
-    run.splitsUsed = nonNegInt(runLike.splitsUsed, 0);
-    run.pushes = nonNegInt(runLike.pushes, 0);
-
-    const player = runLike.player && typeof runLike.player === "object" ? runLike.player : {};
-    run.player.maxHp = Math.max(10, nonNegInt(player.maxHp, run.player.maxHp));
-    run.player.hp = clampNumber(player.hp, 0, run.player.maxHp, run.player.maxHp);
-    run.player.gold = nonNegInt(player.gold, run.player.gold);
-    run.player.streak = nonNegInt(player.streak, 0);
-    run.player.totalDamageDealt = nonNegInt(player.totalDamageDealt, 0);
-    run.player.totalDamageTaken = nonNegInt(player.totalDamageTaken, 0);
-    run.player.bustGuardsLeft = nonNegInt(player.bustGuardsLeft, 0);
-    run.player.stats = mergePlayerStats(player.stats);
-    run.player.relics = {};
-
-    if (player.relics && typeof player.relics === "object") {
-      for (const [id, count] of Object.entries(player.relics)) {
-        if (typeof id === "string" && id.length > 0) {
-          run.player.relics[id] = nonNegInt(count, 0);
-        }
-      }
-    }
-
-    if (Array.isArray(runLike.log)) {
-      run.log = runLike.log
-        .slice(0, 6)
-        .map((entry) => ({
-          message: String(entry?.message || ""),
-          ttl: clampNumber(entry?.ttl, 0, 30, 8),
-        }))
-        .filter((entry) => entry.message.length > 0);
-    }
-    if (Array.isArray(runLike.eventLog)) {
-      run.eventLog = runLike.eventLog
-        .slice(0, 240)
-        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
-        .filter((entry) => entry.length > 0);
-    }
-
-    run.maxStreak = Math.max(run.maxStreak, run.player.streak);
-    return run;
+    return sanitizeRunFromModule({
+      runLike,
+      createRun,
+      nonNegInt,
+      clampNumber,
+      mergePlayerStats,
+    });
   }
 
   function sanitizeEncounter(encounterLike, run) {
-    if (!encounterLike || typeof encounterLike !== "object" || !run) {
-      return null;
-    }
-
-    const type = ["normal", "elite", "boss"].includes(encounterLike?.enemy?.type)
-      ? encounterLike.enemy.type
-      : roomType(run.room, run.roomsPerFloor);
-
-    const enemyBase = createEnemy(run.floor, run.room, type);
-    const enemyLike = encounterLike.enemy && typeof encounterLike.enemy === "object" ? encounterLike.enemy : {};
-    const enemy = {
-      ...enemyBase,
-      name: typeof enemyLike.name === "string" && enemyLike.name.length > 0 ? enemyLike.name : enemyBase.name,
-      hp: clampNumber(enemyLike.hp, 0, 9999, enemyBase.hp),
-      maxHp: Math.max(1, nonNegInt(enemyLike.maxHp, enemyBase.maxHp)),
-      attack: Math.max(1, nonNegInt(enemyLike.attack, enemyBase.attack)),
-    };
-    enemy.hp = Math.min(enemy.hp, enemy.maxHp);
-
-    const splitQueue = Array.isArray(encounterLike.splitQueue)
-      ? encounterLike.splitQueue
-          .map((hand) => sanitizeCardList(hand))
-          .filter((hand) => hand.length > 0)
-          .slice(0, MAX_SPLIT_HANDS - 1)
-      : [];
-    const splitHandsTotalDefault = Math.max(1, Math.min(MAX_SPLIT_HANDS, 1 + splitQueue.length));
-    const splitHandsTotal = Math.max(
-      splitHandsTotalDefault,
-      Math.min(MAX_SPLIT_HANDS, nonNegInt(encounterLike.splitHandsTotal, splitHandsTotalDefault))
-    );
-    const splitHandsResolved = Math.min(
-      Math.max(0, nonNegInt(encounterLike.splitHandsResolved, 0)),
-      Math.max(0, splitHandsTotal - 1)
-    );
-    const introLike = encounterLike.intro && typeof encounterLike.intro === "object" ? encounterLike.intro : null;
-    const introState =
-      introLike && introLike.active
-        ? createEncounterIntroState(enemy, {
-            ...introLike,
-            active: true,
-          })
-        : null;
-
-    const encounter = {
-      enemy,
-      shoe: sanitizeCardList(encounterLike.shoe),
-      discard: sanitizeCardList(encounterLike.discard),
-      playerHand: sanitizeCardList(encounterLike.playerHand),
-      dealerHand: sanitizeCardList(encounterLike.dealerHand),
-      splitQueue,
-      splitUsed: Boolean(encounterLike.splitUsed),
-      splitHandsTotal,
-      splitHandsResolved,
-      dealerResolved: Boolean(encounterLike.dealerResolved),
-      hideDealerHole: Boolean(encounterLike.hideDealerHole),
-      phase: ["player", "dealer", "resolve", "done"].includes(encounterLike.phase) ? encounterLike.phase : "player",
-      resultText: typeof encounterLike.resultText === "string" ? encounterLike.resultText : "",
-      resultTone: ["neutral", "win", "loss", "push", "special"].includes(encounterLike.resultTone)
-        ? encounterLike.resultTone
-        : "neutral",
-      resolveTimer: clampNumber(encounterLike.resolveTimer, 0, 10, 0),
-      handIndex: Math.max(1, nonNegInt(encounterLike.handIndex, 1)),
-      resolvedHands: Math.max(0, nonNegInt(encounterLike.resolvedHands, 0)),
-      doubleDown: Boolean(encounterLike.doubleDown),
-      bustGuardTriggered: Boolean(encounterLike.bustGuardTriggered),
-      critTriggered: Boolean(encounterLike.critTriggered),
-      lastPlayerAction: ["hit", "stand", "double", "split", "none"].includes(encounterLike.lastPlayerAction)
-        ? encounterLike.lastPlayerAction
-        : "none",
-      intro: introState,
-    };
-
-    return encounter;
+    return sanitizeEncounterFromModule({
+      encounterLike,
+      run,
+      resolveRoomType,
+      createEnemy,
+      createEncounterIntroState,
+      sanitizeCardListFn: sanitizeCardList,
+      maxSplitHands: MAX_SPLIT_HANDS,
+      nonNegInt,
+      clampNumber,
+    });
   }
 
   function clearSavedRun() {
@@ -1588,223 +635,40 @@ export function bootstrapRuntime() {
     return bits.slice(0, 4).join(" | ");
   }
 
-  function shuffle(list) {
-    for (let i = list.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const tmp = list[i];
-      list[i] = list[j];
-      list[j] = tmp;
-    }
-    return list;
-  }
-
-  function createDeck(numDecks = 4) {
-    const deck = [];
-    for (let n = 0; n < numDecks; n += 1) {
-      for (const suit of SUITS) {
-        for (const rank of RANKS) {
-          deck.push({ suit, rank });
-        }
-      }
-    }
-    return deck;
-  }
-
-  function rankValue(rank) {
-    if (rank === "A") {
-      return 11;
-    }
-    if (rank === "K" || rank === "Q" || rank === "J") {
-      return 10;
-    }
-    return Number(rank);
-  }
-
-  function handTotal(cards) {
-    let total = 0;
-    let aces = 0;
-    for (const card of cards) {
-      total += rankValue(card.rank);
-      if (card.rank === "A") {
-        aces += 1;
-      }
-    }
-    while (total > 21 && aces > 0) {
-      total -= 10;
-      aces -= 1;
-    }
-    return { total, softAces: aces };
-  }
-
-  function isBlackjack(cards) {
-    return cards.length === 2 && handTotal(cards).total === 21;
-  }
-
-  function visibleDealerTotal(encounter) {
-    if (!encounter || !Array.isArray(encounter.dealerHand)) {
-      return 0;
-    }
-    if (!(encounter.hideDealerHole && encounter.phase === "player")) {
-      return handTotal(encounter.dealerHand).total;
-    }
-    const visibleCards = encounter.dealerHand.filter((card, index) => card && index !== 1);
-    return handTotal(visibleCards).total;
-  }
-
   function createRun() {
-    return {
-      floor: 1,
-      maxFloor: 3,
-      room: 1,
-      roomsPerFloor: 5,
-      enemiesDefeated: 0,
-      totalHands: 0,
-      chipsEarnedRun: 0,
-      chipsSpentRun: 0,
-      maxStreak: 0,
-      shopPurchaseMade: false,
-      blackjacks: 0,
-      doublesWon: 0,
-      splitsUsed: 0,
-      pushes: 0,
-      player: {
-        hp: 42,
-        maxHp: 42,
-        gold: 24,
-        streak: 0,
-        totalDamageDealt: 0,
-        totalDamageTaken: 0,
-        bustGuardsLeft: 0,
-        relics: {},
-        stats: defaultPlayerStats(),
-      },
-      log: [],
-      eventLog: [],
-    };
+    return createRunFromModule(defaultPlayerStats);
   }
 
   function applyTestEconomyToNewRun(run) {
-    if (!run || !run.player || !runtimeTestFlags?.economy) {
-      return;
-    }
-    const seededGold = Math.max(0, nonNegInt(runtimeTestFlags.economy.startingGold, 0));
-    if (seededGold <= 0) {
-      return;
-    }
-    if (run.player.gold < seededGold) {
-      run.player.gold = seededGold;
-      addLog(`Test mode seeded chips: ${seededGold}.`);
-    }
-  }
-
-  function roomType(room, roomsPerFloor) {
-    return resolveRoomType(room, roomsPerFloor);
-  }
-
-  function pickEnemyName(type) {
-    const names = ENEMY_NAMES[type];
-    return names[Math.floor(Math.random() * names.length)];
+    applyTestEconomyToNewRunFromModule({ run, runtimeTestFlags, addLog });
   }
 
   function createEnemy(floor, room, type) {
-    const name = pickEnemyName(type);
-    const avatarKey = ENEMY_AVATAR_BY_NAME[name] || sanitizeEnemyAvatarKey(name);
-    ensureEnemyAvatarLoaded(avatarKey);
-
-    const baseHp = 14 + floor * 4 + room * 2;
-    const hp =
-      type === "boss"
-        ? baseHp + 30
-        : type === "elite"
-          ? baseHp + 12
-          : baseHp;
-
-    const attack =
-      type === "boss"
-        ? 4 + floor + (floor >= 3 ? 1 : 0)
-        : type === "elite"
-          ? 2 + floor
-          : Math.max(1, floor);
-
-    const goldDrop =
-      type === "boss"
-        ? 34 + floor * 9
-        : type === "elite"
-          ? 22 + floor * 6
-          : 10 + floor * 4 + room * 2;
-
-    return {
-      name,
-      avatarKey,
+    return createEnemyFromModule({
+      floor,
+      room,
       type,
-      hp,
-      maxHp: hp,
-      attack,
-      goldDrop,
-      color:
-        type === "boss"
-          ? "#ff7a5c"
-          : type === "elite"
-            ? "#f2c05c"
-            : "#83b9ff",
-    };
+      sanitizeEnemyAvatarKey,
+      ensureEnemyAvatarLoaded,
+    });
   }
 
   function buildEnemyIntroDialogue(enemy) {
-    const encounterType = enemy?.type === "boss" ? "boss" : enemy?.type === "elite" ? "elite" : "normal";
-    const openers = ENCOUNTER_INTRO_OPENERS[encounterType] || ENCOUNTER_INTRO_OPENERS.normal;
-    const closers = ENCOUNTER_INTRO_CLOSERS[encounterType] || ENCOUNTER_INTRO_CLOSERS.normal;
-    const fallbackOpener = "You made it to my table.";
-    const fallbackCloser = "Show me your hand.";
-    const pickRandom = (list, fallback) => {
-      if (!Array.isArray(list) || list.length === 0) {
-        return fallback;
-      }
-      return list[Math.floor(Math.random() * list.length)] || fallback;
-    };
-
-    const composeDialogue = () => {
-      const opener = pickRandom(openers, fallbackOpener);
-      if (DEALER_DIALOGUE_VERBATIM_SET.has(opener)) {
-        return opener;
-      }
-      const closer = pickRandom(closers, fallbackCloser);
-      return `${opener} ${closer}`.replace(/\s+/g, " ").trim();
-    };
-
-    let dialogue = composeDialogue();
-
-    if (dialogue === state.lastIntroDialogue && (openers.length > 1 || closers.length > 1)) {
-      for (let i = 0; i < 4 && dialogue === state.lastIntroDialogue; i += 1) {
-        dialogue = composeDialogue();
-      }
-    }
-
-    state.lastIntroDialogue = dialogue;
-    return dialogue;
+    const next = buildEnemyIntroDialogueFromModule({
+      enemy,
+      lastIntroDialogue: state.lastIntroDialogue,
+    });
+    state.lastIntroDialogue = next.nextLastIntroDialogue;
+    return next.dialogue;
   }
 
   function createEncounterIntroState(enemy, introLike = null) {
-    const typedLike = introLike && typeof introLike === "object" ? introLike : {};
-    const sourceDialogue =
-      typeof typedLike.dialogue === "string" && typedLike.dialogue.trim().length > 0
-        ? typedLike.dialogue.trim()
-        : buildEnemyIntroDialogue(enemy);
-    const dialogue = sourceDialogue.replace(/\s+/g, " ").trim();
-    const maxChars = dialogue.length;
-    let visibleChars = clampNumber(typedLike.visibleChars, 0, maxChars, 0);
-    let ready = Boolean(typedLike.ready) || visibleChars >= maxChars;
-    if (ready) {
-      visibleChars = maxChars;
-    }
-    return {
-      active: Boolean(typedLike.active),
-      dialogue,
-      visibleChars,
-      typeTimer: clampNumber(typedLike.typeTimer, 0, 4, 0.18),
-      ready,
-      confirmRect: null,
-    };
+    return createEncounterIntroStateFromModule({
+      enemy,
+      introLike,
+      clampNumberFn: clampNumber,
+      buildEnemyIntroDialogueFn: buildEnemyIntroDialogue,
+    });
   }
 
   function addLog(message) {
@@ -2624,10 +1488,6 @@ export function bootstrapRuntime() {
     };
   }
 
-  function cardToText(card) {
-    return `${card.rank}${card.suit}`;
-  }
-
   function drawFromShoe(encounter) {
     if (encounter.shoe.length < 6) {
       if (encounter.discard.length > 0) {
@@ -2708,33 +1568,12 @@ export function bootstrapRuntime() {
   }
 
   function createEncounter(run) {
-    const type = roomType(run.room, run.roomsPerFloor);
-    const enemy = createEnemy(run.floor, run.room, type);
-    return {
-      enemy,
-      shoe: shuffle(createDeck(4)),
-      discard: [],
-      playerHand: [],
-      dealerHand: [],
-      splitQueue: [],
-      splitUsed: false,
-      splitHandsTotal: 1,
-      splitHandsResolved: 0,
-      dealerResolved: false,
-      hideDealerHole: true,
-      phase: "player",
-      resultText: "",
-      resultTone: "neutral",
-      resolveTimer: 0,
-      nextDealPrompted: false,
-      handIndex: 1,
-      resolvedHands: 0,
-      doubleDown: false,
-      bustGuardTriggered: false,
-      critTriggered: false,
-      lastPlayerAction: "none",
-      intro: createEncounterIntroState(enemy, { active: true, visibleChars: 0, ready: false, typeTimer: 0.28 }),
-    };
+    return createEncounterFromModule({
+      run,
+      createEnemyFn: createEnemy,
+      createEncounterIntroStateFn: createEncounterIntroState,
+      resolveRoomTypeFn: resolveRoomType,
+    });
   }
 
   function startHand() {

@@ -6,7 +6,7 @@
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
-- Last Updated: 2026-02-21 02:26:00 EST
+- Last Updated: 2026-02-21 15:02:00 EST
 
 ## Current Focus
 
@@ -29,6 +29,10 @@
 - Removed test-only fast-path controls from runtime and acceptance harness (`window.__ABYSS_TEST_FLAGS__.fastPath.*`).
 - Removed dormant legacy runtime canvas draw pipeline and DOM/input fallback registration.
 - Added initial bootstrap helper modules under `src/engine/runtime/bootstrap/*` (`api-registry`, `audio-system`, `combat-actions`, `run-lifecycle`, `test-hooks`, `serialization`).
+- Extracted large static runtime content from `bootstrap.js` into dedicated modules (`relic-catalog`, `encounter-content`) to keep Phaser runtime orchestration thinner.
+- Extracted card/deck/hand utility logic from runtime bootstrap into `src/engine/runtime/domain/combat.js` and expanded unit coverage for those helpers.
+- Extracted run/encounter creation flow into bootstrap factories (`run-factory`, `encounter-factory`) and added targeted unit tests for those modules.
+- Extracted save/resume hydration sanitizers into `src/engine/runtime/bootstrap/state-sanitizers.js` and added sanitizer-specific unit tests.
 
 ## Next Up
 

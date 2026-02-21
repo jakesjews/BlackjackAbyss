@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  CARD_RANKS,
+  CARD_SUITS,
+  cardToText,
   canDoubleDown,
   canSplitHand,
   computeHandCardPosition,
   computeHandLayout,
+  createDeck,
+  handTotal,
+  isBlackjack,
   resolveShowdownOutcome,
+  visibleDealerTotal,
 } from "../domain/combat.js";
 
 describe("combat domain", () => {
@@ -30,6 +37,34 @@ describe("combat domain", () => {
     expect(pos.y).toBeGreaterThan(0);
     expect(pos.w).toBeGreaterThan(0);
     expect(pos.h).toBeGreaterThan(0);
+  });
+
+  it("creates a standard multi-deck shoe", () => {
+    const deck = createDeck();
+    expect(deck).toHaveLength(4 * CARD_SUITS.length * CARD_RANKS.length);
+    expect(deck[0]).toHaveProperty("rank");
+    expect(deck[0]).toHaveProperty("suit");
+  });
+
+  it("computes hand totals with soft ace handling", () => {
+    expect(handTotal([{ rank: "A" }, { rank: "9" }]).total).toBe(20);
+    expect(handTotal([{ rank: "A" }, { rank: "9" }, { rank: "A" }]).total).toBe(21);
+    expect(isBlackjack([{ rank: "A" }, { rank: "K" }])).toBe(true);
+    expect(isBlackjack([{ rank: "10" }, { rank: "A" }, { rank: "A" }])).toBe(false);
+  });
+
+  it("computes visible dealer total and card text", () => {
+    const encounter = {
+      phase: "player",
+      hideDealerHole: true,
+      dealerHand: [
+        { rank: "K", suit: "S" },
+        { rank: "6", suit: "H" },
+      ],
+    };
+    expect(visibleDealerTotal(encounter)).toBe(10);
+    expect(visibleDealerTotal({ ...encounter, hideDealerHole: false })).toBe(16);
+    expect(cardToText({ rank: "A", suit: "D" })).toBe("AD");
   });
 
   it("guards double-down eligibility", () => {

@@ -1,3 +1,73 @@
+export const CARD_SUITS = Object.freeze(["S", "H", "D", "C"]);
+export const CARD_RANKS = Object.freeze(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]);
+
+export function shuffle(list) {
+  for (let i = list.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = list[i];
+    list[i] = list[j];
+    list[j] = tmp;
+  }
+  return list;
+}
+
+export function createDeck(numDecks = 4, suits = CARD_SUITS, ranks = CARD_RANKS) {
+  const deck = [];
+  for (let n = 0; n < numDecks; n += 1) {
+    for (const suit of suits) {
+      for (const rank of ranks) {
+        deck.push({ suit, rank });
+      }
+    }
+  }
+  return deck;
+}
+
+export function rankValue(rank) {
+  if (rank === "A") {
+    return 11;
+  }
+  if (rank === "K" || rank === "Q" || rank === "J") {
+    return 10;
+  }
+  return Number(rank);
+}
+
+export function handTotal(cards) {
+  let total = 0;
+  let aces = 0;
+  for (const card of cards) {
+    total += rankValue(card.rank);
+    if (card.rank === "A") {
+      aces += 1;
+    }
+  }
+  while (total > 21 && aces > 0) {
+    total -= 10;
+    aces -= 1;
+  }
+  return { total, softAces: aces };
+}
+
+export function isBlackjack(cards) {
+  return cards.length === 2 && handTotal(cards).total === 21;
+}
+
+export function visibleDealerTotal(encounter) {
+  if (!encounter || !Array.isArray(encounter.dealerHand)) {
+    return 0;
+  }
+  if (!(encounter.hideDealerHole && encounter.phase === "player")) {
+    return handTotal(encounter.dealerHand).total;
+  }
+  const visibleCards = encounter.dealerHand.filter((card, index) => card && index !== 1);
+  return handTotal(visibleCards).total;
+}
+
+export function cardToText(card) {
+  return `${card.rank}${card.suit}`;
+}
+
 export function computeHandLayout({ count, layoutScale = 1, cardW, cardH }) {
   const safeCount = Math.max(1, count);
   const cardsPerRow = 6;

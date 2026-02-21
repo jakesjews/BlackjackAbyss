@@ -21,6 +21,10 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Removed dormant legacy canvas draw pipeline from runtime bootstrap (Phaser scenes are renderer of record).
 - Removed dormant legacy DOM/canvas input fallback wiring from runtime bootstrap.
 - Added bootstrap helper modules under `src/engine/runtime/bootstrap/*` for API wiring, lifecycle, audio/listeners, combat transition shaping, and test-hook publication.
+- Extracted static relic catalog and encounter dialogue/enemy content into `src/engine/runtime/bootstrap/relic-catalog.js` and `src/engine/runtime/bootstrap/encounter-content.js`.
+- Moved reusable card/deck/hand helpers (`shuffle`, `createDeck`, totals/blackjack utilities, dealer-visible total) into `src/engine/runtime/domain/combat.js`.
+- Extracted run/encounter creation lifecycle from bootstrap into `src/engine/runtime/bootstrap/run-factory.js` and `src/engine/runtime/bootstrap/encounter-factory.js`.
+- Extracted run snapshot hydration/sanitization logic into `src/engine/runtime/bootstrap/state-sanitizers.js`.
 - Replaced procedural generated BGM with MP3-backed runtime soundtrack.
 - Added GitHub Actions CI workflow with required `quality-gate` and non-required smoke job.
 
