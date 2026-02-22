@@ -5,7 +5,7 @@
 - Phaser-first runtime migration is active in production with acceptance tests in place as a refactor gate.
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
-- Visual regression is now a required CI gate with committed golden images (`tests/visual-baseline/*`) and near-strict pixel diff thresholds.
+- Visual regression runs in CI against committed golden images (`tests/visual-baseline/*`) but is currently warning-only (non-blocking) during UI churn.
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
 - Docs-first checkpoint completed and runtime docs are synced to Phaser-native runtime architecture.
 - Runtime entry now uses `src/engine/runtime/runtime-engine.js` with direct app/runtime seam wiring.
@@ -117,7 +117,7 @@
 - Extracted additional orchestration helpers into `src/engine/runtime/core/runtime-sanitizers.js`, `src/engine/runtime/core/runtime-ui-helpers.js`, and `src/engine/runtime/core/runtime-passive-helpers.js`.
 - Reduced `src/engine/runtime/runtime-engine.js` from 857 lines to 803 lines in this slice.
 - Added visual baseline/diff helpers (`tests/acceptance/helpers/{visual-baseline,image-diff}.mjs`) and committed golden snapshots under `tests/visual-baseline/*`.
-- Added strict visual scripts (`test:visual`, `test:visual:update`) and CI upload of visual diff artifacts (`artifacts/visual-regression/*`) on failures.
+- Added strict visual scripts (`test:visual`, `test:visual:update`) and CI upload of visual diff artifacts (`artifacts/visual-regression/*`) on failures; CI currently treats `test:visual` as warning-only during UI churn.
 - Added test-only visual stabilization flag support (`window.__ABYSS_TEST_FLAGS__.visual.disableFx`) and wired runtime cosmetic FX gating for deterministic captures.
 - Removed `window.visualViewport`/DOM resize dispatch usage from `MenuScene`; menu viewport sizing now uses Phaser scale manager dimensions.
 - Moved menu shell `menu-screen` class toggling from scene DOM access to app-level mode sync (`src/engine/app.js`).
@@ -141,7 +141,7 @@
 
 - `npm run test:unit`: passing (runtime module tests).
 - `npm run test:acceptance`: passing (contracts + one-hand core/camp flow + seeded economy + persistence/resume).
-- `npm run test:visual`: passing (golden diff gate for desktop/mobile smoke shots).
+- `npm run test:visual`: passing (golden diff validation for desktop/mobile smoke shots; CI warning-only).
 - `npm run test:smoke`: passing (acceptance-backed desktop/mobile flow snapshots).
 - `npm run build`: passing (Vite production bundle).
 - `npm run test:dead-refs`: passing (no stale bootstrap/legacy-adapter symbol references).

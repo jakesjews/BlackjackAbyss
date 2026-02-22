@@ -46,7 +46,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Folded smoke capture into acceptance (`tests/acceptance/visual-smoke.spec.mjs`) and replaced standalone smoke harness script.
 - `npm run test:smoke` now intentionally reruns only `tests/acceptance/visual-smoke.spec.mjs` for quick artifact capture; it is a subset of `test:acceptance`, not an additional independent gate.
 - Removed `window.__ABYSS_PHASER_BRIDGE__` publication and deleted `src/engine/runtime/compat/phaser-bridge-compat.js`; runtime APIs are now the only contract surface.
-- Added committed visual regression baselines under `tests/visual-baseline/*` with near-strict diff policy (`pixelmatch` + threshold metrics) and CI PR blocking via `test:visual`.
+- Added committed visual regression baselines under `tests/visual-baseline/*` with near-strict diff policy (`pixelmatch` + threshold metrics); CI currently runs `test:visual` in warning-only mode while UI refactor churn is active.
 - Added test-only visual stabilization flag (`window.__ABYSS_TEST_FLAGS__.visual.disableFx`) for deterministic snapshot capture.
 - Removed scene-side native browser viewport/input fallbacks (`window.visualViewport`, `matchMedia`, direct DOM canvas/image paths) from active scene flows.
 - Runtime host lifecycle now uses Phaser events for hidden/visible, input unlock, and scale resize wiring; browser lifecycle usage is reduced to explicit compatibility boundaries.

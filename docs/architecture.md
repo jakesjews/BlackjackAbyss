@@ -92,8 +92,8 @@ Write path:
 
 ## Verification Gate
 
-- Refactors should clear: `test:unit`, `test:acceptance`, `test:visual`, and `build`.
-- Visual regression is PR-blocking through committed baselines in `tests/visual-baseline/*`.
+- Refactors should clear: `test:unit`, `test:acceptance`, and `build`.
+- `test:visual` remains required for local visual validation, but CI currently treats visual diffs as warning-only during active UI churn.
 - `test:acceptance` includes `tests/acceptance/visual-smoke.spec.mjs`.
 - `test:smoke` remains available as a focused rerun of that same smoke spec when artifact-only refresh is needed.
 - Acceptance tests use one-hand core + natural camp flows, non-production economy seeding for faster buy-path verification, and desktop/mobile smoke artifact capture.

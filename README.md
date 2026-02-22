@@ -84,9 +84,9 @@ Storage keys:
 ## CI
 
 - GitHub Actions workflow: `.github/workflows/ci.yml`
-- Required check for PR merge to `main`: `quality-gate` (`test:unit`, `test:acceptance`, `test:visual`, `build`)
-- Visual regression diffs are PR-blocking and compare screenshots against committed baselines in `tests/visual-baseline/*`.
-- `test:acceptance` includes the same visual smoke flow used by `test:visual`; `test:visual` is the strict golden-diff gate.
+- Required check for PR merge to `main`: `quality-gate` (`test:unit`, `test:acceptance`, `build`).
+- `test:visual` runs in CI as warning-only during active UI refactor churn (diff artifacts are still uploaded when it fails).
+- `test:acceptance` includes the same visual smoke flow used by `test:visual`; `test:visual` remains the strict golden-diff command for local/intentional validation.
 - Informational smoke job: runs on `main` pushes, nightly schedule, and manual dispatch; reruns the same visual smoke spec for artifact capture (`artifacts/visual-smoke/latest`).
 
 ## Test Commands

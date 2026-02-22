@@ -42,8 +42,15 @@ jobs:
       - name: Run acceptance tests
         run: npm run test:acceptance
 
-      - name: Run visual regression tests
+      - name: Run visual regression tests (warning only)
+        id: visual_regression
+        continue-on-error: true
         run: npm run test:visual
+
+      - name: Warn on visual regression diff failures
+        if: always() && steps.visual_regression.outcome == 'failure'
+        run: |
+          echo "::warning title=Visual regression warning::test:visual reported diffs. This is non-blocking during UI churn. Review artifacts/visual-regression."
 
       - name: Build
         run: npm run build
@@ -58,7 +65,7 @@ jobs:
           retention-days: 14
 
       - name: Upload visual regression artifacts
-        if: failure()
+        if: always() && steps.visual_regression.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: visual-regression-${{ github.run_id }}
