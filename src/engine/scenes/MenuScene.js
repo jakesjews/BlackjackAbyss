@@ -52,28 +52,6 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create() {
-    const parentWidth = Math.max(
-      1,
-      Math.floor(this.scale.parentSize?.width || this.scale.gameSize.width || MENU_CANVAS_WIDTH)
-    );
-    const parentHeight = Math.max(
-      1,
-      Math.floor(this.scale.parentSize?.height || this.scale.gameSize.height || MENU_CANVAS_HEIGHT)
-    );
-    const viewportW = Math.max(
-      1,
-      Math.floor(parentWidth || MENU_CANVAS_WIDTH)
-    );
-    const viewportH = Math.max(
-      1,
-      Math.floor(parentHeight || MENU_CANVAS_HEIGHT)
-    );
-    const fullscreenMobileMenu = this.shouldUseFullscreenMobileMenu(viewportW);
-    const targetW = fullscreenMobileMenu ? viewportW : MENU_CANVAS_WIDTH;
-    const targetH = fullscreenMobileMenu ? viewportH : MENU_CANVAS_HEIGHT;
-    if (this.scale.gameSize.width !== targetW || this.scale.gameSize.height !== targetH) {
-      this.scale.resize(targetW, targetH);
-    }
     this.cameras.main.setBackgroundColor("#081420");
     this.cameras.main.setAlpha(1);
     this.disableVisualFx = isVisualFxDisabledFromRuntime(this);

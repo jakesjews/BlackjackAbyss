@@ -15,8 +15,8 @@
 - Runtime host loop now requires Phaser step-handler wiring (browser RAF fallback removed).
 - Scene-side browser viewport fallbacks have been removed; scene sizing/input checks use Phaser APIs.
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
-- Smoke coverage is now acceptance-backed (`tests/acceptance/visual-smoke.spec.mjs`) with dedicated `test:smoke` targeting that spec.
-- `test:smoke` is a focused subset rerun of acceptance smoke coverage (artifact refresh), not an extra required gate when `test:acceptance` already passed.
+- Smoke coverage is now split from acceptance: `test:acceptance` covers gameplay/browser flow while `test:smoke`/`test:visual` target visual snapshots.
+- `test:smoke` is a focused visual rerun path for artifact refresh.
 - Last Updated: 2026-02-22 20:13:00 EST
 
 ## Current Focus
@@ -142,7 +142,7 @@
 - `npm run test:unit`: passing (runtime module tests).
 - `npm run test:acceptance`: passing (contracts + one-hand core/camp flow + seeded economy + persistence/resume).
 - `npm run test:visual`: passing (golden diff validation for desktop/mobile smoke shots; CI warning-only).
-- `npm run test:smoke`: passing (acceptance-backed desktop/mobile flow snapshots).
+- `npm run test:smoke`: passing (desktop/mobile visual smoke snapshots).
 - `npm run build`: passing (Vite production bundle).
 - `npm run test:dead-refs`: passing (no stale bootstrap/legacy-adapter symbol references).
 - Production deploy: `https://blackjackabyss.vercel.app`.
@@ -154,6 +154,6 @@
 - Preserve runtime method names and test hooks (`window.render_game_to_text`, `window.advanceTime`) unless a coordinated migration is planned.
 - Preserve non-production economy seed interface (`window.__ABYSS_TEST_FLAGS__.economy.startingGold`) used by acceptance tests.
 - Preserve non-production visual stabilization flag (`window.__ABYSS_TEST_FLAGS__.visual.disableFx`) used by visual regression tests.
-- Treat `test:acceptance` as the primary browser gate; use `test:smoke` only for targeted smoke reruns/artifact refresh.
+- Treat `test:acceptance` as the primary browser gameplay gate and `test:visual`/`test:smoke` as visual-regression checks.
 - Use `npm run test:visual:update` only when visual changes are intentional and reviewed.
 - Keep branch protection on `main` requiring the `quality-gate` workflow check.

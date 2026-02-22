@@ -143,6 +143,15 @@ async function assertVisualShot(viewportLabel, shotName, capturePath) {
 }
 
 async function captureAndAssert(session, viewportLabel, shotName) {
+  await session.page.evaluate(async () => {
+    if (document?.fonts?.ready) {
+      try {
+        await document.fonts.ready;
+      } catch {
+        // Font loading readiness can fail in some CI contexts; continue capture.
+      }
+    }
+  });
   const capturePath = getLatestCapturePath(viewportLabel, shotName);
   await fs.mkdir(path.dirname(capturePath), { recursive: true });
   await session.page.screenshot({ path: capturePath, fullPage: true });
@@ -174,14 +183,15 @@ async function runViewportSmoke(config) {
     const playingMode = await waitForMode(session.page, "playing", { maxTicks: 160, stepMs: 140 });
     expect(playingMode).toBe("playing");
 
-    await advanceTime(session.page, 220);
-    await captureAndAssert(session, config.label, "03-playing");
-
-    const snapshot = await runAction(session.page, "getSnapshot");
-    if (snapshot?.intro?.active) {
+    const beforePlayingShot = await runAction(session.page, "getSnapshot");
+    if (beforePlayingShot?.intro?.active) {
       await runAction(session.page, "confirmIntro");
       await advanceTime(session.page, 180);
     }
+
+    await advanceTime(session.page, 220);
+    await captureAndAssert(session, config.label, "03-playing");
+
     await advanceTime(session.page, 240);
     await captureAndAssert(session, config.label, "03b-playing-actions");
 

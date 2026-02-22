@@ -28,6 +28,8 @@ body {
 
 #game-shell {
   position: relative;
+  width: 100vw;
+  height: 100dvh;
   overflow: hidden;
   border-radius: 16px;
   background: #191108;

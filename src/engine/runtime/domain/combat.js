@@ -1,9 +1,10 @@
 export const CARD_SUITS = Object.freeze(["S", "H", "D", "C"]);
 export const CARD_RANKS = Object.freeze(["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]);
 
-export function shuffle(list) {
+export function shuffle(list, randomFn = Math.random) {
+  const random = typeof randomFn === "function" ? randomFn : Math.random;
   for (let i = list.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     const tmp = list[i];
     list[i] = list[j];
     list[j] = tmp;

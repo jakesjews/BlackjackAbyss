@@ -115,6 +115,17 @@ import { createRuntimePassiveHelpers } from "./core/runtime-passive-helpers.js";
 
 let runtimeEngineStarted = false;
 
+function createDeterministicRandom(seed = 0x9e3779b9) {
+  let value = seed >>> 0;
+  return () => {
+    value = (value + 0x6d2b79f5) >>> 0;
+    let t = value;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export function startRuntimeEngine(phaserRuntimePayload = null) {
   if (runtimeEngineStarted) {
     return;
@@ -163,6 +174,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
   const runtimeTestFlags = readRuntimeTestFlags(window);
   state.visual.disableFx = Boolean(runtimeTestFlags?.visual?.disableFx);
   runtimeContext.testFlags = runtimeTestFlags;
+  const runtimeRandom = state.visual.disableFx ? createDeterministicRandom(0x5f3759df) : Math.random;
 
   installRuntimeModeSync({
     state,
@@ -289,6 +301,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
       type,
       sanitizeEnemyAvatarKey,
       ensureEnemyAvatarLoaded,
+      random: runtimeRandom,
     });
   }
 
@@ -296,6 +309,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     const next = buildEnemyIntroDialogueFromModule({
       enemy,
       lastIntroDialogue: state.lastIntroDialogue,
+      random: runtimeRandom,
     });
     state.lastIntroDialogue = next.nextLastIntroDialogue;
     return next.dialogue;
@@ -433,6 +447,8 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
       createEnemyFn: createEnemy,
       createEncounterIntroStateFn: createEncounterIntroState,
       resolveRoomTypeFn: resolveRoomType,
+      createDeckFn: createDeck,
+      shuffleFn: (cards) => shuffle(cards, runtimeRandom),
     });
   }
 
@@ -643,6 +659,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     spawnSparkBurst,
     easeOutCubic,
     lerp,
+    random: runtimeRandom,
   });
 
   function update(dt) {

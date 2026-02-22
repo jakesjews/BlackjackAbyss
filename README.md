@@ -86,13 +86,14 @@ Storage keys:
 - GitHub Actions workflow: `.github/workflows/ci.yml`
 - Required check for PR merge to `main`: `quality-gate` (`test:unit`, `test:acceptance`, `build`).
 - `test:visual` runs in CI as warning-only during active UI refactor churn (diff artifacts are still uploaded when it fails).
-- `test:acceptance` includes the same visual smoke flow used by `test:visual`; `test:visual` remains the strict golden-diff command for local/intentional validation.
+- `test:acceptance` excludes `tests/acceptance/visual-smoke.spec.mjs` so gameplay/browser-flow checks stay stable during UI churn.
+- `test:visual` remains the strict golden-diff command for local/intentional validation.
 - Informational smoke job: runs on `main` pushes, nightly schedule, and manual dispatch; reruns the same visual smoke spec for artifact capture (`artifacts/visual-smoke/latest`).
 
 ## Test Commands
 
 - `npm run test:unit`: fast vitest coverage for extracted runtime logic modules.
-- `npm run test:acceptance`: primary Playwright gate (contracts + one-hand core/camp progression + seeded economy + persistence + visual smoke artifacts).
+- `npm run test:acceptance`: primary Playwright gate (contracts + one-hand core/camp progression + seeded economy + persistence), excluding visual-smoke snapshots.
 - `npm run test:visual`: strict golden-image regression check for desktop/mobile smoke shots.
 - `npm run test:visual:update`: intentional golden refresh (`VISUAL_UPDATE=1`) after approved visual changes.
 - `npm run test:smoke`: focused rerun of `tests/acceptance/visual-smoke.spec.mjs` for desktop/mobile snapshots and artifact refresh.

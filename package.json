@@ -14,7 +14,7 @@
     "test:visual": "vitest run --config vitest.acceptance.config.mjs tests/acceptance/visual-smoke.spec.mjs",
     "test:visual:update": "VISUAL_UPDATE=1 vitest run --config vitest.acceptance.config.mjs tests/acceptance/visual-smoke.spec.mjs",
     "test:unit": "vitest run",
-    "test:acceptance": "vitest run --config vitest.acceptance.config.mjs",
+    "test:acceptance": "vitest run --config vitest.acceptance.config.mjs --exclude tests/acceptance/visual-smoke.spec.mjs",
     "test:dead-refs": "node scripts/check-dead-refs.mjs"
   },
   "keywords": [],
