@@ -51,6 +51,27 @@ function sanitizeLabel(value) {
     .slice(0, 80) || "acceptance";
 }
 
+async function waitForDocumentFonts(page, timeoutMs = 20_000) {
+  await page
+    .evaluate(
+      async ({ timeout }) => {
+        if (!document?.fonts?.ready) {
+          return;
+        }
+        const timer = new Promise((resolve) => {
+          window.setTimeout(resolve, timeout);
+        });
+        try {
+          await Promise.race([document.fonts.ready, timer]);
+        } catch {
+          // Ignore font readiness failures in constrained environments.
+        }
+      },
+      { timeout: Math.max(500, Math.floor(Number(timeoutMs) || 0)) }
+    )
+    .catch(() => {});
+}
+
 async function ensureBrowser() {
   if (!sharedBrowser) {
     sharedBrowser = await chromium.launch({ headless: true });
@@ -101,6 +122,7 @@ export async function createAcceptanceSession({ economy = null, visual = null, v
     null,
     { timeout: 20_000 }
   );
+  await waitForDocumentFonts(page);
 
   await page.evaluate(() => {
     try {
@@ -115,6 +137,7 @@ export async function createAcceptanceSession({ economy = null, visual = null, v
     null,
     { timeout: 20_000 }
   );
+  await waitForDocumentFonts(page);
   consoleErrors.length = 0;
   pageErrors.length = 0;
 

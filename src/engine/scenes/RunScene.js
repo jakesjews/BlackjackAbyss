@@ -2,12 +2,10 @@ import Phaser from "phaser";
 import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
-import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
 import {
   applyBrownThemeToGraphics,
   createBrownTheme,
   toBrownThemeColorNumber,
-  toBrownThemeColorString,
   toBrownThemeTextStyle,
 } from "./ui/brown-theme.js";
 import {
@@ -19,6 +17,8 @@ import {
   syncRunSceneModalBlocker,
   toggleRunSceneModal,
 } from "./run/run-scene-modals.js";
+import { drawRunSceneLogsModal, drawRunSceneRelicsModal } from "./run/run-scene-modal-renderers.js";
+import { drawRunSceneCards } from "./run/run-scene-card-renderers.js";
 import {
   createTightTextureFromAlpha,
   resolveDarkIconTexture,
@@ -38,14 +38,12 @@ import {
   RUN_ACTION_SHORTCUTS,
   RUN_BOTTOM_BAR_HEIGHT,
   RUN_CARD_BACKPLATE_KEY,
-  RUN_CARD_DEAL_GAP_MS,
   RUN_CARD_HEIGHT_SCALE,
   RUN_CARD_SHADOW_KEY,
   RUN_CHIPS_ICON_KEY,
   RUN_CHIPS_ICON_TRIM_KEY,
   RUN_DEALER_CARD_ENTRY_MS,
   RUN_DEALER_CARD_FLIP_MS,
-  RUN_DEALER_CARD_FLIP_STRETCH,
   RUN_ENEMY_DEFEAT_PULSE_INTERVAL_MS,
   RUN_ENEMY_DEFEAT_PULSE_STEPS,
   RUN_FIRE_CORE_PARTICLE_KEY,
@@ -54,9 +52,7 @@ import {
   RUN_MOBILE_BUTTON_SCALE,
   RUN_MOBILE_HAND_GROUP_SCALE_BOOST,
   RUN_MODAL_BASE_DEPTH,
-  RUN_MODAL_CLOSE_OFFSET,
   RUN_MODAL_CONTENT_OFFSET,
-  RUN_MODAL_LAYER_STEP,
   RUN_PARTICLE_KEY,
   RUN_PLAYER_AVATAR_KEY,
   RUN_PRIMARY_GOLD,
@@ -74,7 +70,6 @@ import {
   RUN_WATERMARK_ALPHA,
   RUN_WATERMARK_KEY,
   RUN_WATERMARK_RENDER_KEY,
-  SUIT_SYMBOL,
   sanitizeEnemyAvatarKey,
 } from "./run/run-scene-config.js";
 const BUTTON_STYLES = ACTION_BUTTON_STYLE;
@@ -931,7 +926,13 @@ export class RunScene extends Phaser.Scene {
     const layout = this.drawEncounterPanels(snapshot, width, height, runLayout, { transitionState });
     this.renderEnemyDefeatEffect(transitionState, layout);
     this.renderRelicButton(snapshot, layout, runLayout);
-    const cardRenderState = this.drawCards(snapshot, width, height, layout);
+    const cardRenderState = drawRunSceneCards(this, {
+      snapshot,
+      width,
+      height,
+      layout,
+      theme: RUN_BROWN_THEME,
+    });
     const deferResolutionUi = Boolean(cardRenderState?.deferResolutionUi);
     this.processHpImpacts(snapshot, layout, width, height, { deferResolutionUi });
     this.drawRunMessages(snapshot, width, height, layout, { deferResolutionUi });
@@ -946,8 +947,24 @@ export class RunScene extends Phaser.Scene {
     }
     const modalOrder = getRunSceneModalOpenOrder(this);
     const topModalId = modalOrder[modalOrder.length - 1] || "";
-    this.drawLogsModal(snapshot, width, height, runLayout, topModalId === "logs" ? 0 : -1);
-    this.drawRelicsModal(snapshot, width, height, runLayout, topModalId === "relics" ? 0 : -1);
+    drawRunSceneLogsModal(this, {
+      snapshot,
+      width,
+      height,
+      runLayout,
+      layerIndex: topModalId === "logs" ? 0 : -1,
+      styleSet: BUTTON_STYLES,
+      applyButtonStyle: (button, styleName) => this.setButtonVisual(button, styleName),
+    });
+    drawRunSceneRelicsModal(this, {
+      snapshot,
+      width,
+      height,
+      runLayout,
+      layerIndex: topModalId === "relics" ? 0 : -1,
+      styleSet: BUTTON_STYLES,
+      applyButtonStyle: (button, styleName) => this.setButtonVisual(button, styleName),
+    });
     syncRunSceneModalBlocker(this, width, height);
   }
 
@@ -1655,133 +1672,6 @@ export class RunScene extends Phaser.Scene {
     }
   }
 
-  drawCards(snapshot, width, height, layout) {
-    if (snapshot?.intro?.active) {
-      this.cardAnimSeen.clear();
-      this.cardFlipStates.clear();
-      this.cardHiddenStateBySlot.clear();
-      this.rowCardCountByPrefix.clear();
-      this.cardNodes.forEach((node) => node.container.setVisible(false));
-      this.pruneCardAnimations();
-      return { deferResolutionUi: false };
-    }
-    const enemyY = layout?.enemyY || Math.round(height * 0.26);
-    const playerY = layout?.playerY || Math.round(height * 0.59);
-    const cardWidth = layout?.cardWidth || 88;
-    const cardHeight = layout?.cardHeight || Math.round(cardWidth * 1.42);
-    const enemyCards = Array.isArray(snapshot.cards?.dealer) ? snapshot.cards.dealer : [];
-    const playerCards = Array.isArray(snapshot.cards?.player) ? snapshot.cards.player : [];
-    const compact = this.isCompactLayout(width);
-    const computeSpacing = (count) => {
-      const base = Math.max(Math.round(cardWidth * (compact ? 0.68 : 0.74)), compact ? 32 : 44);
-      if (!Number.isFinite(count) || count <= 1) {
-        return base;
-      }
-      const maxSpan = Math.max(cardWidth, width - (compact ? 84 : 220));
-      const cap = Math.floor((maxSpan - cardWidth) / Math.max(1, count - 1));
-      const minSpacing = Math.max(Math.round(cardWidth * 0.38), compact ? 20 : 28);
-      return Phaser.Math.Clamp(Math.min(base, cap), minSpacing, base);
-    };
-    const enemySpacing = computeSpacing(enemyCards.length);
-    const playerSpacing = computeSpacing(playerCards.length);
-
-    const enemyCenterX = width * 0.5;
-    const playerCenterX = width * 0.5;
-    const deckX = width * 0.5;
-    const rowDrawOptions = {
-      entryFlip: true,
-      dealSequenceId: this.cardDealSequenceId,
-    };
-    this.cardAnimSeen.clear();
-    const playerRevealInProgress = this.drawCardRow(
-      "player-card",
-      playerCards,
-      playerCenterX,
-      playerY,
-      cardWidth,
-      cardHeight,
-      playerSpacing,
-      { x: deckX, y: Math.min(height - 84, playerY + cardHeight + 120) },
-      rowDrawOptions
-    );
-    const enemyRevealInProgress = this.drawCardRow(
-      "enemy-card",
-      enemyCards,
-      enemyCenterX,
-      enemyY,
-      cardWidth,
-      cardHeight,
-      enemySpacing,
-      { x: deckX, y: Math.max(84, enemyY - 120) },
-      rowDrawOptions
-    );
-    this.pruneCardAnimations();
-
-    const totals = snapshot.totals || {};
-    const cardsAnimatingInProgress = Boolean(enemyRevealInProgress || playerRevealInProgress || this.hasActiveCardDealAnimations());
-    const deferResolutionUi = cardsAnimatingInProgress;
-    const enemyHasHidden = enemyCards.some((card) => card.hidden);
-    const enemyHandValue = Number.isFinite(totals.dealer) ? String(totals.dealer) : "?";
-    const enemyTotalText = enemyHasHidden && Number.isFinite(totals.dealer) ? `Hand ${enemyHandValue} + ?` : `Hand ${enemyHandValue}`;
-    const playerTotalText = Number.isFinite(totals.player) ? `Hand ${totals.player}` : "Hand ?";
-    const handLabelScale = compact ? Phaser.Math.Clamp(width / 430, 0.68, 0.9) : 1;
-    const handLabelGap = Math.max(10, Math.round((compact ? 20 : 24) * handLabelScale));
-    const handLabelFontSize = Math.max(12, Math.round((compact ? 14 : 17) * handLabelScale));
-    const cardsTopBound = Number.isFinite(layout?.cardsTopBound)
-      ? Math.round(layout.cardsTopBound)
-      : Math.round((layout?.enemyHpY || layout?.arenaY || 0) + (layout?.enemyHpH || 24) + 12);
-    const cardsBottomBound = Number.isFinite(layout?.cardsBottomBound)
-      ? Math.round(layout.cardsBottomBound)
-      : Math.round((layout?.arenaBottom || height) - 12);
-    const enemyLabelIdealY = enemyY - handLabelGap;
-    const enemyLabelMinY = Math.round(cardsTopBound + Math.max(4, Math.round(6 * handLabelScale)));
-    const enemyLabelMaxY = Math.round(enemyY - Math.max(6, Math.round(10 * handLabelScale)));
-    const enemyLabelY = Phaser.Math.Clamp(
-      enemyLabelIdealY,
-      Math.min(enemyLabelMinY, enemyLabelMaxY),
-      Math.max(enemyLabelMinY, enemyLabelMaxY)
-    );
-    const playerLabelIdealY = playerY + cardHeight + handLabelGap;
-    const playerLabelMinY = Math.round(playerY + cardHeight + Math.max(8, Math.round(10 * handLabelScale)));
-    const playerLabelMaxY = Math.round(cardsBottomBound - Math.max(4, Math.round(6 * handLabelScale)));
-    const playerLabelY = Phaser.Math.Clamp(
-      playerLabelIdealY,
-      Math.min(playerLabelMinY, playerLabelMaxY),
-      Math.max(playerLabelMinY, playerLabelMaxY)
-    );
-    if (!deferResolutionUi) {
-      this.drawText(
-        "enemy-total",
-        enemyTotalText,
-        width * 0.5,
-        enemyLabelY,
-        {
-          fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-          fontSize: `${handLabelFontSize}px`,
-          color: "#e0ccb0",
-          fontStyle: compact ? "800" : "700",
-        },
-        { x: 0.5, y: 0.5 }
-      );
-    }
-    if (!deferResolutionUi) {
-      this.drawText(
-        "player-total",
-        playerTotalText,
-        width * 0.5,
-        playerLabelY,
-        {
-          fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-          fontSize: `${handLabelFontSize}px`,
-          color: "#e0ccb0",
-          fontStyle: compact ? "800" : "700",
-        },
-        { x: 0.5, y: 0.5 }
-      );
-    }
-    return { deferResolutionUi };
-  }
-
   processHpImpacts(snapshot, layout, width, height, options = {}) {
     if (!snapshot || !layout) {
       this.lastHpState = null;
@@ -2031,304 +1921,6 @@ export class RunScene extends Phaser.Scene {
         node.destroy();
         this.endResolutionAnimation();
       },
-    });
-  }
-
-  drawCardRow(prefix, cards, centerX, y, cardW, cardH, spacing, spawn = null, options = null) {
-    const safeCards = Array.isArray(cards) ? cards : [];
-    const used = new Set();
-    const now = this.time.now;
-    const isDealerRow = prefix.startsWith("enemy");
-    const rowDirection = isDealerRow ? -1 : 1;
-    const baseSpawnX = Number.isFinite(spawn?.x) ? spawn.x : centerX;
-    const baseSpawnY = Number.isFinite(spawn?.y) ? spawn.y : y + rowDirection * -104;
-    const previousCount = Math.max(0, Math.round(this.rowCardCountByPrefix.get(prefix) || 0));
-    const customEntryDelayMs =
-      options && typeof options.customEntryDelayMs === "function" ? options.customEntryDelayMs : null;
-    const entryFlip = options?.entryFlip === undefined ? true : Boolean(options.entryFlip);
-    const dealSequenceId = Number.isFinite(options?.dealSequenceId) ? Math.max(0, Math.round(options.dealSequenceId)) : 0;
-    let rowRevealInProgress = false;
-    const rowEntries = [];
-
-    safeCards.forEach((card, idx) => {
-      const key = `${prefix}-${idx}`;
-      const currentlyHidden = Boolean(card.hidden);
-      const previouslyHidden = this.cardHiddenStateBySlot.get(key);
-      if (isDealerRow && previouslyHidden === true && !currentlyHidden && !this.cardFlipStates.has(key)) {
-        const flipStart = Math.max(now, Number(this.nextGlobalDealStartAt) || now);
-        this.cardFlipStates.set(key, {
-          start: flipStart,
-          duration: RUN_DEALER_CARD_FLIP_MS,
-          cardSfxPlayed: false,
-        });
-        this.nextGlobalDealStartAt = flipStart + RUN_DEALER_CARD_FLIP_MS + RUN_CARD_DEAL_GAP_MS;
-      }
-      this.cardHiddenStateBySlot.set(key, currentlyHidden);
-      const dealtAt = Number(card?.dealtAt);
-      const dealtStamp = Number.isFinite(dealtAt) ? Math.max(0, Math.floor(dealtAt)) : -1;
-      const animKey = `${prefix}-${idx}-${card.rank || "?"}-${card.suit || ""}-${card.hidden ? 1 : 0}-${dealSequenceId}-${dealtStamp}`;
-      let anim = this.cardAnimStates.get(animKey);
-      if (!anim) {
-        const isNewCard = idx >= previousCount;
-        const customDelay = customEntryDelayMs ? Number(customEntryDelayMs(idx, card, prefix)) : NaN;
-        let startTime = now;
-        if (isNewCard) {
-          const requested = Number.isFinite(customDelay) ? now + Math.max(0, customDelay) : now;
-          const queuedStart = Math.max(requested, Number(this.nextGlobalDealStartAt) || now);
-          startTime = queuedStart;
-          const queueGap = RUN_DEALER_CARD_ENTRY_MS + RUN_CARD_DEAL_GAP_MS;
-          this.nextGlobalDealStartAt = startTime + queueGap;
-        } else if (Number.isFinite(customDelay)) {
-          startTime = now + Math.max(0, customDelay);
-        } else {
-          // Existing cards should stay settled; only explicit flip states animate.
-          startTime = now - RUN_DEALER_CARD_ENTRY_MS;
-        }
-        anim = {
-          start: startTime,
-          fromX: baseSpawnX + rowDirection * 14,
-          fromY: baseSpawnY + idx * rowDirection * 5,
-          entryFlip,
-          cardSfxPlayed: false,
-          lastSeen: now,
-        };
-        this.cardAnimStates.set(animKey, anim);
-      }
-      anim.lastSeen = now;
-      this.cardAnimSeen.add(animKey);
-      rowEntries.push({ card, idx, key, currentlyHidden, anim });
-    });
-
-    const startedEntries = rowEntries.filter((entry) => now >= entry.anim.start);
-    const startedOrderByIdx = new Map();
-    startedEntries.forEach((entry, order) => {
-      startedOrderByIdx.set(entry.idx, order);
-    });
-    const displayCount = startedEntries.length;
-    const displayWidth = displayCount > 0 ? cardW + Math.max(0, displayCount - 1) * spacing : cardW;
-    const displayStartX = centerX - displayWidth * 0.5;
-
-    rowEntries.forEach(({ card, idx, key, currentlyHidden, anim }) => {
-      const startedOrder = startedOrderByIdx.get(idx);
-      if (startedOrder === undefined) {
-        rowRevealInProgress = true;
-        used.add(key);
-        const pendingNode = this.getCardNode(key);
-        pendingNode.container.setVisible(false);
-        return;
-      }
-
-      const targetX = displayStartX + startedOrder * spacing;
-      const targetCenterX = targetX + cardW * 0.5;
-      const targetCenterY = y + cardH * 0.5;
-      if (!anim.cardSfxPlayed) {
-        this.playRunSfx("card");
-        anim.cardSfxPlayed = true;
-      }
-
-      const entryDurationMs = (isDealerRow || anim.entryFlip) ? RUN_DEALER_CARD_ENTRY_MS : 220;
-      const progress = Phaser.Math.Clamp((now - anim.start) / entryDurationMs, 0, 1);
-      if (progress < 1) {
-        rowRevealInProgress = true;
-      }
-      const eased = Phaser.Math.Easing.Cubic.Out(progress);
-      const arc = Math.sin(progress * Math.PI) * 16 * (rowDirection === -1 ? 1 : -1);
-      const scale = 0.66 + Phaser.Math.Easing.Back.Out(progress) * 0.34;
-      const drawCenterX = Phaser.Math.Linear(anim.fromX, targetCenterX, eased);
-      const drawCenterY = Phaser.Math.Linear(anim.fromY, targetCenterY, eased) + arc * (1 - progress * 0.72);
-      const baseDrawW = cardW * scale;
-      const baseDrawH = cardH * scale;
-      const flipState = isDealerRow ? this.cardFlipStates.get(key) : null;
-      const entryFlipActive = Boolean(anim.entryFlip && !(isDealerRow && currentlyHidden));
-      let flipWidthScale = 1;
-      let flipHeightScale = 1;
-      let showBackHalf = false;
-      let flipOffsetX = 0;
-      let flipOffsetY = 0;
-      let flipTilt = 0;
-      if (entryFlipActive) {
-        const flipStart = 0.22;
-        const flipEnd = 0.8;
-        if (progress < flipStart) {
-          showBackHalf = true;
-        } else if (progress < flipEnd) {
-          const flipT = Phaser.Math.Clamp((progress - flipStart) / Math.max(0.001, flipEnd - flipStart), 0, 1);
-          const flipEase = Phaser.Math.Easing.Sine.InOut(flipT);
-          const flipWave = Math.sin(flipEase * Math.PI);
-          const flipCos = Math.cos(flipEase * Math.PI);
-          const side = idx % 2 === 0 ? 1 : -1;
-          flipWidthScale *= Math.max(0.012, Math.abs(flipCos));
-          flipHeightScale *= 1 + flipWave * 0.05;
-          flipOffsetX += flipWave * (cardW * 0.07) * side;
-          flipOffsetY += -flipWave * (cardH * (RUN_DEALER_CARD_FLIP_STRETCH * 0.42));
-          flipTilt += flipWave * 0.14 * side;
-          showBackHalf = flipEase < 0.5;
-        }
-      }
-      if (flipState) {
-        if (!flipState.cardSfxPlayed && now >= flipState.start) {
-          this.playRunSfx("card");
-          flipState.cardSfxPlayed = true;
-        }
-        const duration = Math.max(120, Number(flipState.duration) || RUN_DEALER_CARD_FLIP_MS);
-        const t = Phaser.Math.Clamp((now - flipState.start) / duration, 0, 1);
-        if (t >= 1) {
-          this.cardFlipStates.delete(key);
-        } else {
-          rowRevealInProgress = true;
-          const eased = Phaser.Math.Easing.Sine.InOut(t);
-          const wave = Math.sin(eased * Math.PI);
-          const flipCos = Math.cos(eased * Math.PI);
-          const side = idx % 2 === 0 ? 1 : -1;
-          flipWidthScale = Math.max(0.012, Math.abs(flipCos));
-          flipHeightScale = 1 + wave * 0.06;
-          flipOffsetX = Math.sin(eased * Math.PI) * (cardW * 0.08) * side;
-          flipOffsetY = -wave * (cardH * (RUN_DEALER_CARD_FLIP_STRETCH * 0.5));
-          flipTilt = Math.sin(eased * Math.PI) * 0.16 * side;
-          showBackHalf = eased < 0.5;
-        }
-      }
-      const drawW = Math.max(2, baseDrawW * flipWidthScale);
-      const drawH = Math.max(12, baseDrawH * flipHeightScale);
-      const cardCornerRadius = Math.max(4, Math.min(10 * scale * 0.75, drawW * 0.5, drawH * 0.5));
-      const showBackFace = (currentlyHidden && isDealerRow) || showBackHalf;
-      const drawAsHidden = currentlyHidden || showBackHalf;
-      const node = this.getCardNode(key);
-      node.container.setDepth((isDealerRow ? 44 : 56) + idx);
-      let finalCenterX = drawCenterX + flipOffsetX;
-      let finalCenterY = drawCenterY + flipOffsetY;
-      const settledCard = progress >= 1 && !flipState;
-      if (settledCard && node.container.visible) {
-        const previousX = Number(node.container.x);
-        const previousY = Number(node.container.y);
-        if (Number.isFinite(previousX) && Number.isFinite(previousY)) {
-          const deltaRatio = Phaser.Math.Clamp((Number(this.game?.loop?.delta) || 16.67) / 16.67, 0.5, 2);
-          const moveLerp = Phaser.Math.Clamp(0.22 * deltaRatio, 0.12, 0.38);
-          finalCenterX = Phaser.Math.Linear(previousX, finalCenterX, moveLerp);
-          finalCenterY = Phaser.Math.Linear(previousY, finalCenterY, moveLerp);
-        }
-      }
-      node.container.setPosition(finalCenterX, finalCenterY);
-      node.container.setRotation(flipTilt);
-      node.shadow.setDisplaySize(drawW * 1.1, drawH * 1.08);
-      node.shadow.setPosition(-drawW * 0.25, 0);
-      node.shadow.setAlpha(0.26 + (flipState ? 0.08 : 0));
-      node.face.clear();
-      const useDealerBackplate = showBackFace && this.textures.exists(RUN_CARD_BACKPLATE_KEY);
-      node.face.fillStyle(drawAsHidden ? (useDealerBackplate ? 0x17100a : 0x2a445c) : 0xf7fbff, 1);
-      node.face.fillRoundedRect(-drawW * 0.5, -drawH * 0.5, drawW, drawH, cardCornerRadius);
-      if (node.backplate) {
-        if (useDealerBackplate) {
-          node.backplate
-            .setTexture(RUN_CARD_BACKPLATE_KEY)
-            .setCrop()
-            .setDisplaySize(drawW, drawH)
-            .setPosition(0, 0)
-            .setOrigin(0.5, 0.5)
-            .setVisible(true);
-          if (node.backMaskShape) {
-            node.backMaskShape.clear();
-            node.backMaskShape.fillStyle(0xffffff, 1);
-            node.backMaskShape.fillRoundedRect(
-              finalCenterX - drawW * 0.5,
-              finalCenterY - drawH * 0.5,
-              drawW,
-              drawH,
-              cardCornerRadius
-            );
-          }
-        } else {
-          node.backplate.setVisible(false);
-          node.backplate.setCrop();
-          if (node.backMaskShape) {
-            node.backMaskShape.clear();
-          }
-        }
-      }
-      node.label.setFontSize(Math.max(12, Math.round(baseDrawW * 0.33)));
-      node.label.setStyle({
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        align: "center",
-        lineSpacing: 5,
-        color: "#231f1b",
-      });
-      used.add(key);
-      node.container.setVisible(true);
-
-      const suitKey = card.suit || "";
-      const suitSymbol = SUIT_SYMBOL[suitKey] || suitKey || "";
-      const text = drawAsHidden ? "?" : `${card.rank || "?"}\n${suitSymbol}`;
-      const suit = card.suit || "";
-      const red = suit === "H" || suit === "D";
-      const color = drawAsHidden ? "#d6e9f8" : red ? "#b44c45" : "#231f1b";
-      if (useDealerBackplate) {
-        node.label.setText("");
-        node.label.setVisible(false);
-      } else {
-        node.label.setText(text);
-        node.label.setColor(toBrownThemeColorString(color, RUN_BROWN_THEME));
-        node.label.setVisible(true);
-      }
-    });
-
-    this.cardNodes.forEach((node, key) => {
-      if (key.startsWith(prefix) && !used.has(key)) {
-        node.container.setVisible(false);
-      }
-    });
-    this.rowCardCountByPrefix.set(prefix, safeCards.length);
-    this.cardFlipStates.forEach((_, key) => {
-      if (key.startsWith(prefix) && !used.has(key)) {
-        this.cardFlipStates.delete(key);
-      }
-    });
-    this.cardHiddenStateBySlot.forEach((_, key) => {
-      if (key.startsWith(prefix) && !used.has(key)) {
-        this.cardHiddenStateBySlot.delete(key);
-      }
-    });
-    return rowRevealInProgress;
-  }
-
-  getCardNode(key) {
-    let node = this.cardNodes.get(key);
-    if (node) {
-      return node;
-    }
-    const container = this.add.container(0, 0);
-    const shadow = this.add
-      .image(0, 0, RUN_CARD_SHADOW_KEY)
-      .setOrigin(0.5, 0.5)
-      .setBlendMode(Phaser.BlendModes.NORMAL)
-      .setAlpha(0.24);
-    const face = applyBrownThemeToGraphics(this.add.graphics(), RUN_BROWN_THEME);
-    const backplate = this.add
-      .image(0, 0, this.textures.exists(RUN_CARD_BACKPLATE_KEY) ? RUN_CARD_BACKPLATE_KEY : RUN_PARTICLE_KEY)
-      .setVisible(false);
-    const backMaskShape = this.make.graphics({ x: 0, y: 0, add: false });
-    const backMask = backMaskShape.createGeometryMask();
-    backplate.setMask(backMask);
-    const label = this.add
-      .text(0, 0, "", {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "28px",
-        color: "#231f1b",
-        align: "center",
-        lineSpacing: 5,
-      })
-      .setOrigin(0.5, 0.5);
-    container.add([shadow, face, backplate, label]);
-    node = { container, shadow, face, backplate, label, backMaskShape, backMask };
-    this.cardNodes.set(key, node);
-    return node;
-  }
-
-  pruneCardAnimations() {
-    const now = this.time.now;
-    this.cardAnimStates.forEach((state, key) => {
-      if (!this.cardAnimSeen.has(key) && now - (state.lastSeen || 0) > 80) {
-        this.cardAnimStates.delete(key);
-      }
     });
   }
 
@@ -2941,302 +2533,6 @@ export class RunScene extends Phaser.Scene {
         logs.icon.setDisplaySize(buttonSize * 0.56, buttonSize * 0.56);
       }
     }
-  }
-
-  ensureModalCloseButton(kind, onPress) {
-    if (kind === "logs-close" && this.logsCloseButton) {
-      return this.logsCloseButton;
-    }
-    if (kind === "relic-close" && this.relicCloseButton) {
-      return this.relicCloseButton;
-    }
-    const button = createModalCloseButton(this, {
-      id: kind,
-      styleSet: BUTTON_STYLES,
-      onPress,
-      depth: RUN_MODAL_CLOSE_OFFSET + RUN_MODAL_BASE_DEPTH,
-      width: 42,
-      height: 32,
-      iconSize: 15,
-    });
-    if (kind === "logs-close") {
-      this.logsCloseButton = button;
-    } else {
-      this.relicCloseButton = button;
-    }
-    return button;
-  }
-
-  drawLogsModal(snapshot, width, height, runLayout, layerIndex = -1) {
-    if (!this.overlayGraphics) {
-      return;
-    }
-    if (!this.logsModalOpen || layerIndex < 0) {
-      if (this.logsCloseButton) {
-        this.logsCloseButton.container.setVisible(false);
-      }
-      return;
-    }
-    const modalContentDepth = RUN_MODAL_BASE_DEPTH + layerIndex * RUN_MODAL_LAYER_STEP + RUN_MODAL_CONTENT_OFFSET;
-    const modalCloseDepth = RUN_MODAL_BASE_DEPTH + layerIndex * RUN_MODAL_LAYER_STEP + RUN_MODAL_CLOSE_OFFSET;
-    const rawLogs = Array.isArray(snapshot?.logs) ? snapshot.logs : [];
-    const logs = ["Run started.", ...rawLogs.map((entry) => String(entry || ""))];
-    const compact = Boolean(runLayout?.compact);
-    const modalW = Phaser.Math.Clamp(width - 56, 320, 720);
-    const preferredModalH = 460;
-    const modalH = Phaser.Math.Clamp(preferredModalH, 240, height - 96);
-    const x = Math.round(width * 0.5 - modalW * 0.5);
-    const y = Math.round(runLayout.topBarH + 20);
-
-    drawModalBackdrop(this.overlayGraphics, width, height, { color: 0x000000, alpha: 0.82 });
-    drawFramedModalPanel(this.overlayGraphics, {
-      x,
-      y,
-      width: modalW,
-      height: modalH,
-      radius: 20,
-      fillColor: 0x0f1f30,
-      fillAlpha: 0.96,
-      borderColor: 0x6f95b6,
-      borderAlpha: 0.46,
-      borderWidth: 1.4,
-      headerColor: 0x0b1623,
-      headerAlpha: 0.9,
-      headerHeight: 52,
-    });
-
-    const title = this.drawText("logs-title", "RUN LOGS", x + 18, y + 26, {
-      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-      fontSize: "24px",
-      color: "#f2d8a0",
-      fontStyle: "700",
-    }, { x: 0, y: 0.5 });
-    title.setDepth(modalContentDepth);
-
-    const listX = x + 14;
-    const listY = y + 60;
-    const listW = modalW - 28;
-    const listH = modalH - 84;
-    const rowH = compact ? 34 : 38;
-    const rowGap = compact ? 6 : 8;
-    const bubbleAreaH = Math.max(44, listH - 24);
-    const maxRows = Math.max(1, Math.floor((bubbleAreaH + rowGap) / (rowH + rowGap)));
-    const visible = logs.slice(-maxRows);
-    const firstY = Math.round(listY + bubbleAreaH - visible.length * (rowH + rowGap));
-    const maxChars = compact ? 56 : 92;
-    const absoluteStart = logs.length - visible.length;
-
-    visible.forEach((line, index) => {
-      const absIndex = absoluteStart + index;
-      const isStart = absIndex === 0;
-      const isHandResolution = !isStart && /(?:\bhand\b|\bblackjack\b|\bbust\b|\bdouble\b|\bsplit\b|\bhit\b|\bstand\b|\bdeal\b|\bpush\b|\bwin\b|\blose\b|\bresolved?\b)/i.test(line);
-      const rowY = firstY + index * (rowH + rowGap);
-      const bubbleFill = isStart || isHandResolution ? 0x1f364d : 0x16283a;
-      const bubbleStroke = isStart || isHandResolution ? RUN_PRIMARY_GOLD : 0x5c7d99;
-      const bubbleAlpha = isStart || isHandResolution ? 0.92 : 0.84;
-      this.overlayGraphics.fillStyle(bubbleFill, bubbleAlpha);
-      this.overlayGraphics.fillRoundedRect(listX, rowY, listW, rowH, 12);
-      this.overlayGraphics.lineStyle(1.1, bubbleStroke, isStart || isHandResolution ? 0.54 : 0.34);
-      this.overlayGraphics.strokeRoundedRect(listX, rowY, listW, rowH, 12);
-      const normalized = String(line || "").replace(/\s+/g, " ").trim();
-      const displayLine = normalized.length > maxChars ? `${normalized.slice(0, maxChars - 1).trimEnd()}…` : normalized;
-      const row = this.drawText(`logs-line-${index}`, displayLine, listX + 12, rowY + rowH * 0.5, {
-        fontFamily: '"Sora", "Segoe UI", sans-serif',
-        fontSize: compact ? "13px" : "15px",
-        color: isStart || isHandResolution ? "#f2cd88" : "#d7e6f3",
-        fontStyle: isStart ? "700" : "600",
-      }, { x: 0, y: 0.5 });
-      row.setDepth(modalContentDepth);
-    });
-
-    const closeButton = this.ensureModalCloseButton("logs-close", () => {
-      setRunSceneModalOpen(this, "logs", false);
-    });
-    placeModalCloseButton(closeButton, {
-      x: x + modalW - 26,
-      y: y + 24,
-      depth: modalCloseDepth,
-      width: 42,
-      height: 32,
-      iconSize: 15,
-      enabled: true,
-      visible: true,
-      styleName: "idle",
-      applyStyle: (button, styleName) => this.setButtonVisual(button, styleName),
-    });
-  }
-
-  drawRelicsModal(snapshot, width, height, runLayout, layerIndex = -1) {
-    if (!this.overlayGraphics) {
-      return;
-    }
-    if (!this.relicModalOpen || layerIndex < 0) {
-      if (this.relicCloseButton) {
-        this.relicCloseButton.container.setVisible(false);
-      }
-      return;
-    }
-    const modalContentDepth = RUN_MODAL_BASE_DEPTH + layerIndex * RUN_MODAL_LAYER_STEP + RUN_MODAL_CONTENT_OFFSET;
-    const modalCloseDepth = RUN_MODAL_BASE_DEPTH + layerIndex * RUN_MODAL_LAYER_STEP + RUN_MODAL_CLOSE_OFFSET;
-    const entries = Array.isArray(snapshot?.passives) ? snapshot.passives : [];
-    const modalW = Phaser.Math.Clamp(width - 56, 340, 760);
-    const modalH = Phaser.Math.Clamp(height - 128, 260, 520);
-    const x = Math.round(width * 0.5 - modalW * 0.5);
-    const y = Math.round(runLayout.topBarH + 16);
-    drawModalBackdrop(this.overlayGraphics, width, height, { color: 0x000000, alpha: 0.82 });
-    drawFramedModalPanel(this.overlayGraphics, {
-      x,
-      y,
-      width: modalW,
-      height: modalH,
-      radius: 20,
-      fillColor: 0x0f1f30,
-      fillAlpha: 0.97,
-      borderColor: 0x6f95b6,
-      borderAlpha: 0.5,
-      borderWidth: 1.4,
-      headerColor: 0x0b1623,
-      headerAlpha: 0.9,
-      headerHeight: 52,
-    });
-    const totalRelicCount = entries.reduce((acc, entry) => acc + Math.max(1, Number(entry?.count) || 1), 0);
-    const title = this.drawText("relics-title", "RELICS", x + 18, y + 26, {
-      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-      fontSize: "24px",
-      color: "#f2d8a0",
-      fontStyle: "700",
-    }, { x: 0, y: 0.5 });
-    title.setDepth(modalContentDepth);
-    const summary = this.drawText("relics-summary", `${entries.length} relics • ${totalRelicCount} total`, x + modalW - 62, y + 26, {
-      fontFamily: '"Sora", "Segoe UI", sans-serif',
-      fontSize: "14px",
-      color: "#b7cadb",
-      fontStyle: "700",
-    }, { x: 1, y: 0.5 });
-    summary.setDepth(modalContentDepth);
-    if (!entries.length) {
-      const emptyNode = this.drawText("relics-empty", "No relics collected yet.", x + 18, y + 82, {
-        fontFamily: '"Sora", "Segoe UI", sans-serif',
-        fontSize: "16px",
-        color: "#b7cadb",
-      }, { x: 0, y: 0 });
-      emptyNode.setDepth(modalContentDepth);
-      return;
-    }
-    const listX = x + 14;
-    const listY = y + 58;
-    const listW = modalW - 28;
-    const listH = modalH - 72;
-    const gap = 8;
-    let rowH = Math.floor((listH - gap * Math.max(0, entries.length - 1)) / Math.max(1, entries.length));
-    let visibleCount = entries.length;
-    if (rowH < 34) {
-      rowH = 34;
-      visibleCount = Math.max(1, Math.floor((listH + gap) / (rowH + gap)));
-    }
-    rowH = Phaser.Math.Clamp(rowH, 34, 58);
-    const visibleEntries = entries.slice(0, visibleCount);
-    visibleEntries.forEach((entry, index) => {
-      const rowY = listY + index * (rowH + gap);
-      this.overlayGraphics.fillStyle(0x203447, 0.9);
-      this.overlayGraphics.fillRoundedRect(listX, rowY, listW, rowH, 12);
-      const thumbSize = Math.min(rowH - 10, 42);
-      const thumbX = listX + 8;
-      const thumbY = rowY + Math.round((rowH - thumbSize) * 0.5);
-      const thumbTexture = typeof entry?.thumbUrl === "string" && entry.thumbUrl.startsWith("data:image/")
-        ? `run-relic-thumb-${entry.id}`
-        : "";
-      if (thumbTexture && !this.textures.exists(thumbTexture)) {
-        try {
-          this.textures.addBase64(thumbTexture, entry.thumbUrl);
-        } catch {
-          // ignore bad thumb payloads
-        }
-      }
-      this.overlayGraphics.fillStyle(0x102233, 0.96);
-      this.overlayGraphics.fillRoundedRect(thumbX, thumbY, thumbSize, thumbSize, 9);
-      if (thumbTexture && this.textures.exists(thumbTexture)) {
-        const imageKey = `relic-thumb-img-${index}`;
-        let imageNode = this.textNodes.get(imageKey);
-        if (!imageNode) {
-          imageNode = this.add.image(0, 0, thumbTexture).setDepth(modalContentDepth + 2);
-          this.textNodes.set(imageKey, imageNode);
-        } else if (imageNode.texture?.key !== thumbTexture) {
-          imageNode.setTexture(thumbTexture);
-        }
-        imageNode.setPosition(thumbX + thumbSize * 0.5, thumbY + thumbSize * 0.5);
-        imageNode.setDisplaySize(thumbSize - 4, thumbSize - 4);
-        imageNode.setVisible(true);
-      } else {
-        const glyph = this.drawText(`relic-thumb-glyph-${index}`, "◆", thumbX + thumbSize * 0.5, thumbY + thumbSize * 0.5, {
-          fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-          fontSize: "15px",
-          color: "#d8e8f7",
-          fontStyle: "700",
-        });
-        glyph.setDepth(modalContentDepth + 2);
-      }
-
-      const nameX = thumbX + thumbSize + 10;
-      const nameY = rowY + Math.max(16, rowH * 0.36);
-      const descY = rowY + Math.max(26, rowH * 0.68);
-      const rightX = listX + listW - 10;
-      const rarity = String(entry?.rarityLabel || "").toUpperCase();
-      const rarityNode = this.drawText(`relic-rarity-${index}`, rarity, rightX, nameY, {
-        fontFamily: '"Sora", "Segoe UI", sans-serif',
-        fontSize: "11px",
-        color: "#9fb4c7",
-        fontStyle: "700",
-      }, { x: 1, y: 0.5 });
-      rarityNode.setDepth(modalContentDepth + 2);
-      const nameNode = this.drawText(`relic-name-${index}`, String(entry?.name || "RELIC"), nameX, nameY, {
-        fontFamily: '"Chakra Petch", "Sora", sans-serif',
-        fontSize: "14px",
-        color: "#eef6ff",
-        fontStyle: "700",
-      }, { x: 0, y: 0.5 });
-      nameNode.setDepth(modalContentDepth + 2);
-      const countValue = Number(entry?.count) || 1;
-      const countText = countValue > 1 ? `x${countValue > 99 ? "99+" : countValue}` : "";
-      const countNode = this.drawText(`relic-count-${index}`, countText, nameX + nameNode.width + 8, nameY, {
-        fontFamily: '"Sora", "Segoe UI", sans-serif',
-        fontSize: "11px",
-        color: "#f4d598",
-        fontStyle: "700",
-      }, { x: 0, y: 0.5 });
-      countNode.setDepth(modalContentDepth + 2);
-      const descNode = this.drawText(`relic-desc-${index}`, String(entry?.description || ""), nameX, descY, {
-        fontFamily: '"Sora", "Segoe UI", sans-serif',
-        fontSize: "12px",
-        color: "#c6d8e8",
-      }, { x: 0, y: 0.5 });
-      descNode.setDepth(modalContentDepth + 2);
-    });
-    if (visibleCount < entries.length) {
-      const moreNode = this.drawText("relics-more", `+${entries.length - visibleCount} more`, x + modalW - 18, y + modalH - 14, {
-        fontFamily: '"Sora", "Segoe UI", sans-serif',
-        fontSize: "12px",
-        color: "#b7cadb",
-        fontStyle: "700",
-      }, { x: 1, y: 1 });
-      moreNode.setDepth(modalContentDepth + 2);
-    }
-
-    const closeButton = this.ensureModalCloseButton("relic-close", () => {
-      setRunSceneModalOpen(this, "relics", false);
-    });
-    placeModalCloseButton(closeButton, {
-      x: x + modalW - 26,
-      y: y + 24,
-      depth: modalCloseDepth,
-      width: 42,
-      height: 32,
-      iconSize: 15,
-      enabled: true,
-      visible: true,
-      styleName: "idle",
-      applyStyle: (button, styleName) => this.setButtonVisual(button, styleName),
-    });
   }
 
 }

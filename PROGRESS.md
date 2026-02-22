@@ -19,7 +19,7 @@
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
 - Smoke coverage is now split from acceptance: `test:acceptance` covers gameplay/browser flow while `test:smoke`/`test:visual` target visual snapshots.
 - `test:smoke` is a focused visual rerun path for artifact refresh.
-- Last Updated: 2026-02-22 21:55:00 EST
+- Last Updated: 2026-02-22 22:01:00 EST
 
 ## Current Focus
 
@@ -35,6 +35,7 @@
 - Consolidated scene icon/watermark texture derivation into `src/engine/scenes/ui/texture-processing.js` and removed duplicated/pass-through texture methods from `RunScene`, `RewardScene`, and `ShopScene`.
 - Consolidated scene brown-theme color conversion/text-style/graphics patching into `src/engine/scenes/ui/brown-theme.js` and removed duplicated theme helper methods from `RunScene`, `RewardScene`, and `ShopScene`.
 - Extracted RunScene modal state/order/blocker helpers into `src/engine/scenes/run/run-scene-modals.js` and removed duplicated modal state methods from `RunScene`.
+- Extracted RunScene modal rendering/close-button plumbing into `src/engine/scenes/run/run-scene-modal-renderers.js` and removed in-class logs/relics modal rendering methods from `RunScene`.
 - Extracted RunScene static configuration into `src/engine/scenes/run/run-scene-config.js` and wired `RunScene` + `BootScene` to share the same avatar/action-icon config surface.
 - Removed runtime `window.Image` avatar preloading/cache paths; avatar texture loading now runs through Phaser `BootScene` preload while runtime resolves avatar keys only.
 - Removed remaining `isExternal*` branch plumbing from app/runtime/combat/audio/lifecycle modules and aligned tests to Phaser-only behavior.
@@ -152,7 +153,7 @@
 - `npm run test:unit`: passing (runtime module tests).
 - `npm run test:acceptance`: passing (contracts + one-hand core/camp flow + seeded economy + persistence/resume).
 - `npm run test:visual`: not rerun in this slice (CI remains warning-only during UI churn).
-- `npm run test:smoke`: failing on current visual threshold miss (`desktop-1280x720/03b-playing-actions`, `diffPixels=298`, `diffRatio=0.00032335069444444447`, `maxDiffPixels=250`).
+- `npm run test:smoke`: failing on known baseline mismatch (`desktop-1280x720/01-menu`, `diffPixels=20142`, `diffRatio=0.02185546875`).
 - `npm run build`: passing (Vite production bundle).
 - `npm run test:dead-refs`: passing (no stale bootstrap/legacy-adapter symbol references).
 - Production deploy: `https://blackjackabyss.vercel.app`.

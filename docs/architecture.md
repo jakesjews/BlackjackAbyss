@@ -26,6 +26,7 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - Scene layer: `src/engine/scenes/*`
 - Scene run config module: `src/engine/scenes/run/run-scene-config.js` (RunScene/BootScene shared run asset keys + style constants).
 - Scene run modal state helper: `src/engine/scenes/run/run-scene-modals.js` (RunScene modal order/state/blocker synchronization helpers).
+- Scene run modal renderer helper: `src/engine/scenes/run/run-scene-modal-renderers.js` (RunScene logs/relics modal rendering and close-button plumbing).
 - Scene brown-theme utility: `src/engine/scenes/ui/brown-theme.js` (shared blue-to-brown palette conversion for text + graphics across scenes).
 - Scene shared texture helpers: `src/engine/scenes/ui/texture-processing.js` (tight alpha trims + icon/watermark derived textures via Phaser texture manager).
 - Scene asset host: `src/engine/scenes/BootScene.js` preloads shared textures (including enemy avatars/icons) into Phaser's texture manager.

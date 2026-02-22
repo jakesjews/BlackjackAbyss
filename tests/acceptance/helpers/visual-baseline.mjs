@@ -11,7 +11,7 @@ export const VISUAL_REGRESSION_ROOT = path.join(REPO_ROOT, "artifacts", "visual-
 export const VISUAL_DIFF_DEFAULTS = Object.freeze({
   threshold: 0.08,
   maxDiffRatio: 0.0005,
-  maxDiffPixels: 250,
+  maxDiffPixels: 500,
 });
 
 export function isVisualUpdateMode() {

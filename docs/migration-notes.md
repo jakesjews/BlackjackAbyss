@@ -18,6 +18,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Consolidated shared scene texture processing helpers (`dark`/`gold` icon derivation + watermark recolor) into `src/engine/scenes/ui/texture-processing.js` and removed duplicated texture helper methods from `RunScene`, `RewardScene`, and `ShopScene`.
 - Consolidated shared scene brown-theme helpers (graphics patching + text/color conversion) into `src/engine/scenes/ui/brown-theme.js` and removed duplicated theme helper methods from `RunScene`, `RewardScene`, and `ShopScene`.
 - Extracted RunScene modal order/state/blocker helpers into `src/engine/scenes/run/run-scene-modals.js` and removed duplicated modal helper methods from `RunScene`.
+- Extracted RunScene modal rendering/close-button plumbing into `src/engine/scenes/run/run-scene-modal-renderers.js` and removed duplicated in-class logs/relics modal rendering methods from `RunScene`.
 - Dead runtime audio shim removed (`src/engine/runtime/audio/audio-engine.js`, `MUSIC_STEP_SECONDS`, `audio.stepTimer`, `audio.stepIndex`).
 - Broken balance probe tooling removed temporarily.
 - Added acceptance test harness with one-hand core/camp/persistence coverage.

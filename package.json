@@ -22,6 +22,8 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@fontsource/chakra-petch": "^5.2.7",
+    "@fontsource/sora": "^5.2.8",
     "phaser": "^3.90.0",
     "playwright": "^1.58.2"
   },
