@@ -2,6 +2,84 @@ function resolveSourceImage(texture) {
   return texture?.getSourceImage?.() || texture?.source?.[0]?.image || texture?.source?.[0]?.source || null;
 }
 
+function resolveSourceInfo(scene, sourceKey) {
+  if (!scene?.textures || !sourceKey || !scene.textures.exists(sourceKey)) {
+    return null;
+  }
+  const sourceTexture = scene.textures.get(sourceKey);
+  const sourceImage = resolveSourceImage(sourceTexture);
+  const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
+  const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
+  if (!sourceImage || sourceW < 1 || sourceH < 1) {
+    return null;
+  }
+  return {
+    sourceImage,
+    sourceW,
+    sourceH,
+  };
+}
+
+function createDerivedTexture(
+  scene,
+  {
+    sourceKey,
+    outputKey,
+    cacheMap = null,
+    transformPixel = null,
+  }
+) {
+  if (!scene?.textures || !sourceKey || !outputKey || !scene.textures.exists(sourceKey)) {
+    return sourceKey;
+  }
+  const cachedOutputKey = cacheMap?.get?.(sourceKey);
+  if (cachedOutputKey && scene.textures.exists(cachedOutputKey)) {
+    return cachedOutputKey;
+  }
+  if (scene.textures.exists(outputKey)) {
+    cacheMap?.set?.(sourceKey, outputKey);
+    return outputKey;
+  }
+  if (typeof scene.textures.createCanvas !== "function") {
+    return sourceKey;
+  }
+  const sourceInfo = resolveSourceInfo(scene, sourceKey);
+  if (!sourceInfo) {
+    return sourceKey;
+  }
+  const { sourceImage, sourceW, sourceH } = sourceInfo;
+
+  try {
+    const canvasTexture = scene.textures.createCanvas(outputKey, sourceW, sourceH);
+    const ctx = canvasTexture?.getContext?.();
+    if (!ctx) {
+      return sourceKey;
+    }
+    ctx.clearRect(0, 0, sourceW, sourceH);
+    ctx.drawImage(sourceImage, 0, 0);
+    if (typeof transformPixel === "function") {
+      const image = ctx.getImageData(0, 0, sourceW, sourceH);
+      const pixels = image.data;
+      for (let i = 0; i < pixels.length; i += 4) {
+        const alpha = pixels[i + 3];
+        if (alpha === 0) {
+          continue;
+        }
+        transformPixel(pixels, i, alpha);
+      }
+      ctx.putImageData(image, 0, 0);
+    }
+    canvasTexture.refresh();
+    cacheMap?.set?.(sourceKey, outputKey);
+    return outputKey;
+  } catch {
+    if (scene.textures.exists(outputKey)) {
+      scene.textures.remove(outputKey);
+    }
+    return sourceKey;
+  }
+}
+
 function scanAlphaBounds(imageData, width, height, alphaThreshold) {
   const pixels = imageData.data;
   let minX = width;
@@ -51,14 +129,11 @@ export function createTightTextureFromAlpha(
   if (typeof scene.textures.createCanvas !== "function") {
     return sourceKey;
   }
-
-  const sourceTexture = scene.textures.get(sourceKey);
-  const sourceImage = resolveSourceImage(sourceTexture);
-  const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
-  const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
-  if (!sourceImage || sourceW < 1 || sourceH < 1) {
+  const sourceInfo = resolveSourceInfo(scene, sourceKey);
+  if (!sourceInfo) {
     return sourceKey;
   }
+  const { sourceImage, sourceW, sourceH } = sourceInfo;
 
   const scanKey = `__tight-scan-${outputKey}__`;
   if (scene.textures.exists(scanKey)) {
@@ -105,4 +180,66 @@ export function createTightTextureFromAlpha(
       scene.textures.remove(scanKey);
     }
   }
+}
+
+export function resolveDarkIconTexture(scene, sourceKey, cacheMap = null) {
+  const safeSourceKey = typeof sourceKey === "string" ? sourceKey : "";
+  if (!safeSourceKey) {
+    return sourceKey;
+  }
+  return createDerivedTexture(scene, {
+    sourceKey: safeSourceKey,
+    outputKey: `${safeSourceKey}__dark`,
+    cacheMap,
+    transformPixel: (pixels, index) => {
+      const luminance = (pixels[index] * 0.2126 + pixels[index + 1] * 0.7152 + pixels[index + 2] * 0.0722) / 255;
+      const value = Math.round(18 + luminance * 34);
+      pixels[index] = Math.round(value * 0.95);
+      pixels[index + 1] = Math.round(value * 0.78);
+      pixels[index + 2] = Math.round(value * 0.58);
+    },
+  });
+}
+
+export function resolveGoldIconTexture(scene, sourceKey) {
+  const safeSourceKey = typeof sourceKey === "string" ? sourceKey : "";
+  if (!safeSourceKey) {
+    return sourceKey;
+  }
+  return createDerivedTexture(scene, {
+    sourceKey: safeSourceKey,
+    outputKey: `${safeSourceKey}__gold`,
+    transformPixel: (pixels, index) => {
+      const luminance = (pixels[index] * 0.2126 + pixels[index + 1] * 0.7152 + pixels[index + 2] * 0.0722) / 255;
+      const strength = 0.38 + luminance * 0.62;
+      pixels[index] = Math.round(242 * strength);
+      pixels[index + 1] = Math.round(205 * strength);
+      pixels[index + 2] = Math.round(136 * strength);
+    },
+  });
+}
+
+export function resolveWatermarkTexture(
+  scene,
+  {
+    sourceKey,
+    outputKey,
+    alphaScale = 1,
+  }
+) {
+  const clampedAlphaScale = Math.min(1, Math.max(0, Number(alphaScale) || 0));
+  const targetPeakAlpha = Math.round(255 * clampedAlphaScale);
+  return createDerivedTexture(scene, {
+    sourceKey,
+    outputKey,
+    transformPixel: (pixels, index, alpha) => {
+      const luminance = (pixels[index] * 0.2126 + pixels[index + 1] * 0.7152 + pixels[index + 2] * 0.0722) / 255;
+      const strength = 0.45 + luminance * 0.55;
+      pixels[index] = Math.round(214 * strength + 26);
+      pixels[index + 1] = Math.round(182 * strength + 22);
+      pixels[index + 2] = Math.round(140 * strength + 18);
+      const normalizedAlpha = Math.min(1, Math.max(0, alpha / 255));
+      pixels[index + 3] = Math.round(targetPeakAlpha * Math.pow(normalizedAlpha, 0.4));
+    },
+  });
 }

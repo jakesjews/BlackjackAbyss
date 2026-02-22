@@ -3,7 +3,19 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
-import { createTightTextureFromAlpha } from "./ui/texture-processing.js";
+import {
+  applyBrownThemeToGraphics,
+  createBrownTheme,
+  toBrownThemeColorNumber,
+  toBrownThemeColorString,
+  toBrownThemeTextStyle,
+} from "./ui/brown-theme.js";
+import {
+  createTightTextureFromAlpha,
+  resolveDarkIconTexture,
+  resolveGoldIconTexture,
+  resolveWatermarkTexture,
+} from "./ui/texture-processing.js";
 import {
   getRunApi as getRunApiFromRuntime,
   isCoarsePointer as isCoarsePointerFromRuntime,
@@ -57,6 +69,17 @@ import {
   sanitizeEnemyAvatarKey,
 } from "./run/run-scene-config.js";
 const BUTTON_STYLES = ACTION_BUTTON_STYLE;
+const RUN_BROWN_THEME = createBrownTheme({
+  blueHueMin: RUN_THEME_BLUE_HUE_MIN,
+  blueHueMax: RUN_THEME_BLUE_HUE_MAX,
+  brownHue: RUN_THEME_BROWN_HUE,
+  saturationScale: RUN_THEME_SATURATION_SCALE,
+  saturationFloor: RUN_THEME_SATURATION_FLOOR,
+  saturationOffset: 0,
+  lightScale: 0.98,
+  lightOffset: 0.02,
+  patchFlag: "__runBrownThemePatched",
+});
 
 export class RunScene extends Phaser.Scene {
   constructor() {
@@ -169,10 +192,14 @@ export class RunScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor("#171006");
     this.cameras.main.setAlpha(1);
-    this.graphics = this.applyBrownThemeToGraphics(this.add.graphics());
-    this.overlayGraphics = this.applyBrownThemeToGraphics(this.add.graphics().setDepth(RUN_MODAL_BASE_DEPTH));
+    this.graphics = applyBrownThemeToGraphics(this.add.graphics(), RUN_BROWN_THEME);
+    this.overlayGraphics = applyBrownThemeToGraphics(this.add.graphics().setDepth(RUN_MODAL_BASE_DEPTH), RUN_BROWN_THEME);
     if (this.textures.exists(RUN_WATERMARK_KEY)) {
-      const watermarkTexture = this.resolveWatermarkTexture(RUN_WATERMARK_KEY, RUN_WATERMARK_RENDER_KEY);
+      const watermarkTexture = resolveWatermarkTexture(this, {
+        sourceKey: RUN_WATERMARK_KEY,
+        outputKey: RUN_WATERMARK_RENDER_KEY,
+        alphaScale: RUN_WATERMARK_ALPHA,
+      });
       this.watermarkBackground = this.add
         .image(this.scale.gameSize.width * 0.5, this.scale.gameSize.height * 0.5, watermarkTexture || RUN_WATERMARK_KEY)
         .setVisible(false)
@@ -183,7 +210,13 @@ export class RunScene extends Phaser.Scene {
       this.watermarkMask = this.watermarkMaskShape.createGeometryMask();
       this.watermarkBackground.setMask(this.watermarkMask);
     }
-    const chipsIconKey = this.resolveGoldIconTexture(this.resolveTightTexture(RUN_CHIPS_ICON_KEY, RUN_CHIPS_ICON_TRIM_KEY));
+    const chipsIconKey = resolveGoldIconTexture(
+      this,
+      createTightTextureFromAlpha(this, {
+        sourceKey: RUN_CHIPS_ICON_KEY,
+        outputKey: RUN_CHIPS_ICON_TRIM_KEY,
+      })
+    );
     this.hudChipsIcon = this.add.image(0, 0, chipsIconKey).setVisible(false).setDepth(26);
     this.modalBlocker = this.add
       .zone(0, 0, 1, 1)
@@ -196,7 +229,7 @@ export class RunScene extends Phaser.Scene {
     this.ensureCardShadowTexture();
 
     this.enemyPortrait = this.add.image(0, 0, RUN_PARTICLE_KEY).setVisible(false).setDepth(16);
-    this.enemyPortraitMaskShape = this.applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }));
+    this.enemyPortraitMaskShape = applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }), RUN_BROWN_THEME);
     this.enemyPortraitMask = this.enemyPortraitMaskShape.createGeometryMask();
     this.enemyPortrait.setMask(this.enemyPortraitMask);
     this.playerPortrait = this.add
@@ -204,11 +237,11 @@ export class RunScene extends Phaser.Scene {
       .setVisible(false)
       .setAlpha(0.75)
       .setDepth(16);
-    this.playerPortraitMaskShape = this.applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }));
+    this.playerPortraitMaskShape = applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }), RUN_BROWN_THEME);
     this.playerPortraitMask = this.playerPortraitMaskShape.createGeometryMask();
     this.playerPortrait.setMask(this.playerPortraitMask);
     this.introPortrait = this.add.image(0, 0, RUN_PARTICLE_KEY).setVisible(false).setDepth(116);
-    this.introPortraitMaskShape = this.applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }));
+    this.introPortraitMaskShape = applyBrownThemeToGraphics(this.make.graphics({ x: 0, y: 0, add: false }), RUN_BROWN_THEME);
     this.introPortraitMask = this.introPortraitMaskShape.createGeometryMask();
     this.introPortrait.setMask(this.introPortraitMask);
 
@@ -846,132 +879,6 @@ export class RunScene extends Phaser.Scene {
     this.playRunSfx("startEnemyDefeatTransition");
   }
 
-  applyBrownThemeToGraphics(graphics) {
-    if (!graphics || graphics.__runBrownThemePatched) {
-      return graphics;
-    }
-    const fillStyle = graphics.fillStyle;
-    graphics.fillStyle = (color, alpha) => fillStyle.call(graphics, this.toBrownThemeColorNumber(color), alpha);
-    const lineStyle = graphics.lineStyle;
-    graphics.lineStyle = (lineWidth, color, alpha) =>
-      lineStyle.call(graphics, lineWidth, this.toBrownThemeColorNumber(color), alpha);
-    if (typeof graphics.fillGradientStyle === "function") {
-      const fillGradientStyle = graphics.fillGradientStyle;
-      graphics.fillGradientStyle = (topLeft, topRight, bottomLeft, bottomRight, alphaTopLeft, alphaTopRight, alphaBottomLeft, alphaBottomRight) =>
-        fillGradientStyle.call(
-          graphics,
-          this.toBrownThemeColorNumber(topLeft),
-          this.toBrownThemeColorNumber(topRight),
-          this.toBrownThemeColorNumber(bottomLeft),
-          this.toBrownThemeColorNumber(bottomRight),
-          alphaTopLeft,
-          alphaTopRight,
-          alphaBottomLeft,
-          alphaBottomRight
-        );
-    }
-    graphics.__runBrownThemePatched = true;
-    return graphics;
-  }
-
-  toBrownThemeTextStyle(style) {
-    if (!style || typeof style !== "object") {
-      return style;
-    }
-    const themed = { ...style };
-    if (typeof themed.color === "string") {
-      themed.color = this.toBrownThemeColorString(themed.color);
-    }
-    if (typeof themed.stroke === "string") {
-      themed.stroke = this.toBrownThemeColorString(themed.stroke);
-    }
-    if (typeof themed.backgroundColor === "string") {
-      themed.backgroundColor = this.toBrownThemeColorString(themed.backgroundColor);
-    }
-    return themed;
-  }
-
-  toBrownThemeColorString(value) {
-    if (typeof value !== "string") {
-      return value;
-    }
-    const match = value.trim().match(/^#([0-9a-fA-F]{6})$/);
-    if (!match) {
-      return value;
-    }
-    const input = parseInt(match[1], 16);
-    const output = this.toBrownThemeColorNumber(input);
-    return `#${output.toString(16).padStart(6, "0")}`;
-  }
-
-  toBrownThemeColorNumber(value) {
-    if (!Number.isFinite(value)) {
-      return value;
-    }
-    const color = Phaser.Display.Color.IntegerToColor(value);
-    const hsl = this.rgbToHsl(color.red, color.green, color.blue);
-    const hueDeg = (Number(hsl.h) || 0) * 360;
-    const sat = Number(hsl.s) || 0;
-    const light = Number(hsl.l) || 0;
-    if (sat < 0.08 || hueDeg < RUN_THEME_BLUE_HUE_MIN || hueDeg > RUN_THEME_BLUE_HUE_MAX) {
-      return value;
-    }
-    const shiftedSat = Phaser.Math.Clamp(Math.max(RUN_THEME_SATURATION_FLOOR, sat * RUN_THEME_SATURATION_SCALE), 0, 1);
-    const shiftedLight = Phaser.Math.Clamp(light * 0.98 + 0.02, 0, 1);
-    const shifted = this.hslToRgb(RUN_THEME_BROWN_HUE, shiftedSat, shiftedLight);
-    return Phaser.Display.Color.GetColor(shifted.r, shifted.g, shifted.b);
-  }
-
-  rgbToHsl(r, g, b) {
-    const rn = Phaser.Math.Clamp((Number(r) || 0) / 255, 0, 1);
-    const gn = Phaser.Math.Clamp((Number(g) || 0) / 255, 0, 1);
-    const bn = Phaser.Math.Clamp((Number(b) || 0) / 255, 0, 1);
-    const max = Math.max(rn, gn, bn);
-    const min = Math.min(rn, gn, bn);
-    const delta = max - min;
-    let h = 0;
-    let s = 0;
-    const l = (max + min) * 0.5;
-    if (delta > 0) {
-      s = l > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-      if (max === rn) {
-        h = (gn - bn) / delta + (gn < bn ? 6 : 0);
-      } else if (max === gn) {
-        h = (bn - rn) / delta + 2;
-      } else {
-        h = (rn - gn) / delta + 4;
-      }
-      h /= 6;
-    }
-    return { h, s, l };
-  }
-
-  hslToRgb(h, s, l) {
-    const hue = ((Number(h) || 0) % 1 + 1) % 1;
-    const sat = Phaser.Math.Clamp(Number(s) || 0, 0, 1);
-    const light = Phaser.Math.Clamp(Number(l) || 0, 0, 1);
-    if (sat === 0) {
-      const v = Math.round(light * 255);
-      return { r: v, g: v, b: v };
-    }
-    const q = light < 0.5 ? light * (1 + sat) : light + sat - light * sat;
-    const p = 2 * light - q;
-    const hue2rgb = (t) => {
-      let tt = t;
-      if (tt < 0) tt += 1;
-      if (tt > 1) tt -= 1;
-      if (tt < 1 / 6) return p + (q - p) * 6 * tt;
-      if (tt < 1 / 2) return q;
-      if (tt < 2 / 3) return p + (q - p) * (2 / 3 - tt) * 6;
-      return p;
-    };
-    return {
-      r: Math.round(hue2rgb(hue + 1 / 3) * 255),
-      g: Math.round(hue2rgb(hue) * 255),
-      b: Math.round(hue2rgb(hue - 1 / 3) * 255),
-    };
-  }
-
   getRunLayout(width, height) {
     const compact = this.isCompactLayout(width);
     const topBarH = compact ? 76 : RUN_TOP_BAR_HEIGHT;
@@ -1232,166 +1139,6 @@ export class RunScene extends Phaser.Scene {
     this.graphics.fillCircle(x, y, safeRadius * 0.42);
     this.graphics.lineStyle(1, 0xf4d89f, 0.42);
     this.graphics.strokeCircle(x, y, safeRadius * 0.74);
-  }
-
-  resolveTightTexture(sourceKey, outputKey, alphaThreshold = 8) {
-    return createTightTextureFromAlpha(this, {
-      sourceKey,
-      outputKey,
-      alphaThreshold,
-    });
-  }
-
-  resolveDarkIconTexture(sourceKey) {
-    if (!sourceKey || !this.textures.exists(sourceKey)) {
-      return sourceKey;
-    }
-    const cached = this.darkIconTextureBySource.get(sourceKey);
-    if (cached && this.textures.exists(cached)) {
-      return cached;
-    }
-    if (typeof this.textures.createCanvas !== "function") {
-      return sourceKey;
-    }
-    const texture = this.textures.get(sourceKey);
-    const sourceImage =
-      texture?.getSourceImage?.() ||
-      texture?.source?.[0]?.image ||
-      texture?.source?.[0]?.source ||
-      null;
-    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
-    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
-    if (!sourceImage || sourceW < 1 || sourceH < 1) {
-      return sourceKey;
-    }
-    const darkKey = `${sourceKey}__dark`;
-    if (this.textures.exists(darkKey)) {
-      this.darkIconTextureBySource.set(sourceKey, darkKey);
-      return darkKey;
-    }
-    const canvasTexture = this.textures.createCanvas(darkKey, sourceW, sourceH);
-    const ctx = canvasTexture?.getContext?.();
-    if (!ctx) {
-      return sourceKey;
-    }
-    ctx.clearRect(0, 0, sourceW, sourceH);
-    ctx.drawImage(sourceImage, 0, 0);
-    const image = ctx.getImageData(0, 0, sourceW, sourceH);
-    const pixels = image.data;
-    for (let i = 0; i < pixels.length; i += 4) {
-      const alpha = pixels[i + 3];
-      if (alpha === 0) {
-        continue;
-      }
-      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
-      const value = Math.round(18 + luminance * 34);
-      pixels[i] = Math.round(value * 0.95);
-      pixels[i + 1] = Math.round(value * 0.78);
-      pixels[i + 2] = Math.round(value * 0.58);
-    }
-    ctx.putImageData(image, 0, 0);
-    canvasTexture.refresh();
-    this.darkIconTextureBySource.set(sourceKey, darkKey);
-    return darkKey;
-  }
-
-  resolveGoldIconTexture(sourceKey) {
-    if (!sourceKey || !this.textures.exists(sourceKey)) {
-      return sourceKey;
-    }
-    const goldKey = `${sourceKey}__gold`;
-    if (this.textures.exists(goldKey)) {
-      return goldKey;
-    }
-    if (typeof this.textures.createCanvas !== "function") {
-      return sourceKey;
-    }
-    const texture = this.textures.get(sourceKey);
-    const sourceImage =
-      texture?.getSourceImage?.() ||
-      texture?.source?.[0]?.image ||
-      texture?.source?.[0]?.source ||
-      null;
-    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
-    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
-    if (!sourceImage || sourceW < 1 || sourceH < 1) {
-      return sourceKey;
-    }
-    const canvasTexture = this.textures.createCanvas(goldKey, sourceW, sourceH);
-    const ctx = canvasTexture?.getContext?.();
-    if (!ctx) {
-      return sourceKey;
-    }
-    ctx.clearRect(0, 0, sourceW, sourceH);
-    ctx.drawImage(sourceImage, 0, 0);
-    const image = ctx.getImageData(0, 0, sourceW, sourceH);
-    const pixels = image.data;
-    for (let i = 0; i < pixels.length; i += 4) {
-      const alpha = pixels[i + 3];
-      if (alpha === 0) {
-        continue;
-      }
-      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
-      const strength = 0.38 + luminance * 0.62;
-      pixels[i] = Math.round(242 * strength);
-      pixels[i + 1] = Math.round(205 * strength);
-      pixels[i + 2] = Math.round(136 * strength);
-    }
-    ctx.putImageData(image, 0, 0);
-    canvasTexture.refresh();
-    return goldKey;
-  }
-
-  resolveWatermarkTexture(sourceKey, outputKey) {
-    if (!sourceKey || !outputKey || !this.textures.exists(sourceKey)) {
-      return sourceKey;
-    }
-    if (this.textures.exists(outputKey)) {
-      return outputKey;
-    }
-    if (typeof this.textures.createCanvas !== "function") {
-      return sourceKey;
-    }
-    const texture = this.textures.get(sourceKey);
-    const sourceImage =
-      texture?.getSourceImage?.() ||
-      texture?.source?.[0]?.image ||
-      texture?.source?.[0]?.source ||
-      null;
-    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
-    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
-    if (!sourceImage || sourceW < 1 || sourceH < 1) {
-      return sourceKey;
-    }
-    const canvasTexture = this.textures.createCanvas(outputKey, sourceW, sourceH);
-    const ctx = canvasTexture?.getContext?.();
-    if (!ctx) {
-      return sourceKey;
-    }
-    ctx.clearRect(0, 0, sourceW, sourceH);
-    ctx.drawImage(sourceImage, 0, 0);
-    const image = ctx.getImageData(0, 0, sourceW, sourceH);
-    const pixels = image.data;
-    const alphaScale = Phaser.Math.Clamp(RUN_WATERMARK_ALPHA, 0, 1);
-    const targetPeakAlpha = Math.round(255 * alphaScale);
-    for (let i = 0; i < pixels.length; i += 4) {
-      const alpha = pixels[i + 3];
-      if (alpha <= 0) {
-        continue;
-      }
-      // Recolor dark source marks into warm light marks; keep source alpha unchanged.
-      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
-      const strength = 0.45 + luminance * 0.55;
-      pixels[i] = Math.round(214 * strength + 26);
-      pixels[i + 1] = Math.round(182 * strength + 22);
-      pixels[i + 2] = Math.round(140 * strength + 18);
-      // Boost faint source pixels so the configured opacity reads closer to the requested value.
-      const normalized = Phaser.Math.Clamp(alpha / 255, 0, 1);
-      pixels[i + 3] = Math.round(targetPeakAlpha * Math.pow(normalized, 0.4));
-    }
-    ctx.putImageData(image, 0, 0);
-    canvasTexture.refresh();
-    return outputKey;
   }
 
   drawEncounterPanels(snapshot, width, height, runLayout, options = {}) {
@@ -2583,7 +2330,7 @@ export class RunScene extends Phaser.Scene {
         node.label.setVisible(false);
       } else {
         node.label.setText(text);
-        node.label.setColor(this.toBrownThemeColorString(color));
+        node.label.setColor(toBrownThemeColorString(color, RUN_BROWN_THEME));
         node.label.setVisible(true);
       }
     });
@@ -2618,7 +2365,7 @@ export class RunScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5)
       .setBlendMode(Phaser.BlendModes.NORMAL)
       .setAlpha(0.24);
-    const face = this.applyBrownThemeToGraphics(this.add.graphics());
+    const face = applyBrownThemeToGraphics(this.add.graphics(), RUN_BROWN_THEME);
     const backplate = this.add
       .image(0, 0, this.textures.exists(RUN_CARD_BACKPLATE_KEY) ? RUN_CARD_BACKPLATE_KEY : RUN_PARTICLE_KEY)
       .setVisible(false);
@@ -3066,7 +2813,11 @@ export class RunScene extends Phaser.Scene {
       button.container.setPosition(x, y);
       setGradientButtonSize(button, resolvedW, resolvedH);
 
-      const iconKey = this.resolveDarkIconTexture(RUN_ACTION_ICON_KEYS[action.id] || RUN_ACTION_ICON_KEYS.deal);
+      const iconKey = resolveDarkIconTexture(
+        this,
+        RUN_ACTION_ICON_KEYS[action.id] || RUN_ACTION_ICON_KEYS.deal,
+        this.darkIconTextureBySource
+      );
       if (button.icon) {
         button.icon.setTexture(iconKey);
         button.icon.setDisplaySize(
@@ -3133,11 +2884,17 @@ export class RunScene extends Phaser.Scene {
         height: 64,
         fontSize: 28,
       });
-      const icon = this.add.image(
-        0,
-        0,
-        this.resolveDarkIconTexture(RUN_ACTION_ICON_KEYS[action.id] || RUN_ACTION_ICON_KEYS.deal)
-      ).setDisplaySize(18, 18);
+      const icon = this.add
+        .image(
+          0,
+          0,
+          resolveDarkIconTexture(
+            this,
+            RUN_ACTION_ICON_KEYS[action.id] || RUN_ACTION_ICON_KEYS.deal,
+            this.darkIconTextureBySource
+          )
+        )
+        .setDisplaySize(18, 18);
       const shortcut = this.add
         .text(0, 0, "", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
@@ -3164,7 +2921,7 @@ export class RunScene extends Phaser.Scene {
   }
 
   drawText(key, value, x, y, style, origin = { x: 0.5, y: 0.5 }) {
-    const themedStyle = this.toBrownThemeTextStyle(style);
+    const themedStyle = toBrownThemeTextStyle(style, RUN_BROWN_THEME);
     let node = this.textNodes.get(key);
     if (!node) {
       node = this.add.text(x, y, value, themedStyle).setOrigin(origin.x, origin.y);
@@ -3216,7 +2973,10 @@ export class RunScene extends Phaser.Scene {
           pressedScale: 0.98,
         });
         button.text.setVisible(false);
-        const icon = this.add.image(0, 0, this.resolveDarkIconTexture(entry.iconKey)).setDisplaySize(16, 16).setAlpha(0.92);
+        const icon = this.add
+          .image(0, 0, resolveDarkIconTexture(this, entry.iconKey, this.darkIconTextureBySource))
+          .setDisplaySize(16, 16)
+          .setAlpha(0.92);
         button.container.add(icon);
         button.icon = icon;
         button.container.setDepth(230);

@@ -3,7 +3,14 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
-import { createTightTextureFromAlpha } from "./ui/texture-processing.js";
+import {
+  applyBrownThemeToGraphics,
+  createBrownTheme,
+  toBrownThemeColorNumber,
+  toBrownThemeColorString,
+  toBrownThemeTextStyle,
+} from "./ui/brown-theme.js";
+import { createTightTextureFromAlpha, resolveDarkIconTexture, resolveGoldIconTexture } from "./ui/texture-processing.js";
 import {
   getShopApi as getShopApiFromRuntime,
   isCoarsePointer as isCoarsePointerFromRuntime,
@@ -40,6 +47,14 @@ const SHOP_THEME_BLUE_HUE_MAX = 255;
 const SHOP_THEME_BROWN_HUE = 30 / 360;
 const SHOP_THEME_SATURATION_FLOOR = 0.18;
 const SHOP_THEME_SATURATION_SCALE = 0.8;
+const SHOP_BROWN_THEME = createBrownTheme({
+  blueHueMin: SHOP_THEME_BLUE_HUE_MIN,
+  blueHueMax: SHOP_THEME_BLUE_HUE_MAX,
+  brownHue: SHOP_THEME_BROWN_HUE,
+  saturationScale: SHOP_THEME_SATURATION_SCALE,
+  saturationOffset: SHOP_THEME_SATURATION_FLOOR,
+  patchFlag: "__shopBrownThemePatched",
+});
 const SHOPKEEPER_DIALOGUE_VARIANTS = Object.freeze([
   "Welcome back, traveler. Browse slow, buy smart.",
   "Camp prices are fair. The odds are not.",
@@ -109,12 +124,12 @@ export class ShopScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor("#171006");
     this.cameras.main.setAlpha(1);
     this.graphics = this.add.graphics();
-    this.applyBrownThemeToGraphics(this.graphics);
+    applyBrownThemeToGraphics(this.graphics, SHOP_BROWN_THEME);
     this.campBackground = this.textures.exists(SHOP_CAMP_BACKGROUND_KEY)
       ? this.add.image(0, 0, SHOP_CAMP_BACKGROUND_KEY).setOrigin(0.5, 0.5).setDepth(-10).setVisible(false)
       : null;
     this.overlayGraphics = this.add.graphics().setDepth(SHOP_MODAL_BASE_DEPTH);
-    this.applyBrownThemeToGraphics(this.overlayGraphics);
+    applyBrownThemeToGraphics(this.overlayGraphics, SHOP_BROWN_THEME);
     this.modalBlocker = this.add
       .zone(0, 0, 1, 1)
       .setOrigin(0, 0)
@@ -122,7 +137,13 @@ export class ShopScene extends Phaser.Scene {
       .setVisible(false)
       .setInteractive({ useHandCursor: false });
     this.modalBlocker.on("pointerdown", () => {});
-    const chipsTextureKey = this.resolveGoldIconTexture(this.resolveTightTexture(SHOP_CHIPS_ICON_KEY, SHOP_CHIPS_ICON_TRIM_KEY));
+    const chipsTextureKey = resolveGoldIconTexture(
+      this,
+      createTightTextureFromAlpha(this, {
+        sourceKey: SHOP_CHIPS_ICON_KEY,
+        outputKey: SHOP_CHIPS_ICON_TRIM_KEY,
+      })
+    );
     this.chipsIcon = this.add.image(0, 0, chipsTextureKey).setVisible(false);
     this.chipsIcon.setDisplaySize(20, 20);
     this.shopOpen = false;
@@ -371,122 +392,6 @@ export class ShopScene extends Phaser.Scene {
     if (typeof action === "function") {
       action(value);
     }
-  }
-
-  applyBrownThemeToGraphics(graphics) {
-    if (!graphics || graphics.__brownThemePatched) {
-      return;
-    }
-    const fillStyle = graphics.fillStyle;
-    const lineStyle = graphics.lineStyle;
-    const fillGradientStyle = graphics.fillGradientStyle;
-    graphics.fillStyle = (color, alpha) => fillStyle.call(graphics, this.toBrownThemeColorNumber(color), alpha);
-    graphics.lineStyle = (lineWidth, color, alpha) => {
-      lineStyle.call(graphics, lineWidth, this.toBrownThemeColorNumber(color), alpha);
-    };
-    graphics.fillGradientStyle = (topLeft, topRight, bottomLeft, bottomRight, alpha) => {
-      fillGradientStyle.call(
-        graphics,
-        this.toBrownThemeColorNumber(topLeft),
-        this.toBrownThemeColorNumber(topRight),
-        this.toBrownThemeColorNumber(bottomLeft),
-        this.toBrownThemeColorNumber(bottomRight),
-        alpha
-      );
-    };
-    graphics.__brownThemePatched = true;
-  }
-
-  toBrownThemeTextStyle(style) {
-    if (!style || typeof style !== "object") {
-      return style;
-    }
-    const themed = { ...style };
-    if (typeof themed.color === "string") {
-      themed.color = this.toBrownThemeColorString(themed.color);
-    }
-    if (typeof themed.stroke === "string") {
-      themed.stroke = this.toBrownThemeColorString(themed.stroke);
-    }
-    if (typeof themed.backgroundColor === "string") {
-      themed.backgroundColor = this.toBrownThemeColorString(themed.backgroundColor);
-    }
-    return themed;
-  }
-
-  toBrownThemeColorString(value) {
-    if (typeof value !== "string" || !value.startsWith("#")) {
-      return value;
-    }
-    const input = Number.parseInt(value.slice(1), 16);
-    if (!Number.isFinite(input)) {
-      return value;
-    }
-    const output = this.toBrownThemeColorNumber(input);
-    return `#${output.toString(16).padStart(6, "0")}`;
-  }
-
-  toBrownThemeColorNumber(value) {
-    if (!Number.isFinite(value)) {
-      return value;
-    }
-    const r = (value >> 16) & 0xff;
-    const g = (value >> 8) & 0xff;
-    const b = value & 0xff;
-    const [hue, sat, light] = this.rgbToHsl(r, g, b);
-    const hueDeg = hue * 360;
-    if (sat < 0.08 || hueDeg < SHOP_THEME_BLUE_HUE_MIN || hueDeg > SHOP_THEME_BLUE_HUE_MAX) {
-      return value;
-    }
-    const shiftedSat = Phaser.Math.Clamp(sat * SHOP_THEME_SATURATION_SCALE + SHOP_THEME_SATURATION_FLOOR, 0, 1);
-    const shifted = this.hslToRgb(SHOP_THEME_BROWN_HUE, shiftedSat, light);
-    return (shifted[0] << 16) | (shifted[1] << 8) | shifted[2];
-  }
-
-  rgbToHsl(r, g, b) {
-    const rn = r / 255;
-    const gn = g / 255;
-    const bn = b / 255;
-    const max = Math.max(rn, gn, bn);
-    const min = Math.min(rn, gn, bn);
-    let h = 0;
-    let s = 0;
-    const l = (max + min) * 0.5;
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      if (max === rn) {
-        h = (gn - bn) / d + (gn < bn ? 6 : 0);
-      } else if (max === gn) {
-        h = (bn - rn) / d + 2;
-      } else {
-        h = (rn - gn) / d + 4;
-      }
-      h /= 6;
-    }
-    return [h, s, l];
-  }
-
-  hslToRgb(h, s, l) {
-    if (s === 0) {
-      const value = Math.round(l * 255);
-      return [value, value, value];
-    }
-    const hue2rgb = (p, q, t) => {
-      let tl = t;
-      if (tl < 0) tl += 1;
-      if (tl > 1) tl -= 1;
-      if (tl < 1 / 6) return p + (q - p) * 6 * tl;
-      if (tl < 1 / 2) return q;
-      if (tl < 2 / 3) return p + (q - p) * (2 / 3 - tl) * 6;
-      return p;
-    };
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    const r = hue2rgb(p, q, h + 1 / 3);
-    const g = hue2rgb(p, q, h);
-    const b = hue2rgb(p, q, h - 1 / 3);
-    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
   }
 
   renderSnapshot(snapshot) {
@@ -764,7 +669,10 @@ export class ShopScene extends Phaser.Scene {
       card.currentIndex = index;
       card.container.setPosition(x, y);
       card.bg.clear();
-      card.bg.fillStyle(this.toBrownThemeColorNumber(selected ? CARD_STYLE.fillSelected : CARD_STYLE.fill), selected ? 0.98 : 0.9);
+      card.bg.fillStyle(
+        toBrownThemeColorNumber(selected ? CARD_STYLE.fillSelected : CARD_STYLE.fill, SHOP_BROWN_THEME),
+        selected ? 0.98 : 0.9
+      );
       card.bg.fillRoundedRect(0, 0, cardW, cardH, 18);
       card.bg.fillStyle(0xffffff, selected ? 0.06 : 0.03);
       card.bg.fillRoundedRect(1, 1, cardW - 2, Math.max(30, Math.round(cardH * 0.22)), 18);
@@ -782,7 +690,7 @@ export class ShopScene extends Phaser.Scene {
       const descPanelW = Math.max(120, cardW - cardPadX * 2);
       card.descPanel.setPosition(cardPadX, descTop);
       card.descPanel.setSize(descPanelW, descHeight);
-      card.descPanel.setFillStyle(this.toBrownThemeColorNumber(0x0b1622), selected ? 0.26 : 0.2);
+      card.descPanel.setFillStyle(toBrownThemeColorNumber(0x0b1622, SHOP_BROWN_THEME), selected ? 0.26 : 0.2);
       card.desc.setPosition(cardPadX, descTop + 4);
       card.type.setText(String(item.type || "SERVICE").toUpperCase());
       card.type.setPosition(cardPadX, typeY);
@@ -837,7 +745,7 @@ export class ShopScene extends Phaser.Scene {
       card.buyButton.text.setAlign("left");
       card.buyButton.text.setPosition(-buyButtonWidth * 0.5 + Math.max(34, Math.round(buyButtonHeight * 0.9)), 0);
       if (card.buyIcon) {
-        card.buyIcon.setTexture(this.resolveDarkIconTexture(SHOP_BUY_ICON_KEY));
+        card.buyIcon.setTexture(resolveDarkIconTexture(this, SHOP_BUY_ICON_KEY, this.darkIconTextureBySource));
         const buyIconSize = Phaser.Math.Clamp(Math.round(buyButtonHeight * 0.66), 18, 33);
         card.buyIcon.setDisplaySize(buyIconSize, buyIconSize);
         card.buyIcon.setPosition(-buyButtonWidth * 0.5 + Math.max(16, Math.round(buyButtonHeight * 0.44)), 0);
@@ -851,10 +759,10 @@ export class ShopScene extends Phaser.Scene {
         card.buyShortcut.setPosition(buyButtonWidth * 0.5 - Math.max(12, Math.round(buyButtonHeight * 0.3)), 0);
         card.buyShortcut.setVisible(showKeyboardHints);
       }
-      card.type.setColor(this.toBrownThemeColorString(selected ? "#f8e7b8" : "#cde4f6"));
-      card.name.setColor(this.toBrownThemeColorString(sold ? "#9aa8b7" : selected ? "#f1f8ff" : "#dceefe"));
-      card.desc.setColor(this.toBrownThemeColorString(sold ? "#a0afbe" : selected ? "#eef7ff" : "#d9ecfb"));
-      card.cost.setColor(this.toBrownThemeColorString(sold ? "#aab6c4" : "#f8e7b8"));
+      card.type.setColor(toBrownThemeColorString(selected ? "#f8e7b8" : "#cde4f6", SHOP_BROWN_THEME));
+      card.name.setColor(toBrownThemeColorString(sold ? "#9aa8b7" : selected ? "#f1f8ff" : "#dceefe", SHOP_BROWN_THEME));
+      card.desc.setColor(toBrownThemeColorString(sold ? "#a0afbe" : selected ? "#eef7ff" : "#d9ecfb", SHOP_BROWN_THEME));
+      card.cost.setColor(toBrownThemeColorString(sold ? "#aab6c4" : "#f8e7b8", SHOP_BROWN_THEME));
       if (card.hitZone) {
         card.hitZone.setPosition(0, 0);
         card.hitZone.setSize(cardW, cardH);
@@ -1006,29 +914,29 @@ export class ShopScene extends Phaser.Scene {
     items.forEach((item, index) => {
       const container = this.add.container(0, 0);
       const bg = this.add.graphics();
-      this.applyBrownThemeToGraphics(bg);
+      applyBrownThemeToGraphics(bg, SHOP_BROWN_THEME);
       const type = this.add
         .text(14, 24, "SERVICE", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "17px",
-          color: this.toBrownThemeColorString("#cde4f6"),
+          color: toBrownThemeColorString("#cde4f6", SHOP_BROWN_THEME),
         })
         .setOrigin(0, 0.5);
       const name = this.add
         .text(14, 58, item.name || "Item", {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: "29px",
-          color: this.toBrownThemeColorString("#dceefe"),
+          color: toBrownThemeColorString("#dceefe", SHOP_BROWN_THEME),
         })
         .setOrigin(0, 0.5);
       const descPanel = this.add
-        .rectangle(14, 92, 222, 174, this.toBrownThemeColorNumber(0x0a1520), 0.34)
+        .rectangle(14, 92, 222, 174, toBrownThemeColorNumber(0x0a1520, SHOP_BROWN_THEME), 0.34)
         .setOrigin(0, 0);
       const desc = this.add
         .text(14, 96, item.description || "", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "20px",
-          color: this.toBrownThemeColorString("#d9ecfb"),
+          color: toBrownThemeColorString("#d9ecfb", SHOP_BROWN_THEME),
           wordWrap: { width: 220 },
           lineSpacing: 7,
         })
@@ -1037,7 +945,7 @@ export class ShopScene extends Phaser.Scene {
         .text(125, 270, `${item.cost || 0}`, {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "20px",
-          color: this.toBrownThemeColorString("#f8e7b8"),
+          color: toBrownThemeColorString("#f8e7b8", SHOP_BROWN_THEME),
           fontStyle: "700",
         })
         .setOrigin(0.5, 0.5);
@@ -1074,7 +982,7 @@ export class ShopScene extends Phaser.Scene {
       buyButton.hitZone.on("pointerdown", () => this.handleCardHover(card.currentIndex));
       buyButton.container.setPosition(125, 310);
       const buyIcon = this.add
-        .image(0, 0, this.resolveDarkIconTexture(SHOP_BUY_ICON_KEY))
+        .image(0, 0, resolveDarkIconTexture(this, SHOP_BUY_ICON_KEY, this.darkIconTextureBySource))
         .setDisplaySize(33, 33)
         .setAlpha(0.92);
       const buyShortcut = this.add
@@ -1132,7 +1040,10 @@ export class ShopScene extends Phaser.Scene {
         height: 64,
         fontSize: 28,
       });
-      const icon = this.add.image(0, 0, this.resolveDarkIconTexture(SHOP_DEAL_ICON_KEY)).setDisplaySize(20, 20).setAlpha(0.92);
+      const icon = this.add
+        .image(0, 0, resolveDarkIconTexture(this, SHOP_DEAL_ICON_KEY, this.darkIconTextureBySource))
+        .setDisplaySize(20, 20)
+        .setAlpha(0.92);
       const shortcut = this.add
         .text(0, 0, "ENTER", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
@@ -1174,7 +1085,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   drawText(key, value, x, y, style, origin = { x: 0.5, y: 0.5 }) {
-    const themedStyle = this.toBrownThemeTextStyle(style);
+    const themedStyle = toBrownThemeTextStyle(style, SHOP_BROWN_THEME);
     let node = this.textNodes.get(key);
     if (!node) {
       node = this.add.text(x, y, value, themedStyle).setOrigin(origin.x, origin.y);
@@ -1187,114 +1098,6 @@ export class ShopScene extends Phaser.Scene {
     node.setText(value);
     node.setVisible(true);
     return node;
-  }
-
-  resolveTightTexture(sourceKey, outputKey, alphaThreshold = 8) {
-    return createTightTextureFromAlpha(this, {
-      sourceKey,
-      outputKey,
-      alphaThreshold,
-    });
-  }
-
-  resolveDarkIconTexture(sourceKey) {
-    if (!sourceKey || !this.textures.exists(sourceKey)) {
-      return sourceKey;
-    }
-    const cached = this.darkIconTextureBySource.get(sourceKey);
-    if (cached && this.textures.exists(cached)) {
-      return cached;
-    }
-    if (typeof this.textures.createCanvas !== "function") {
-      return sourceKey;
-    }
-    const texture = this.textures.get(sourceKey);
-    const sourceImage =
-      texture?.getSourceImage?.() ||
-      texture?.source?.[0]?.image ||
-      texture?.source?.[0]?.source ||
-      null;
-    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
-    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
-    if (!sourceImage || sourceW < 1 || sourceH < 1) {
-      return sourceKey;
-    }
-    const darkKey = `${sourceKey}__dark`;
-    if (this.textures.exists(darkKey)) {
-      this.darkIconTextureBySource.set(sourceKey, darkKey);
-      return darkKey;
-    }
-    const canvasTexture = this.textures.createCanvas(darkKey, sourceW, sourceH);
-    const ctx = canvasTexture?.getContext?.();
-    if (!ctx) {
-      return sourceKey;
-    }
-    ctx.clearRect(0, 0, sourceW, sourceH);
-    ctx.drawImage(sourceImage, 0, 0);
-    const image = ctx.getImageData(0, 0, sourceW, sourceH);
-    const pixels = image.data;
-    for (let i = 0; i < pixels.length; i += 4) {
-      const alpha = pixels[i + 3];
-      if (alpha === 0) {
-        continue;
-      }
-      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
-      const value = Math.round(18 + luminance * 34);
-      pixels[i] = Math.round(value * 0.95);
-      pixels[i + 1] = Math.round(value * 0.78);
-      pixels[i + 2] = Math.round(value * 0.58);
-    }
-    ctx.putImageData(image, 0, 0);
-    canvasTexture.refresh();
-    this.darkIconTextureBySource.set(sourceKey, darkKey);
-    return darkKey;
-  }
-
-  resolveGoldIconTexture(sourceKey) {
-    if (!sourceKey || !this.textures.exists(sourceKey)) {
-      return sourceKey;
-    }
-    const goldKey = `${sourceKey}__gold`;
-    if (this.textures.exists(goldKey)) {
-      return goldKey;
-    }
-    if (typeof this.textures.createCanvas !== "function") {
-      return sourceKey;
-    }
-    const texture = this.textures.get(sourceKey);
-    const sourceImage =
-      texture?.getSourceImage?.() ||
-      texture?.source?.[0]?.image ||
-      texture?.source?.[0]?.source ||
-      null;
-    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
-    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
-    if (!sourceImage || sourceW < 1 || sourceH < 1) {
-      return sourceKey;
-    }
-    const canvasTexture = this.textures.createCanvas(goldKey, sourceW, sourceH);
-    const ctx = canvasTexture?.getContext?.();
-    if (!ctx) {
-      return sourceKey;
-    }
-    ctx.clearRect(0, 0, sourceW, sourceH);
-    ctx.drawImage(sourceImage, 0, 0);
-    const image = ctx.getImageData(0, 0, sourceW, sourceH);
-    const pixels = image.data;
-    for (let i = 0; i < pixels.length; i += 4) {
-      const alpha = pixels[i + 3];
-      if (alpha === 0) {
-        continue;
-      }
-      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
-      const strength = 0.38 + luminance * 0.62;
-      pixels[i] = Math.round(242 * strength);
-      pixels[i + 1] = Math.round(205 * strength);
-      pixels[i + 2] = Math.round(136 * strength);
-    }
-    ctx.putImageData(image, 0, 0);
-    canvasTexture.refresh();
-    return goldKey;
   }
 
   renderTopActions(width) {
@@ -1330,7 +1133,7 @@ export class ShopScene extends Phaser.Scene {
         });
         button.text.setVisible(false);
         const icon = this.add
-          .image(0, 0, this.resolveDarkIconTexture(entry.iconKey))
+          .image(0, 0, resolveDarkIconTexture(this, entry.iconKey, this.darkIconTextureBySource))
           .setDisplaySize(18, 18)
           .setAlpha(0.92);
         button.container.add(icon);

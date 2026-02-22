@@ -3,7 +3,14 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
-import { createTightTextureFromAlpha } from "./ui/texture-processing.js";
+import {
+  applyBrownThemeToGraphics,
+  createBrownTheme,
+  toBrownThemeColorNumber,
+  toBrownThemeColorString,
+  toBrownThemeTextStyle,
+} from "./ui/brown-theme.js";
+import { createTightTextureFromAlpha, resolveDarkIconTexture, resolveGoldIconTexture } from "./ui/texture-processing.js";
 import { getRewardApi as getRewardApiFromRuntime, tickRuntime } from "./runtime-access.js";
 
 const CARD_STYLE = Object.freeze({
@@ -37,6 +44,14 @@ const REWARD_THEME_BLUE_HUE_MAX = 255;
 const REWARD_THEME_BROWN_HUE = 30 / 360;
 const REWARD_THEME_SATURATION_FLOOR = 0.18;
 const REWARD_THEME_SATURATION_SCALE = 0.8;
+const REWARD_BROWN_THEME = createBrownTheme({
+  blueHueMin: REWARD_THEME_BLUE_HUE_MIN,
+  blueHueMax: REWARD_THEME_BLUE_HUE_MAX,
+  brownHue: REWARD_THEME_BROWN_HUE,
+  saturationScale: REWARD_THEME_SATURATION_SCALE,
+  saturationOffset: REWARD_THEME_SATURATION_FLOOR,
+  patchFlag: "__rewardBrownThemePatched",
+});
 
 export class RewardScene extends Phaser.Scene {
   constructor() {
@@ -72,9 +87,9 @@ export class RewardScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor("#171006");
     this.cameras.main.setAlpha(1);
     this.graphics = this.add.graphics();
-    this.applyBrownThemeToGraphics(this.graphics);
+    applyBrownThemeToGraphics(this.graphics, REWARD_BROWN_THEME);
     this.overlayGraphics = this.add.graphics().setDepth(REWARD_MODAL_BASE_DEPTH);
-    this.applyBrownThemeToGraphics(this.overlayGraphics);
+    applyBrownThemeToGraphics(this.overlayGraphics, REWARD_BROWN_THEME);
     this.modalBlocker = this.add
       .zone(0, 0, 1, 1)
       .setOrigin(0, 0)
@@ -82,7 +97,13 @@ export class RewardScene extends Phaser.Scene {
       .setVisible(false)
       .setInteractive({ useHandCursor: false });
     this.modalBlocker.on("pointerdown", () => {});
-    const chipsTextureKey = this.resolveGoldIconTexture(this.resolveTightTexture(REWARD_CHIPS_ICON_KEY, REWARD_CHIPS_ICON_TRIM_KEY));
+    const chipsTextureKey = resolveGoldIconTexture(
+      this,
+      createTightTextureFromAlpha(this, {
+        sourceKey: REWARD_CHIPS_ICON_KEY,
+        outputKey: REWARD_CHIPS_ICON_TRIM_KEY,
+      })
+    );
     this.chipsIcon = this.add.image(0, 0, chipsTextureKey).setVisible(false);
     this.chipsIcon.setDisplaySize(20, 20);
     this.bindKeyboardInput();
@@ -175,126 +196,6 @@ export class RewardScene extends Phaser.Scene {
     }
   }
 
-  applyBrownThemeToGraphics(graphics) {
-    if (!graphics || graphics.__brownThemePatched) {
-      return;
-    }
-    const fillStyle = graphics.fillStyle;
-    const lineStyle = graphics.lineStyle;
-    const fillGradientStyle = graphics.fillGradientStyle;
-    graphics.fillStyle = (color, alpha) => fillStyle.call(graphics, this.toBrownThemeColorNumber(color), alpha);
-    graphics.lineStyle = (lineWidth, color, alpha) => {
-      lineStyle.call(graphics, lineWidth, this.toBrownThemeColorNumber(color), alpha);
-    };
-    graphics.fillGradientStyle = (topLeft, topRight, bottomLeft, bottomRight, alpha) => {
-      fillGradientStyle.call(
-        graphics,
-        this.toBrownThemeColorNumber(topLeft),
-        this.toBrownThemeColorNumber(topRight),
-        this.toBrownThemeColorNumber(bottomLeft),
-        this.toBrownThemeColorNumber(bottomRight),
-        alpha
-      );
-    };
-    graphics.__brownThemePatched = true;
-  }
-
-  toBrownThemeTextStyle(style) {
-    if (!style || typeof style !== "object") {
-      return style;
-    }
-    const themed = { ...style };
-    if (typeof themed.color === "string") {
-      themed.color = this.toBrownThemeColorString(themed.color);
-    }
-    if (typeof themed.stroke === "string") {
-      themed.stroke = this.toBrownThemeColorString(themed.stroke);
-    }
-    if (typeof themed.backgroundColor === "string") {
-      themed.backgroundColor = this.toBrownThemeColorString(themed.backgroundColor);
-    }
-    return themed;
-  }
-
-  toBrownThemeColorString(value) {
-    if (typeof value !== "string" || !value.startsWith("#")) {
-      return value;
-    }
-    const input = Number.parseInt(value.slice(1), 16);
-    if (!Number.isFinite(input)) {
-      return value;
-    }
-    const output = this.toBrownThemeColorNumber(input);
-    return `#${output.toString(16).padStart(6, "0")}`;
-  }
-
-  toBrownThemeColorNumber(value) {
-    if (!Number.isFinite(value)) {
-      return value;
-    }
-    const r = (value >> 16) & 0xff;
-    const g = (value >> 8) & 0xff;
-    const b = value & 0xff;
-    const [hue, sat, light] = this.rgbToHsl(r, g, b);
-    const hueDeg = hue * 360;
-    if (sat < 0.08 || hueDeg < REWARD_THEME_BLUE_HUE_MIN || hueDeg > REWARD_THEME_BLUE_HUE_MAX) {
-      return value;
-    }
-    const shiftedSat = Phaser.Math.Clamp(
-      sat * REWARD_THEME_SATURATION_SCALE + REWARD_THEME_SATURATION_FLOOR,
-      0,
-      1
-    );
-    const shifted = this.hslToRgb(REWARD_THEME_BROWN_HUE, shiftedSat, light);
-    return (shifted[0] << 16) | (shifted[1] << 8) | shifted[2];
-  }
-
-  rgbToHsl(r, g, b) {
-    const rn = r / 255;
-    const gn = g / 255;
-    const bn = b / 255;
-    const max = Math.max(rn, gn, bn);
-    const min = Math.min(rn, gn, bn);
-    let h = 0;
-    let s = 0;
-    const l = (max + min) * 0.5;
-    if (max !== min) {
-      const d = max - min;
-      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      if (max === rn) {
-        h = (gn - bn) / d + (gn < bn ? 6 : 0);
-      } else if (max === gn) {
-        h = (bn - rn) / d + 2;
-      } else {
-        h = (rn - gn) / d + 4;
-      }
-      h /= 6;
-    }
-    return [h, s, l];
-  }
-
-  hslToRgb(h, s, l) {
-    if (s === 0) {
-      const value = Math.round(l * 255);
-      return [value, value, value];
-    }
-    const hue2rgb = (p, q, t) => {
-      let tl = t;
-      if (tl < 0) tl += 1;
-      if (tl > 1) tl -= 1;
-      if (tl < 1 / 6) return p + (q - p) * 6 * tl;
-      if (tl < 1 / 2) return q;
-      if (tl < 2 / 3) return p + (q - p) * (2 / 3 - tl) * 6;
-      return p;
-    };
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    const r = hue2rgb(p, q, h + 1 / 3);
-    const g = hue2rgb(p, q, h);
-    const b = hue2rgb(p, q, h - 1 / 3);
-    return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
-  }
-
   ensureRewardThumbTexture(option) {
     const id = String(option?.id || "");
     const thumbUrl = option?.thumbUrl;
@@ -316,114 +217,6 @@ export class RewardScene extends Phaser.Scene {
       return null;
     }
     return textureKey;
-  }
-
-  resolveTightTexture(sourceKey, outputKey, alphaThreshold = 8) {
-    return createTightTextureFromAlpha(this, {
-      sourceKey,
-      outputKey,
-      alphaThreshold,
-    });
-  }
-
-  resolveDarkIconTexture(sourceKey) {
-    if (!sourceKey || !this.textures.exists(sourceKey)) {
-      return sourceKey;
-    }
-    const cached = this.darkIconTextureBySource.get(sourceKey);
-    if (cached && this.textures.exists(cached)) {
-      return cached;
-    }
-    if (typeof this.textures.createCanvas !== "function") {
-      return sourceKey;
-    }
-    const texture = this.textures.get(sourceKey);
-    const sourceImage =
-      texture?.getSourceImage?.() ||
-      texture?.source?.[0]?.image ||
-      texture?.source?.[0]?.source ||
-      null;
-    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
-    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
-    if (!sourceImage || sourceW < 1 || sourceH < 1) {
-      return sourceKey;
-    }
-    const darkKey = `${sourceKey}__dark`;
-    if (this.textures.exists(darkKey)) {
-      this.darkIconTextureBySource.set(sourceKey, darkKey);
-      return darkKey;
-    }
-    const canvasTexture = this.textures.createCanvas(darkKey, sourceW, sourceH);
-    const ctx = canvasTexture?.getContext?.();
-    if (!ctx) {
-      return sourceKey;
-    }
-    ctx.clearRect(0, 0, sourceW, sourceH);
-    ctx.drawImage(sourceImage, 0, 0);
-    const image = ctx.getImageData(0, 0, sourceW, sourceH);
-    const pixels = image.data;
-    for (let i = 0; i < pixels.length; i += 4) {
-      const alpha = pixels[i + 3];
-      if (alpha === 0) {
-        continue;
-      }
-      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
-      const value = Math.round(18 + luminance * 34);
-      pixels[i] = Math.round(value * 0.95);
-      pixels[i + 1] = Math.round(value * 0.78);
-      pixels[i + 2] = Math.round(value * 0.58);
-    }
-    ctx.putImageData(image, 0, 0);
-    canvasTexture.refresh();
-    this.darkIconTextureBySource.set(sourceKey, darkKey);
-    return darkKey;
-  }
-
-  resolveGoldIconTexture(sourceKey) {
-    if (!sourceKey || !this.textures.exists(sourceKey)) {
-      return sourceKey;
-    }
-    const goldKey = `${sourceKey}__gold`;
-    if (this.textures.exists(goldKey)) {
-      return goldKey;
-    }
-    if (typeof this.textures.createCanvas !== "function") {
-      return sourceKey;
-    }
-    const texture = this.textures.get(sourceKey);
-    const sourceImage =
-      texture?.getSourceImage?.() ||
-      texture?.source?.[0]?.image ||
-      texture?.source?.[0]?.source ||
-      null;
-    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
-    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
-    if (!sourceImage || sourceW < 1 || sourceH < 1) {
-      return sourceKey;
-    }
-    const canvasTexture = this.textures.createCanvas(goldKey, sourceW, sourceH);
-    const ctx = canvasTexture?.getContext?.();
-    if (!ctx) {
-      return sourceKey;
-    }
-    ctx.clearRect(0, 0, sourceW, sourceH);
-    ctx.drawImage(sourceImage, 0, 0);
-    const image = ctx.getImageData(0, 0, sourceW, sourceH);
-    const pixels = image.data;
-    for (let i = 0; i < pixels.length; i += 4) {
-      const alpha = pixels[i + 3];
-      if (alpha === 0) {
-        continue;
-      }
-      const luminance = (pixels[i] * 0.2126 + pixels[i + 1] * 0.7152 + pixels[i + 2] * 0.0722) / 255;
-      const strength = 0.38 + luminance * 0.62;
-      pixels[i] = Math.round(242 * strength);
-      pixels[i + 1] = Math.round(205 * strength);
-      pixels[i + 2] = Math.round(136 * strength);
-    }
-    ctx.putImageData(image, 0, 0);
-    canvasTexture.refresh();
-    return goldKey;
   }
 
   renderSnapshot(snapshot) {
@@ -559,7 +352,7 @@ export class RewardScene extends Phaser.Scene {
         });
         button.text.setVisible(false);
         const icon = this.add
-          .image(0, 0, this.resolveDarkIconTexture(entry.iconKey))
+          .image(0, 0, resolveDarkIconTexture(this, entry.iconKey, this.darkIconTextureBySource))
           .setDisplaySize(18, 18)
           .setAlpha(0.92);
         button.container.add(icon);
@@ -739,8 +532,9 @@ export class RewardScene extends Phaser.Scene {
       const y = compact ? startY + index * (cardH + gapY) : startY;
       card.container.setPosition(x, y);
       const selected = Boolean(option.selected);
-      const accentColor = this.toBrownThemeColorNumber(
-        Phaser.Display.Color.HexStringToColor(option.color || "#9ec3df").color
+      const accentColor = toBrownThemeColorNumber(
+        Phaser.Display.Color.HexStringToColor(option.color || "#9ec3df").color,
+        REWARD_BROWN_THEME
       );
       const claimEnabled = Boolean(snapshot.canClaim);
       card.bg.clear();
@@ -774,7 +568,7 @@ export class RewardScene extends Phaser.Scene {
         card.thumbImage.setVisible(false);
         card.thumbGlyph.setVisible(true);
         card.thumbGlyph.setPosition(thumbX + thumbSize * 0.5, thumbY + thumbSize * 0.5);
-        card.thumbGlyph.setColor(this.toBrownThemeColorString(selected ? "#d8ecfd" : "#a9c1d4"));
+        card.thumbGlyph.setColor(toBrownThemeColorString(selected ? "#d8ecfd" : "#a9c1d4", REWARD_BROWN_THEME));
       }
 
       const textLeft = thumbX + thumbSize + 12;
@@ -804,9 +598,9 @@ export class RewardScene extends Phaser.Scene {
       card.desc.setText(compactDesc);
       card.desc.setFontSize(descFontSize);
       card.desc.setWordWrapWidth(descW, true);
-      card.name.setColor(this.toBrownThemeColorString(selected ? "#f3f9ff" : "#dbeefd"));
-      card.rarity.setColor(this.toBrownThemeColorString(selected ? "#d9ecfb" : "#bfd7ea"));
-      card.desc.setColor(this.toBrownThemeColorString(selected ? "#d8e8f5" : "#c3d7ea"));
+      card.name.setColor(toBrownThemeColorString(selected ? "#f3f9ff" : "#dbeefd", REWARD_BROWN_THEME));
+      card.rarity.setColor(toBrownThemeColorString(selected ? "#d9ecfb" : "#bfd7ea", REWARD_BROWN_THEME));
+      card.desc.setColor(toBrownThemeColorString(selected ? "#d8e8f5" : "#c3d7ea", REWARD_BROWN_THEME));
       card.rarityPill.clear();
       card.rarityPill.fillStyle(selected ? CARD_STYLE.pillSelected : CARD_STYLE.pill, selected ? 0.9 : 0.75);
       const rarityW = Phaser.Math.Clamp(Math.round(card.rarity.width + 16), 64, compact ? 108 : 122);
@@ -829,7 +623,7 @@ export class RewardScene extends Phaser.Scene {
       card.claimPill.strokeRoundedRect(claimX, claimY, claimW, claimH, claimRadius);
       card.claimText.setPosition(claimX + claimW * 0.5, claimY + claimH * 0.5);
       card.claimText.setFontSize(compact ? 14 : 21);
-      card.claimText.setColor(this.toBrownThemeColorString(claimEnabled ? "#2b1f11" : "#6f5f48"));
+      card.claimText.setColor(toBrownThemeColorString(claimEnabled ? "#2b1f11" : "#6f5f48", REWARD_BROWN_THEME));
       card.claimText.setText(claimEnabled ? "CLAIM" : "LOCKED");
       card.claimHit.setPosition(claimX, claimY);
       card.claimHit.setSize(claimW, claimH);
@@ -864,15 +658,15 @@ export class RewardScene extends Phaser.Scene {
     options.forEach((option, index) => {
       const container = this.add.container(0, 0);
       const bg = this.add.graphics();
-      this.applyBrownThemeToGraphics(bg);
+      applyBrownThemeToGraphics(bg, REWARD_BROWN_THEME);
       const thumbFrame = this.add.graphics();
-      this.applyBrownThemeToGraphics(thumbFrame);
+      applyBrownThemeToGraphics(thumbFrame, REWARD_BROWN_THEME);
       const thumbImage = this.add.image(0, 0, "__WHITE").setVisible(false);
       const thumbGlyph = this.add
         .text(0, 0, "◆", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "18px",
-          color: this.toBrownThemeColorString("#cde4f6"),
+          color: toBrownThemeColorString("#cde4f6", REWARD_BROWN_THEME),
           fontStyle: "700",
         })
         .setOrigin(0.5, 0.5);
@@ -882,17 +676,17 @@ export class RewardScene extends Phaser.Scene {
         .text(14, 24, "COMMON", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "12px",
-          color: this.toBrownThemeColorString("#cde4f6"),
+          color: toBrownThemeColorString("#cde4f6", REWARD_BROWN_THEME),
           fontStyle: "700",
         })
         .setOrigin(0, 0.5);
       const rarityPill = this.add.graphics();
-      this.applyBrownThemeToGraphics(rarityPill);
+      applyBrownThemeToGraphics(rarityPill, REWARD_BROWN_THEME);
       const name = this.add
         .text(14, 56, option.name || "Relic", {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: "24px",
-          color: this.toBrownThemeColorString("#dbeefd"),
+          color: toBrownThemeColorString("#dbeefd", REWARD_BROWN_THEME),
           fontStyle: "700",
         })
         .setOrigin(0, 0.5);
@@ -900,20 +694,20 @@ export class RewardScene extends Phaser.Scene {
         .text(14, 98, option.description || "", {
           fontFamily: '"Sora", "Segoe UI", sans-serif',
           fontSize: "16px",
-          color: this.toBrownThemeColorString("#d9ecfb"),
+          color: toBrownThemeColorString("#d9ecfb", REWARD_BROWN_THEME),
           wordWrap: { width: 220 },
           lineSpacing: 3,
         })
         .setOrigin(0, 0);
       const claimPill = this.add.graphics();
-      this.applyBrownThemeToGraphics(claimPill);
+      applyBrownThemeToGraphics(claimPill, REWARD_BROWN_THEME);
       const claimHit = this.add.zone(0, 0, 1, 1).setOrigin(0, 0);
       claimHit.setInteractive({ useHandCursor: true });
       const claimText = this.add
         .text(0, 0, "CLAIM", {
           fontFamily: '"Chakra Petch", "Sora", sans-serif',
           fontSize: "21px",
-          color: this.toBrownThemeColorString("#2b1f11"),
+          color: toBrownThemeColorString("#2b1f11", REWARD_BROWN_THEME),
           fontStyle: "700",
         })
         .setOrigin(0.5, 0.5);
@@ -981,7 +775,7 @@ export class RewardScene extends Phaser.Scene {
   }
 
   drawText(key, value, x, y, style, origin = { x: 0.5, y: 0.5 }) {
-    const themedStyle = this.toBrownThemeTextStyle(style);
+    const themedStyle = toBrownThemeTextStyle(style, REWARD_BROWN_THEME);
     let node = this.textNodes.get(key);
     if (!node) {
       node = this.add.text(x, y, value, themedStyle).setOrigin(origin.x, origin.y);

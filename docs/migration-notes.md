@@ -15,6 +15,8 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Scene runtime access normalized via `src/engine/scenes/runtime-access.js`.
 - Removed runtime browser-image avatar preloading/cache helpers; Phaser `BootScene` now owns avatar texture loading and runtime only resolves avatar keys.
 - Extracted RunScene static config into `src/engine/scenes/run/run-scene-config.js` and shared that config with `BootScene` for avatar/action-icon preload consistency.
+- Consolidated shared scene texture processing helpers (`dark`/`gold` icon derivation + watermark recolor) into `src/engine/scenes/ui/texture-processing.js` and removed duplicated texture helper methods from `RunScene`, `RewardScene`, and `ShopScene`.
+- Consolidated shared scene brown-theme helpers (graphics patching + text/color conversion) into `src/engine/scenes/ui/brown-theme.js` and removed duplicated theme helper methods from `RunScene`, `RewardScene`, and `ShopScene`.
 - Dead runtime audio shim removed (`src/engine/runtime/audio/audio-engine.js`, `MUSIC_STEP_SECONDS`, `audio.stepTimer`, `audio.stepIndex`).
 - Broken balance probe tooling removed temporarily.
 - Added acceptance test harness with one-hand core/camp/persistence coverage.
