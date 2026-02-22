@@ -11,6 +11,15 @@ import {
   toBrownThemeTextStyle,
 } from "./ui/brown-theme.js";
 import {
+  closeRunSceneModals,
+  closeRunSceneTopModal,
+  getRunSceneModalOpenOrder,
+  setRunSceneLogsScroll,
+  setRunSceneModalOpen,
+  syncRunSceneModalBlocker,
+  toggleRunSceneModal,
+} from "./run/run-scene-modals.js";
+import {
   createTightTextureFromAlpha,
   resolveDarkIconTexture,
   resolveGoldIconTexture,
@@ -642,7 +651,7 @@ export class RunScene extends Phaser.Scene {
       }
     });
     bind("keydown-ESC", () => {
-      this.closeTopModal();
+      closeRunSceneTopModal(this);
     });
     bind("keydown-TAB", (event) => {
       event.preventDefault();
@@ -650,7 +659,7 @@ export class RunScene extends Phaser.Scene {
       if (count <= 0) {
         return;
       }
-      this.toggleModal("relics");
+      toggleRunSceneModal(this, "relics");
     });
   }
 
@@ -667,7 +676,7 @@ export class RunScene extends Phaser.Scene {
         return;
       }
       this.logsPinnedToBottom = false;
-      this.setLogsScroll(this.logsScrollIndex + Math.sign(deltaY || 0) * 2);
+      setRunSceneLogsScroll(this, this.logsScrollIndex + Math.sign(deltaY || 0) * 2);
     });
   }
 
@@ -676,79 +685,6 @@ export class RunScene extends Phaser.Scene {
       return false;
     }
     return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
-  }
-
-  setLogsScroll(next) {
-    this.logsScrollIndex = Phaser.Math.Clamp(Math.round(next), 0, this.logsScrollMax);
-    this.logsPinnedToBottom = this.logsScrollIndex >= this.logsScrollMax;
-  }
-
-  isModalOpen(modalId) {
-    if (modalId === "logs") {
-      return Boolean(this.logsModalOpen);
-    }
-    if (modalId === "relics") {
-      return Boolean(this.relicModalOpen);
-    }
-    return false;
-  }
-
-  setModalOpen(modalId, isOpen) {
-    const next = Boolean(isOpen);
-    if (modalId === "logs") {
-      this.logsModalOpen = next;
-    } else if (modalId === "relics") {
-      this.relicModalOpen = next;
-    } else {
-      return;
-    }
-    const currentOrder = this.getModalOpenOrder().filter((id) => id !== modalId);
-    if (next) {
-      currentOrder.push(modalId);
-    }
-    this.modalOpenOrder = currentOrder;
-  }
-
-  toggleModal(modalId) {
-    if (this.isModalOpen(modalId)) {
-      const openOrder = this.getModalOpenOrder();
-      const topId = openOrder[openOrder.length - 1];
-      if (openOrder.length > 1 && topId !== modalId) {
-        this.setModalOpen(modalId, true);
-        return;
-      }
-      this.setModalOpen(modalId, false);
-      return;
-    }
-    this.setModalOpen(modalId, true);
-  }
-
-  closeTopModal() {
-    const openOrder = this.getModalOpenOrder();
-    const topModalId = openOrder[openOrder.length - 1];
-    if (!topModalId) {
-      return false;
-    }
-    this.setModalOpen(topModalId, false);
-    return true;
-  }
-
-  closeAllModals() {
-    this.setModalOpen("logs", false);
-    this.setModalOpen("relics", false);
-  }
-
-  getModalOpenOrder() {
-    const ordered = Array.isArray(this.modalOpenOrder)
-      ? this.modalOpenOrder.filter((id) => id === "logs" || id === "relics")
-      : [];
-    if (this.logsModalOpen && !ordered.includes("logs")) {
-      ordered.push("logs");
-    }
-    if (this.relicModalOpen && !ordered.includes("relics")) {
-      ordered.push("relics");
-    }
-    return ordered.filter((id) => this.isModalOpen(id));
   }
 
   getEncounterTypeLabel(type) {
@@ -937,7 +873,7 @@ export class RunScene extends Phaser.Scene {
       this.lastHandRenderSignature = "";
       this.handOpeningDealPending = false;
       this.prevCanDeal = false;
-      this.closeAllModals();
+      closeRunSceneModals(this);
       this.topButtons.forEach((button) => button.container.setVisible(false));
       if (this.relicButton) {
         this.relicButton.container.setVisible(false);
@@ -1008,11 +944,11 @@ export class RunScene extends Phaser.Scene {
     if (this.relicCloseButton && !this.relicModalOpen) {
       this.relicCloseButton.container.setVisible(false);
     }
-    const modalOrder = this.getModalOpenOrder();
+    const modalOrder = getRunSceneModalOpenOrder(this);
     const topModalId = modalOrder[modalOrder.length - 1] || "";
     this.drawLogsModal(snapshot, width, height, runLayout, topModalId === "logs" ? 0 : -1);
     this.drawRelicsModal(snapshot, width, height, runLayout, topModalId === "relics" ? 0 : -1);
-    this.syncModalBlocker(width, height);
+    syncRunSceneModalBlocker(this, width, height);
   }
 
   drawBackground(width, height, runLayout) {
@@ -1344,7 +1280,7 @@ export class RunScene extends Phaser.Scene {
           if (count <= 0) {
             return;
           }
-          this.toggleModal("relics");
+          toggleRunSceneModal(this, "relics");
         },
         width: 144,
         height: 38,
@@ -1374,7 +1310,7 @@ export class RunScene extends Phaser.Scene {
     const entries = Array.isArray(snapshot?.passives) ? snapshot.passives : [];
     const count = entries.length;
     if (count <= 0) {
-      this.setModalOpen("relics", false);
+      setRunSceneModalOpen(this, "relics", false);
     }
     const compact = Boolean(runLayout?.compact);
     const mobileButtonScale = compact ? RUN_MOBILE_BUTTON_SCALE : 1;
@@ -2939,7 +2875,7 @@ export class RunScene extends Phaser.Scene {
   renderTopActions(snapshot, width, runLayout) {
     if (!snapshot) {
       this.topButtons.forEach((button) => button.container.setVisible(false));
-      this.closeAllModals();
+      closeRunSceneModals(this);
       return;
     }
     if (!this.topButtons.size) {
@@ -2948,14 +2884,14 @@ export class RunScene extends Phaser.Scene {
           id: "logs",
           iconKey: RUN_TOP_ACTION_ICON_KEYS.logs,
           onPress: () => {
-            this.toggleModal("logs");
+            toggleRunSceneModal(this, "logs");
           },
         },
         {
           id: "home",
           iconKey: RUN_TOP_ACTION_ICON_KEYS.home,
           onPress: () => {
-            this.closeAllModals();
+            closeRunSceneModals(this);
             this.invokeAction("goHome");
           },
         },
@@ -3114,7 +3050,7 @@ export class RunScene extends Phaser.Scene {
     });
 
     const closeButton = this.ensureModalCloseButton("logs-close", () => {
-      this.setModalOpen("logs", false);
+      setRunSceneModalOpen(this, "logs", false);
     });
     placeModalCloseButton(closeButton, {
       x: x + modalW - 26,
@@ -3287,7 +3223,7 @@ export class RunScene extends Phaser.Scene {
     }
 
     const closeButton = this.ensureModalCloseButton("relic-close", () => {
-      this.setModalOpen("relics", false);
+      setRunSceneModalOpen(this, "relics", false);
     });
     placeModalCloseButton(closeButton, {
       x: x + modalW - 26,
@@ -3303,13 +3239,4 @@ export class RunScene extends Phaser.Scene {
     });
   }
 
-  syncModalBlocker(width, height) {
-    const modalOpen = this.logsModalOpen || this.relicModalOpen;
-    if (!this.modalBlocker) {
-      return;
-    }
-    this.modalBlocker.setSize(width, height);
-    this.modalBlocker.setVisible(modalOpen);
-    this.modalBlocker.active = modalOpen;
-  }
 }
