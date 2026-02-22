@@ -9,198 +9,54 @@ import {
   isCoarsePointer as isCoarsePointerFromRuntime,
   tickRuntime,
 } from "./runtime-access.js";
-
+import {
+  ENEMY_AVATAR_KEY_BY_NAME,
+  ENEMY_AVATAR_TEXTURE_PREFIX,
+  RUN_ACTION_ICONS,
+  RUN_ACTION_ICON_KEYS,
+  RUN_ACTION_SHORTCUTS,
+  RUN_BOTTOM_BAR_HEIGHT,
+  RUN_CARD_BACKPLATE_KEY,
+  RUN_CARD_DEAL_GAP_MS,
+  RUN_CARD_HEIGHT_SCALE,
+  RUN_CARD_SHADOW_KEY,
+  RUN_CHIPS_ICON_KEY,
+  RUN_CHIPS_ICON_TRIM_KEY,
+  RUN_DEALER_CARD_ENTRY_MS,
+  RUN_DEALER_CARD_FLIP_MS,
+  RUN_DEALER_CARD_FLIP_STRETCH,
+  RUN_ENEMY_DEFEAT_PULSE_INTERVAL_MS,
+  RUN_ENEMY_DEFEAT_PULSE_STEPS,
+  RUN_FIRE_CORE_PARTICLE_KEY,
+  RUN_FIRE_GLOW_PARTICLE_KEY,
+  RUN_LOG_RESOLUTION_RE,
+  RUN_MOBILE_BUTTON_SCALE,
+  RUN_MOBILE_HAND_GROUP_SCALE_BOOST,
+  RUN_MODAL_BASE_DEPTH,
+  RUN_MODAL_CLOSE_OFFSET,
+  RUN_MODAL_CONTENT_OFFSET,
+  RUN_MODAL_LAYER_STEP,
+  RUN_PARTICLE_KEY,
+  RUN_PLAYER_AVATAR_KEY,
+  RUN_PRIMARY_GOLD,
+  RUN_RELIC_ICON_KEY,
+  RUN_SECONDARY_BUTTON_STYLE,
+  RUN_THEME_BLUE_HUE_MAX,
+  RUN_THEME_BLUE_HUE_MIN,
+  RUN_THEME_BROWN_HUE,
+  RUN_THEME_SATURATION_FLOOR,
+  RUN_THEME_SATURATION_SCALE,
+  RUN_TOP_ACTION_ICONS,
+  RUN_TOP_ACTION_ICON_KEYS,
+  RUN_TOP_ACTION_TOOLTIPS,
+  RUN_TOP_BAR_HEIGHT,
+  RUN_WATERMARK_ALPHA,
+  RUN_WATERMARK_KEY,
+  RUN_WATERMARK_RENDER_KEY,
+  SUIT_SYMBOL,
+  sanitizeEnemyAvatarKey,
+} from "./run/run-scene-config.js";
 const BUTTON_STYLES = ACTION_BUTTON_STYLE;
-const RUN_PARTICLE_KEY = "__run-particle__";
-const RUN_FIRE_CORE_PARTICLE_KEY = "__run-fire-core-particle__";
-const RUN_FIRE_GLOW_PARTICLE_KEY = "__run-fire-glow-particle__";
-const RUN_CARD_SHADOW_KEY = "__run-card-shadow__";
-const ENEMY_AVATAR_TEXTURE_PREFIX = "__enemy-avatar__";
-const RUN_TOP_BAR_HEIGHT = 74;
-const RUN_BOTTOM_BAR_HEIGHT = 106;
-const RUN_CHIPS_ICON_KEY = "__run-chips-icon__";
-const RUN_CHIPS_ICON_TRIM_KEY = "__run-chips-icon-trim__";
-const RUN_RELIC_ICON_KEY = "__run-relic-icon__";
-const RUN_PLAYER_AVATAR_KEY = "__run-player-avatar__";
-const RUN_CARD_BACKPLATE_KEY = "__run-card-backplate__";
-const RUN_CARD_HEIGHT_SCALE = 1.08;
-const RUN_MOBILE_BUTTON_SCALE = 0.75;
-const RUN_MOBILE_HAND_GROUP_SCALE_BOOST = 1.25;
-const RUN_DEALER_CARD_FLIP_MS = 560;
-const RUN_DEALER_CARD_FLIP_STRETCH = 0.14;
-const RUN_DEALER_CARD_ENTRY_MS = 460;
-const RUN_CARD_DEAL_GAP_MS = 90;
-const RUN_WATERMARK_KEY = "__run-watermark__";
-const RUN_WATERMARK_ALPHA = 0.75;
-const RUN_WATERMARK_RENDER_KEY = `__run-watermark-render-v9-a${Math.round(RUN_WATERMARK_ALPHA * 1000)}__`;
-const RUN_PRIMARY_GOLD = 0xf2cd88;
-const RUN_THEME_BLUE_HUE_MIN = 170;
-const RUN_THEME_BLUE_HUE_MAX = 255;
-const RUN_THEME_BROWN_HUE = 30 / 360;
-const RUN_THEME_SATURATION_FLOOR = 0.18;
-const RUN_THEME_SATURATION_SCALE = 0.74;
-const RUN_MODAL_BASE_DEPTH = 300;
-const RUN_MODAL_LAYER_STEP = 24;
-const RUN_MODAL_CONTENT_OFFSET = 8;
-const RUN_MODAL_CLOSE_OFFSET = 14;
-const RUN_ENEMY_DEFEAT_PULSE_STEPS = 7;
-const RUN_ENEMY_DEFEAT_PULSE_INTERVAL_MS = 78;
-const RUN_ACTION_ICONS = Object.freeze({
-  hit: "/images/icons/hit.png",
-  stand: "/images/icons/stand.png",
-  split: "/images/icons/split.png",
-  doubleDown: "/images/icons/double.png",
-  deal: "/images/icons/deal.png",
-  confirmIntro: "/images/icons/deal.png",
-});
-const RUN_ACTION_ICON_KEYS = Object.freeze({
-  hit: "__run-action-hit__",
-  stand: "__run-action-stand__",
-  split: "__run-action-split__",
-  doubleDown: "__run-action-double__",
-  deal: "__run-action-deal__",
-  confirmIntro: "__run-action-confirm__",
-});
-const RUN_ACTION_SHORTCUTS = Object.freeze({
-  hit: "Z",
-  stand: "X",
-  split: "S",
-  doubleDown: "C",
-  deal: "ENTER",
-  confirmIntro: "ENTER",
-});
-const RUN_SECONDARY_BUTTON_STYLE = Object.freeze({
-  idle: Object.freeze({
-    top: 0x6d4f33,
-    bottom: 0x3f2d1c,
-    alpha: 1,
-    stroke: 0xffffff,
-    strokeAlpha: 0.58,
-    strokeWidth: 1.4,
-    innerStroke: 0xffffff,
-    innerStrokeAlpha: 0.2,
-    innerStrokeWidth: 1,
-    innerInset: 1.5,
-    glossColor: 0xb3936d,
-    glossAlpha: 0.08,
-    glossHeight: 0.56,
-    glossBottomAlpha: 0,
-    shadowColor: 0x000000,
-    shadowAlpha: 0.3,
-    shadowOffsetY: 3,
-    text: "#f2f5f9",
-    radius: 14,
-  }),
-  hover: Object.freeze({
-    top: 0x7a5b3d,
-    bottom: 0x493424,
-    alpha: 1,
-    stroke: 0xffffff,
-    strokeAlpha: 0.72,
-    strokeWidth: 1.6,
-    innerStroke: 0xffffff,
-    innerStrokeAlpha: 0.28,
-    innerStrokeWidth: 1,
-    innerInset: 1.5,
-    glossColor: 0xc1a179,
-    glossAlpha: 0.1,
-    glossHeight: 0.58,
-    glossBottomAlpha: 0,
-    shadowColor: 0x000000,
-    shadowAlpha: 0.32,
-    shadowOffsetY: 3,
-    text: "#ffffff",
-    radius: 14,
-  }),
-  pressed: Object.freeze({
-    top: 0x5f442c,
-    bottom: 0x382717,
-    alpha: 1,
-    stroke: 0xffffff,
-    strokeAlpha: 0.5,
-    strokeWidth: 1.3,
-    innerStroke: 0xffffff,
-    innerStrokeAlpha: 0.16,
-    innerStrokeWidth: 1,
-    innerInset: 1.5,
-    glossColor: 0x9f815d,
-    glossAlpha: 0.05,
-    glossHeight: 0.44,
-    glossBottomAlpha: 0,
-    shadowColor: 0x000000,
-    shadowAlpha: 0.24,
-    shadowOffsetY: 2,
-    text: "#f1f5fb",
-    radius: 14,
-  }),
-  disabled: Object.freeze({
-    top: 0x6b5a48,
-    bottom: 0x4f4337,
-    alpha: 0.9,
-    stroke: 0xffffff,
-    strokeAlpha: 0.32,
-    strokeWidth: 1.2,
-    innerStroke: 0xffffff,
-    innerStrokeAlpha: 0.12,
-    innerStrokeWidth: 1,
-    innerInset: 1.5,
-    glossColor: 0x8f7b64,
-    glossAlpha: 0.03,
-    glossHeight: 0.48,
-    glossBottomAlpha: 0,
-    shadowColor: 0x000000,
-    shadowAlpha: 0.18,
-    shadowOffsetY: 2,
-    text: "#dbe2ea",
-    radius: 14,
-  }),
-});
-const SUIT_SYMBOL = Object.freeze({
-  S: "♠",
-  H: "♥",
-  D: "♦",
-  C: "♣",
-});
-const RUN_TOP_ACTION_ICONS = Object.freeze({
-  logs: "/images/icons/log.png",
-  home: "/images/icons/home.png",
-});
-const RUN_TOP_ACTION_ICON_KEYS = Object.freeze({
-  logs: "__run-top-action-logs__",
-  home: "__run-top-action-home__",
-});
-const RUN_TOP_ACTION_TOOLTIPS = Object.freeze({
-  logs: "Current run logs",
-  home: "Return to title screen",
-});
-const RUN_LOG_RESOLUTION_RE = /(?:\bhand\b|\bblackjack\b|\bbust\b|\bdouble\b|\bsplit\b|\bhit\b|\bstand\b|\bdeal\b|\bpush\b|\bwin\b|\blose\b|\bresolved?\b)/i;
-
-const ENEMY_AVATAR_KEY_BY_NAME = Object.freeze({
-  "Pit Croupier": "pit-croupier",
-  "Tin Dealer": "tin-dealer",
-  "Shiv Shark": "shiv-shark",
-  "Brick Smiler": "brick-smiler",
-  "Card Warden": "card-warden",
-  "Ash Gambler": "ash-gambler",
-  "Velvet Reaper": "velvet-reaper",
-  "Latch Queen": "latch-queen",
-  "Bone Accountant": "bone-accountant",
-  "Stack Baron": "stack-baron",
-  "The House": "the-house",
-  "Abyss Banker": "abyss-banker",
-  "Null Dealer": "null-dealer",
-});
-
-function sanitizeEnemyAvatarKey(name) {
-  if (typeof name !== "string") {
-    return "";
-  }
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
 
 export class RunScene extends Phaser.Scene {
   constructor() {

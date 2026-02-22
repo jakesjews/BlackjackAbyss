@@ -15,10 +15,11 @@
 - Runtime frame stepping is now runtime-context owned (`runtime.setStepHandler`/`runtime.tick`), not legacy shim owned.
 - Runtime host loop now requires Phaser step-handler wiring (browser RAF fallback removed).
 - Scene-side browser viewport fallbacks have been removed; scene sizing/input checks use Phaser APIs.
+- RunScene static config (icons, texture keys, style constants, avatar-key map) is now extracted into a dedicated module.
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
 - Smoke coverage is now split from acceptance: `test:acceptance` covers gameplay/browser flow while `test:smoke`/`test:visual` target visual snapshots.
 - `test:smoke` is a focused visual rerun path for artifact refresh.
-- Last Updated: 2026-02-22 21:23:00 EST
+- Last Updated: 2026-02-22 21:31:00 EST
 
 ## Current Focus
 
@@ -31,6 +32,7 @@
 ## Done Recently
 
 - Extracted runtime logic from monolithic `game.js` into `src/engine/runtime/*`.
+- Extracted RunScene static configuration into `src/engine/scenes/run/run-scene-config.js` and wired `RunScene` + `BootScene` to share the same avatar/action-icon config surface.
 - Removed runtime `window.Image` avatar preloading/cache paths; avatar texture loading now runs through Phaser `BootScene` preload while runtime resolves avatar keys only.
 - Removed remaining `isExternal*` branch plumbing from app/runtime/combat/audio/lifecycle modules and aligned tests to Phaser-only behavior.
 - Flattened runtime API registration into one direct call path (`registerRuntimeApis`) and removed wrapper-heavy API registration registry flow.
