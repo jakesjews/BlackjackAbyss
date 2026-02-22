@@ -112,6 +112,8 @@ import { bindRuntimePhaserHostLifecycle } from "./core/runtime-phaser-host.js";
 import { createRuntimeSanitizers } from "./core/runtime-sanitizers.js";
 import { createRuntimeUiHelpers } from "./core/runtime-ui-helpers.js";
 import { createRuntimePassiveHelpers } from "./core/runtime-passive-helpers.js";
+import { createRuntimeRunHelpers } from "./core/runtime-run-helpers.js";
+import { createRuntimeEncounterHelpers } from "./core/runtime-encounter-helpers.js";
 
 let runtimeEngineStarted = false;
 
@@ -209,6 +211,51 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     saveProfile,
   } = runtimeProfileHandlers;
 
+  function addLog(message) {
+    addLogToRun({ state, message });
+  }
+
+  function setAnnouncement(message, duration = 2.2) {
+    setAnnouncementState({ state, message, duration });
+  }
+
+  const runtimeRunHelpers = createRuntimeRunHelpers({
+    state,
+    defaultPlayerStats,
+    runtimeTestFlags,
+    addLogFn: addLog,
+    createRunFn: createRunFromModule,
+    applyTestEconomyToNewRunFn: applyTestEconomyToNewRunFromModule,
+    applyChipDeltaFn: applyChipDeltaFromModule,
+    updateProfileBestFn: updateProfileBestFromModule,
+  });
+  const {
+    createRun,
+    applyTestEconomyToNewRun,
+    gainChips,
+    updateProfileBest,
+  } = runtimeRunHelpers;
+
+  const runtimeEncounterHelpers = createRuntimeEncounterHelpers({
+    state,
+    clampNumber,
+    runtimeRandom,
+    sanitizeEnemyAvatarKey,
+    ensureEnemyAvatarLoaded,
+    resolveRoomType,
+    createDeck,
+    shuffle,
+    createEnemyFn: createEnemyFromModule,
+    buildEnemyIntroDialogueFn: buildEnemyIntroDialogueFromModule,
+    createEncounterIntroStateFn: createEncounterIntroStateFromModule,
+    createEncounterFn: createEncounterFromModule,
+  });
+  const {
+    createEnemy,
+    createEncounterIntroState,
+    createEncounter,
+  } = runtimeEncounterHelpers;
+
   const runtimeSanitizers = createRuntimeSanitizers({
     ranks: RANKS,
     suits: SUITS,
@@ -225,13 +272,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     sanitizeRun,
     sanitizeEncounter,
   } = runtimeSanitizers;
-
-  function updateProfileBest(run) {
-    updateProfileBestFromModule({
-      profile: state.profile,
-      run,
-    });
-  }
 
   const runtimeSaveResumeHandlers = createRuntimeSaveResumeHandlers({
     state,
@@ -276,61 +316,8 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     clearSavedRun();
   }
 
-  function gainChips(amount) {
-    applyChipDeltaFromModule({
-      run: state.run,
-      amount,
-    });
-  }
-
   const passiveDescription = passiveDescriptionFromModule;
   const passiveSummary = passiveSummaryFromModule;
-
-  function createRun() {
-    return createRunFromModule(defaultPlayerStats);
-  }
-
-  function applyTestEconomyToNewRun(run) {
-    applyTestEconomyToNewRunFromModule({ run, runtimeTestFlags, addLog });
-  }
-
-  function createEnemy(floor, room, type) {
-    return createEnemyFromModule({
-      floor,
-      room,
-      type,
-      sanitizeEnemyAvatarKey,
-      ensureEnemyAvatarLoaded,
-      random: runtimeRandom,
-    });
-  }
-
-  function buildEnemyIntroDialogue(enemy) {
-    const next = buildEnemyIntroDialogueFromModule({
-      enemy,
-      lastIntroDialogue: state.lastIntroDialogue,
-      random: runtimeRandom,
-    });
-    state.lastIntroDialogue = next.nextLastIntroDialogue;
-    return next.dialogue;
-  }
-
-  function createEncounterIntroState(enemy, introLike = null) {
-    return createEncounterIntroStateFromModule({
-      enemy,
-      introLike,
-      clampNumberFn: clampNumber,
-      buildEnemyIntroDialogueFn: buildEnemyIntroDialogue,
-    });
-  }
-
-  function addLog(message) {
-    addLogToRun({ state, message });
-  }
-
-  function setAnnouncement(message, duration = 2.2) {
-    setAnnouncementState({ state, message, duration });
-  }
 
   function isExternalModeRendering(mode = state.mode) {
     return isExternalRendererActive.call(runtimeContext, mode);
@@ -440,17 +427,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     finalizeResolveState,
     applyImpactDamage,
   } = combatImpactHandlers;
-
-  function createEncounter(run) {
-    return createEncounterFromModule({
-      run,
-      createEnemyFn: createEnemy,
-      createEncounterIntroStateFn: createEncounterIntroState,
-      resolveRoomTypeFn: resolveRoomType,
-      createDeckFn: createDeck,
-      shuffleFn: (cards) => shuffle(cards, runtimeRandom),
-    });
-  }
 
   const encounterLifecycleHandlers = createEncounterLifecycleHandlersFromModule({
     state,

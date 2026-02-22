@@ -17,7 +17,7 @@
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
 - Smoke coverage is now split from acceptance: `test:acceptance` covers gameplay/browser flow while `test:smoke`/`test:visual` target visual snapshots.
 - `test:smoke` is a focused visual rerun path for artifact refresh.
-- Last Updated: 2026-02-22 20:13:00 EST
+- Last Updated: 2026-02-22 20:53:00 EST
 
 ## Current Focus
 
@@ -122,6 +122,8 @@
 - Removed `window.visualViewport`/DOM resize dispatch usage from `MenuScene`; menu viewport sizing now uses Phaser scale manager dimensions.
 - Moved menu shell `menu-screen` class toggling from scene DOM access to app-level mode sync (`src/engine/app.js`).
 - Removed runtime loop browser RAF fallback; runtime step updates now require `runtime.setStepHandler`.
+- Extracted run/encounter orchestration helpers into `src/engine/runtime/core/runtime-run-helpers.js` and `src/engine/runtime/core/runtime-encounter-helpers.js` with focused unit coverage.
+- Reduced `src/engine/runtime/runtime-engine.js` from 820 lines to 796 lines in this slice.
 
 ## Next Up
 

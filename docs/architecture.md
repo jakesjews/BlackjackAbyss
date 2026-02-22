@@ -22,6 +22,7 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - Runtime run-result/profile module: `src/engine/runtime/core/run-results.js`
 - Runtime passive/collection view module: `src/engine/runtime/core/passive-view.js`
 - Runtime orchestration helper modules: `src/engine/runtime/core/{runtime-sanitizers,runtime-ui-helpers,runtime-passive-helpers}.js`
+- Runtime run/encounter orchestration helpers: `src/engine/runtime/core/{runtime-run-helpers,runtime-encounter-helpers}.js`
 - Scene layer: `src/engine/scenes/*`
 
 ## Boot Flow

@@ -52,6 +52,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Runtime host lifecycle now uses Phaser events for hidden/visible, input unlock, and scale resize wiring; browser lifecycle usage is reduced to explicit compatibility boundaries.
 - Runtime loop fallback to browser RAF removed; active runtime stepping is now Phaser scene-driven through runtime step handlers.
 - Extracted additional runtime-engine orchestration helpers into `src/engine/runtime/core/runtime-sanitizers.js`, `src/engine/runtime/core/runtime-ui-helpers.js`, and `src/engine/runtime/core/runtime-passive-helpers.js`.
+- Extracted run/encounter orchestration helpers into `src/engine/runtime/core/runtime-run-helpers.js` and `src/engine/runtime/core/runtime-encounter-helpers.js`.
 
 ## Transitional / Still Present
 
