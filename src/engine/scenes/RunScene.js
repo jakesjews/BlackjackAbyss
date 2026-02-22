@@ -19,6 +19,12 @@ import {
 } from "./run/run-scene-modals.js";
 import { drawRunSceneLogsModal, drawRunSceneRelicsModal } from "./run/run-scene-modal-renderers.js";
 import { drawRunSceneCards } from "./run/run-scene-card-renderers.js";
+import { drawRunSceneMessages } from "./run/run-scene-message-renderers.js";
+import {
+  rebuildRunSceneButtons,
+  renderRunSceneButtons,
+  renderRunSceneTopActions,
+} from "./run/run-scene-action-renderers.js";
 import {
   createTightTextureFromAlpha,
   resolveDarkIconTexture,
@@ -28,6 +34,7 @@ import {
 import {
   getRunApi as getRunApiFromRuntime,
   isCoarsePointer as isCoarsePointerFromRuntime,
+  isVisualFxDisabled as isVisualFxDisabledFromRuntime,
   tickRuntime,
 } from "./runtime-access.js";
 import {
@@ -35,7 +42,6 @@ import {
   ENEMY_AVATAR_TEXTURE_PREFIX,
   RUN_ACTION_ICONS,
   RUN_ACTION_ICON_KEYS,
-  RUN_ACTION_SHORTCUTS,
   RUN_BOTTOM_BAR_HEIGHT,
   RUN_CARD_BACKPLATE_KEY,
   RUN_CARD_HEIGHT_SCALE,
@@ -52,7 +58,6 @@ import {
   RUN_MOBILE_BUTTON_SCALE,
   RUN_MOBILE_HAND_GROUP_SCALE_BOOST,
   RUN_MODAL_BASE_DEPTH,
-  RUN_MODAL_CONTENT_OFFSET,
   RUN_PARTICLE_KEY,
   RUN_PLAYER_AVATAR_KEY,
   RUN_PRIMARY_GOLD,
@@ -151,6 +156,7 @@ export class RunScene extends Phaser.Scene {
     this.topActionTooltip = null;
     this.buttonEnabledState = new Map();
     this.buttonPulseTweens = new Map();
+    this.disableVisualFx = false;
     this.avatarShake = {
       enemy: { until: 0, start: 0, duration: 0, magnitude: 0 },
       player: { until: 0, start: 0, duration: 0, magnitude: 0 },
@@ -196,6 +202,7 @@ export class RunScene extends Phaser.Scene {
   create() {
     this.cameras.main.setBackgroundColor("#171006");
     this.cameras.main.setAlpha(1);
+    this.disableVisualFx = isVisualFxDisabledFromRuntime(this);
     this.graphics = applyBrownThemeToGraphics(this.add.graphics(), RUN_BROWN_THEME);
     this.overlayGraphics = applyBrownThemeToGraphics(this.add.graphics().setDepth(RUN_MODAL_BASE_DEPTH), RUN_BROWN_THEME);
     if (this.textures.exists(RUN_WATERMARK_KEY)) {
@@ -855,7 +862,7 @@ export class RunScene extends Phaser.Scene {
       if (this.hudChipsIcon) {
         this.hudChipsIcon.setVisible(false);
       }
-      this.rebuildButtons([]);
+      rebuildRunSceneButtons(this, [], BUTTON_STYLES);
       this.lastResultSignature = "";
       this.cardAnimStates.clear();
       this.cardAnimSeen.clear();
@@ -935,10 +942,31 @@ export class RunScene extends Phaser.Scene {
     });
     const deferResolutionUi = Boolean(cardRenderState?.deferResolutionUi);
     this.processHpImpacts(snapshot, layout, width, height, { deferResolutionUi });
-    this.drawRunMessages(snapshot, width, height, layout, { deferResolutionUi });
+    drawRunSceneMessages(this, {
+      snapshot,
+      width,
+      height,
+      layout,
+      deferResolutionUi,
+      styleSet: BUTTON_STYLES,
+      applyButtonStyle: (button, styleName) => this.setButtonVisual(button, styleName),
+    });
     this.tryStartQueuedEnemyDefeatTransition(snapshot, { deferResolutionUi });
-    this.renderButtons(snapshot, width, height, runLayout, { deferResolutionUi });
-    this.renderTopActions(snapshot, width, runLayout);
+    renderRunSceneButtons(this, {
+      snapshot,
+      width,
+      height,
+      runLayout,
+      deferResolutionUi,
+      styleSet: BUTTON_STYLES,
+      applyButtonStyle: (button, styleName) => this.setButtonVisual(button, styleName),
+    });
+    renderRunSceneTopActions(this, {
+      snapshot,
+      width,
+      runLayout,
+      styleSet: BUTTON_STYLES,
+    });
     if (this.logsCloseButton && !this.logsModalOpen) {
       this.logsCloseButton.container.setVisible(false);
     }
@@ -1460,12 +1488,17 @@ export class RunScene extends Phaser.Scene {
   }
 
   drawEnemyAvatar(enemy, x, y, width, height, options = {}) {
+    const disableVisualFx = Boolean(this.disableVisualFx);
     const defeatProgress = Phaser.Math.Clamp(Number(options?.defeatProgress) || 0, 0, 1);
     const fadeProgress = Phaser.Math.Clamp(Number(options?.fadeProgress) || 0, 0, 1);
     const avatarAlpha = Phaser.Math.Clamp(1 - fadeProgress, 0, 1);
     const shake = this.getAvatarShakeOffset("enemy");
-    const dissolveJitterX = defeatProgress > 0 ? Math.sin(this.time.now * 0.046) * (1.4 + defeatProgress * 3) : 0;
-    const dissolveJitterY = defeatProgress > 0 ? Math.cos(this.time.now * 0.041) * (0.9 + defeatProgress * 2.2) : 0;
+    const dissolveJitterX = disableVisualFx || defeatProgress <= 0
+      ? 0
+      : Math.sin(this.time.now * 0.046) * (1.4 + defeatProgress * 3);
+    const dissolveJitterY = disableVisualFx || defeatProgress <= 0
+      ? 0
+      : Math.cos(this.time.now * 0.041) * (0.9 + defeatProgress * 2.2);
     const drawX = x + shake.x + dissolveJitterX;
     const drawY = y + shake.y + dissolveJitterY;
     if (avatarAlpha <= 0.01) {
@@ -1483,7 +1516,7 @@ export class RunScene extends Phaser.Scene {
     this.graphics.lineStyle(1.8, 0x516f8f, 0.5 * avatarAlpha);
     this.graphics.strokeRoundedRect(drawX, drawY, width, height, 14);
 
-    const pulse = Math.sin(this.time.now * 0.004) * 0.5 + 0.5;
+    const pulse = disableVisualFx ? 0.5 : Math.sin(this.time.now * 0.004) * 0.5 + 0.5;
     this.graphics.lineStyle(2.1, this.enemyAccent(enemy?.type), (0.26 + pulse * 0.22) * avatarAlpha);
     this.graphics.strokeRoundedRect(drawX - 1, drawY - 1, width + 2, height + 2, 15);
 
@@ -1520,7 +1553,7 @@ export class RunScene extends Phaser.Scene {
       return;
     }
 
-    const bob = Math.sin(this.time.now * 0.0022) * 2.2;
+    const bob = disableVisualFx ? 0 : Math.sin(this.time.now * 0.0022) * 2.2;
     this.enemyPortrait.setTexture(textureKey);
     const cover = this.coverSizeForTexture(textureKey, innerW, innerH);
     this.enemyPortrait.setDisplaySize(cover.width, cover.height);
@@ -1924,254 +1957,6 @@ export class RunScene extends Phaser.Scene {
     });
   }
 
-  drawRunMessages(snapshot, width, height, layout = null, options = {}) {
-    const intro = snapshot.intro || {};
-    const enemy = snapshot.enemy || {};
-    const deferResolutionUi = Boolean(options?.deferResolutionUi);
-    const introTarget = intro.active ? 1 : 0;
-    const introGraphics = this.overlayGraphics || this.graphics;
-    this.introOverlayProgress = introTarget;
-
-    if (this.introOverlayProgress > 0.02) {
-      const overlayAlpha = 0.82 * this.introOverlayProgress;
-      introGraphics.fillStyle(0x000000, overlayAlpha);
-      introGraphics.fillRect(0, 0, width, height);
-    }
-
-    if (intro.active || this.introOverlayProgress > 0.02) {
-      const compact = this.isCompactLayout(width);
-      const introContentDepth = RUN_MODAL_BASE_DEPTH + RUN_MODAL_CONTENT_OFFSET + 6;
-      const introButtonDepth = introContentDepth + 8;
-      const introScale = 1.725;
-      const baseModalW = compact
-        ? Math.max(320, Math.min(width - 22, Math.round(width * 0.94)))
-        : Math.max(760, Math.min(1080, Math.round(width * 0.86)));
-      const baseModalH = compact
-        ? Math.max(190, Math.min(262, Math.round(height * 0.33)))
-        : Math.max(238, Math.min(336, Math.round(height * 0.41)));
-      const modalW = compact
-        ? Math.max(208, Math.min(width - 20, Math.round(baseModalW * 0.5 * introScale)))
-        : Math.max(384, Math.min(width - 28, Math.round(baseModalW * 0.5 * introScale)));
-      const modalH = compact
-        ? Math.max(126, Math.min(height - 20, Math.round(baseModalH * 0.5 * introScale)))
-        : Math.max(170, Math.min(height - 24, Math.round(baseModalH * 0.5 * introScale)));
-      const eased = Phaser.Math.Easing.Sine.InOut(this.introOverlayProgress);
-      const x = width * 0.5 - modalW * 0.5;
-      const y = height * 0.5 - modalH * 0.5 + (1 - eased) * 20;
-      const alpha = Math.min(1, this.introOverlayProgress + 0.02);
-
-      introGraphics.fillStyle(0x050b14, 0.48 * alpha);
-      introGraphics.fillRoundedRect(x + 2, y + 4, modalW, modalH, compact ? 14 : 20);
-      introGraphics.fillGradientStyle(0x1b2f47, 0x1c324a, 0x0f1f33, 0x102033, 0.96 * alpha, 0.96 * alpha, 0.96 * alpha, 0.96 * alpha);
-      introGraphics.fillRoundedRect(x, y, modalW, modalH, compact ? 12 : 18);
-      introGraphics.lineStyle(2.2, 0x7097bb, 0.56 * alpha);
-      introGraphics.strokeRoundedRect(x, y, modalW, modalH, compact ? 12 : 18);
-      introGraphics.lineStyle(1.3, 0xc9def1, 0.2 * alpha);
-      introGraphics.strokeRoundedRect(x + 4, y + 4, modalW - 8, modalH - 8, compact ? 8 : 12);
-
-      const modalPad = compact ? 10 : 14;
-      const avatarOuter = compact
-        ? Math.max(56, Math.min(72, modalH - modalPad * 2))
-        : Math.max(90, Math.min(122, modalH - modalPad * 2));
-      const avatarOuterX = x + modalPad;
-      const avatarOuterY = y + modalPad;
-      introGraphics.fillStyle(0x223953, 0.96 * alpha);
-      introGraphics.fillRoundedRect(avatarOuterX, avatarOuterY, avatarOuter, avatarOuter, compact ? 10 : 14);
-      introGraphics.lineStyle(2.2, 0x6d95ba, 0.68 * alpha);
-      introGraphics.strokeRoundedRect(avatarOuterX, avatarOuterY, avatarOuter, avatarOuter, compact ? 10 : 14);
-
-      const avatarPad = compact ? 5 : 7;
-      const avatarInnerX = avatarOuterX + avatarPad;
-      const avatarInnerY = avatarOuterY + avatarPad;
-      const avatarInnerW = avatarOuter - avatarPad * 2;
-      const avatarInnerH = avatarOuter - avatarPad * 2;
-
-      if (this.introPortraitMaskShape) {
-        this.introPortraitMaskShape.clear();
-        this.introPortraitMaskShape.fillStyle(0xffffff, 1);
-        this.introPortraitMaskShape.fillRoundedRect(avatarInnerX, avatarInnerY, avatarInnerW, avatarInnerH, compact ? 8 : 10);
-      }
-
-      const introAvatarTexture = this.resolveEnemyAvatarTexture(enemy);
-      if (introAvatarTexture && this.introPortrait) {
-        this.introPortrait.setTexture(introAvatarTexture);
-        const cover = this.coverSizeForTexture(introAvatarTexture, avatarInnerW, avatarInnerH);
-        this.introPortrait.setDisplaySize(cover.width, cover.height);
-        this.introPortrait.setPosition(avatarOuterX + avatarOuter * 0.5, avatarOuterY + avatarOuter * 0.5);
-        this.introPortrait.setDepth(introContentDepth + 2);
-        this.introPortrait.setVisible(true);
-        this.introPortrait.setAlpha(alpha);
-        const fallbackNode = this.textNodes.get("intro-avatar-fallback");
-        if (fallbackNode) {
-          fallbackNode.setVisible(false);
-        }
-      } else {
-        if (this.introPortrait) {
-          this.introPortrait.setVisible(false);
-        }
-        introGraphics.fillStyle(0x1a3146, 0.94 * alpha);
-        introGraphics.fillRoundedRect(avatarInnerX, avatarInnerY, avatarInnerW, avatarInnerH, compact ? 8 : 10);
-        const fallbackNode = this.drawText("intro-avatar-fallback", "?", avatarOuterX + avatarOuter * 0.5, avatarOuterY + avatarOuter * 0.56, {
-          fontFamily: '"Chakra Petch", "Sora", sans-serif',
-          fontSize: compact ? "36px" : "46px",
-          color: "#bed6eb",
-        });
-        fallbackNode.setDepth(introContentDepth + 2);
-      }
-
-      const textX = avatarOuterX + avatarOuter + (compact ? 8 : 14);
-      const textW = Math.max(70, modalW - (textX - x) - (compact ? 10 : 16));
-      const title = String(enemy.name || "ENEMY").toUpperCase();
-      const encounterType = this.getEncounterTypeLabel(enemy.type);
-      const bodyText = intro.text || "";
-      const typeCursor = !intro.ready && Math.floor(this.time.now / 220) % 2 === 0 ? "|" : "";
-      const titleSize = Math.round((compact ? 10 : 24) * introScale);
-      const typeSize = Math.round((compact ? 7 : 12) * introScale);
-      const bodySize = Math.round((compact ? 10 : 13) * introScale);
-      const textTopY = y + modalPad + (compact ? 8 : 12);
-      const titleY = textTopY;
-      const typeY = titleY + Math.round(titleSize * 0.92) + (compact ? 6 : 10);
-      const bodyY = typeY + Math.round(typeSize * 1.04) + (compact ? 8 : 12);
-
-      if (intro.active) {
-        const titleNode = this.drawText("intro-title", title, textX, titleY, {
-          fontFamily: '"Chakra Petch", "Sora", sans-serif',
-          fontSize: `${titleSize}px`,
-          color: "#84b7f8",
-          fontStyle: "700",
-        }, { x: 0, y: 0.5 });
-        titleNode.setDepth(introContentDepth + 2);
-        const typeNode = this.drawText("intro-type", encounterType, textX, typeY, {
-          fontFamily: '"Chakra Petch", "Sora", sans-serif',
-          fontSize: `${typeSize}px`,
-          color: "#9ab5d2",
-          fontStyle: "600",
-        }, { x: 0, y: 0.5 });
-        typeNode.setDepth(introContentDepth + 2);
-        const bodyNode = this.drawText("intro-body", `${bodyText}${typeCursor}`, textX, bodyY, {
-          fontFamily: '"Sora", "Segoe UI", sans-serif',
-          fontSize: `${bodySize}px`,
-          color: "#d8e5f4",
-          align: "left",
-          lineSpacing: compact ? 4 : 6,
-          wordWrap: { width: textW },
-        }, { x: 0, y: 0 });
-        bodyNode.setDepth(introContentDepth + 2);
-      }
-
-      if (!this.introCtaButton) {
-        this.introCtaButton = createGradientButton(this, {
-          id: "intro-cta",
-          label: "LET'S GO!",
-          styleSet: BUTTON_STYLES,
-          onPress: () => {
-            if (this.lastSnapshot?.intro?.active && this.lastSnapshot?.intro?.ready) {
-              this.invokeAction("confirmIntro");
-            }
-          },
-          width: 196,
-          height: 44,
-          fontSize: 18,
-          hoverScale: 1,
-          pressedScale: 0.98,
-        });
-      }
-      this.introCtaButton.container.setDepth(introButtonDepth);
-      const ctaW = compact ? 118 : 170;
-      const ctaH = compact ? 32 : 42;
-      const ctaX = x + modalW - modalPad - ctaW * 0.5;
-      const ctaY = y + modalH - modalPad - ctaH * 0.5;
-      setGradientButtonSize(this.introCtaButton, ctaW, ctaH);
-      this.introCtaButton.container.setPosition(ctaX, ctaY);
-      this.introCtaButton.text.setFontSize(compact ? 12 : 16);
-      this.introCtaButton.text.setText("LET'S GO!");
-      this.introCtaButton.enabled = Boolean(intro.active && intro.ready);
-      this.setButtonVisual(this.introCtaButton, this.introCtaButton.enabled ? "idle" : "disabled");
-      this.introCtaButton.container.setVisible(Boolean(intro.active));
-      return;
-    }
-
-    if (this.introPortrait) {
-      this.introPortrait.setVisible(false);
-    }
-    const introFallback = this.textNodes.get("intro-avatar-fallback");
-    if (introFallback) {
-      introFallback.setVisible(false);
-    }
-    if (this.introCtaButton) {
-      this.introCtaButton.container.setVisible(false);
-    }
-
-    if (deferResolutionUi) {
-      this.lastResultSignature = "";
-      return;
-    }
-    const transitionState = this.getTransitionState(snapshot);
-    const enemyDefeatActive = Boolean(transitionState && transitionState.target === "enemy" && !transitionState.waiting);
-    const resultText = enemyDefeatActive ? "Defeated Opponent" : snapshot.resultText || snapshot.announcement || "";
-    if (!resultText) {
-      this.lastResultSignature = "";
-      return;
-    }
-
-    const tone = enemyDefeatActive ? "win" : snapshot.resultTone || "neutral";
-    const panelY = Math.round(layout?.messageY || height * 0.507);
-    const maxPanelW = Math.round(layout?.messagePanelW || Phaser.Math.Clamp(Math.round(width * 0.44), 500, 640));
-    const panelH = Math.round(layout?.messagePanelH || 60);
-    const compact = this.isCompactLayout(width);
-    const minPanelW = compact ? 220 : 300;
-    const panelPadX = compact ? 20 : 26;
-    const panelPadY = compact ? 12 : 14;
-    let messageFontSize = compact ? 16 : 20;
-    const minMessageFontSize = compact ? 13 : 15;
-    const measureStyle = {
-      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-      fontSize: `${messageFontSize}px`,
-      color: "#e8e2d2",
-      fontStyle: "700",
-    };
-    const measureNode = this.drawText("run-result-measure", resultText, -4000, -4000, measureStyle, { x: 0, y: 0 });
-    while (measureNode.width > maxPanelW - panelPadX * 2 && messageFontSize > minMessageFontSize) {
-      messageFontSize -= 1;
-      measureNode.setFontSize(messageFontSize);
-    }
-    const panelW = Phaser.Math.Clamp(
-      Math.round(measureNode.width + panelPadX * 2),
-      minPanelW,
-      maxPanelW
-    );
-    measureNode.setVisible(false);
-    const toneFill =
-      tone === "good" || tone === "win"
-        ? 0x184b3d
-        : tone === "bad" || tone === "loss"
-          ? 0x4a2323
-          : 0x3f3321;
-    const toneStroke =
-      tone === "good" || tone === "win"
-        ? 0x76cfad
-        : tone === "bad" || tone === "loss"
-          ? 0xd98b8a
-          : 0xd8b780;
-    this.graphics.fillStyle(toneFill, 0.95);
-    this.graphics.fillRoundedRect(width * 0.5 - panelW * 0.5, panelY - panelH * 0.5, panelW, panelH, 16);
-    this.graphics.lineStyle(2.2, toneStroke, 0.85);
-    this.graphics.strokeRoundedRect(width * 0.5 - panelW * 0.5, panelY - panelH * 0.5, panelW, panelH, 16);
-    const node = this.drawText("run-result", resultText, width * 0.5, panelY + Math.round(panelPadY * 0.04), {
-      fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
-      fontSize: `${messageFontSize}px`,
-      color: "#e8e2d2",
-      fontStyle: "700",
-      align: "center",
-    });
-
-    const signature = `${tone}|${resultText}`;
-    if (signature !== this.lastResultSignature) {
-      this.lastResultSignature = signature;
-      this.animateResultMessage(node, tone);
-    }
-  }
-
   tonePalette(tone) {
     if (tone === "good") {
       return [0xd9ffd5, 0x9be68f, 0x66c66b, 0x9be68f];
@@ -2243,202 +2028,6 @@ export class RunScene extends Phaser.Scene {
     this.cameras.main.shake(compact ? 110 : 150, compact ? 0.0015 : 0.0019, true);
   }
 
-  renderButtons(snapshot, width, height, runLayout, options = {}) {
-    const actions = [];
-    const introActive = Boolean(snapshot.intro?.active);
-    const status = snapshot.status || {};
-    const deferResolutionUi = Boolean(options?.deferResolutionUi);
-    const deferActionInput = deferResolutionUi || this.hasActiveResolutionAnimations() || this.hasActiveCardDealAnimations();
-    const compact = Boolean(runLayout.compact);
-
-    if (introActive) {
-      // Intro confirm is rendered inside the dialogue modal.
-    } else {
-      const showTurnActions = Boolean(status.canHit || status.canStand || status.canDouble || status.canSplit);
-      if (showTurnActions) {
-        if (status.canHit) {
-          actions.push({ id: "hit", label: "HIT", enabled: !deferActionInput });
-        }
-        if (status.canStand) {
-          actions.push({ id: "stand", label: "STAND", enabled: !deferActionInput });
-        }
-        actions.push({ id: "doubleDown", label: "DOUBLE", enabled: Boolean(status.canDouble) && !deferActionInput });
-        if (status.canSplit) {
-          actions.push({ id: "split", label: "SPLIT", enabled: !deferActionInput });
-        }
-      } else {
-        const dealEnabled = Boolean(status.canDeal) && !deferActionInput;
-        actions.push({ id: "deal", label: "DEAL", enabled: dealEnabled });
-      }
-    }
-
-    this.rebuildButtons(actions);
-    const count = actions.length;
-    const showKeyboardHints = this.shouldShowKeyboardHints(width);
-    const mobileButtonScale = compact ? RUN_MOBILE_BUTTON_SCALE : 1;
-    let spacing = compact ? Math.max(6, Math.round(8 * mobileButtonScale)) : 14;
-    const rowGap = compact ? Math.max(8, Math.round(10 * mobileButtonScale)) : 14;
-    const singleWide = count <= 1;
-    const buttonH = compact ? Math.max(36, Math.round(50 * mobileButtonScale)) : 56;
-    const bandW = Math.max(220, width - runLayout.sidePad * 2 - 8);
-    const maxPerRow = compact ? 2 : Math.max(1, count);
-    const rowCount = count > 0 ? Math.ceil(count / maxPerRow) : 0;
-    let buttonW = 0;
-    if (compact) {
-      let compactButtonW = 0;
-      if (singleWide) {
-        const singleActionId = actions[0] ? actions[0].id : "";
-        const singleWideFactor = singleActionId === "deal" ? 0.42 : 0.62;
-        compactButtonW = Phaser.Math.Clamp(Math.round(bandW * singleWideFactor), 160, 320);
-      } else {
-        compactButtonW = Phaser.Math.Clamp(Math.floor((bandW - spacing) / 2), 132, 220);
-      }
-      buttonW = Math.max(98, Math.round(compactButtonW * mobileButtonScale));
-    } else {
-      const singleActionId = singleWide && actions[0] ? actions[0].id : "";
-      const singleWideFactor = singleActionId === "deal" ? 0.34 : 0.62;
-      buttonW = singleWide
-        ? Phaser.Math.Clamp(
-          Math.round(bandW * singleWideFactor),
-          164,
-          300
-        )
-        : Phaser.Math.Clamp(
-          Math.floor((bandW - spacing * Math.max(0, count - 1)) / Math.max(1, count)),
-          160,
-          236
-        );
-      if (!singleWide && count > 1) {
-        let totalCandidate = buttonW * count + spacing * (count - 1);
-        if (totalCandidate > bandW) {
-          buttonW = Math.max(120, Math.floor((bandW - spacing * (count - 1)) / count));
-          totalCandidate = buttonW * count + spacing * (count - 1);
-          if (totalCandidate > bandW) {
-            spacing = 10;
-            buttonW = Math.max(120, Math.floor((bandW - spacing * (count - 1)) / count));
-          }
-        }
-      }
-    }
-    const totalButtonH = rowCount > 0 ? rowCount * buttonH + Math.max(0, rowCount - 1) * rowGap : 0;
-    const verticalInset = Math.max(0, Math.round((runLayout.bottomBarH - totalButtonH) * 0.5));
-    const blockTop = height - runLayout.bottomBarH + verticalInset;
-
-    actions.forEach((action, index) => {
-      const button = this.buttons.get(action.id);
-      if (!button) {
-        return;
-      }
-      const row = Math.floor(index / maxPerRow);
-      const rowStart = row * maxPerRow;
-      const itemsInRow = Math.min(maxPerRow, Math.max(0, count - rowStart));
-      const col = index - rowStart;
-      const rowWidth = itemsInRow > 0 ? buttonW * itemsInRow + spacing * Math.max(0, itemsInRow - 1) : buttonW;
-      const x = width * 0.5 - rowWidth * 0.5 + buttonW * 0.5 + col * (buttonW + spacing);
-      const y = blockTop + row * (buttonH + rowGap) + buttonH * 0.5;
-      const resolvedW = buttonW;
-      const resolvedH = buttonH;
-      button.container.setPosition(x, y);
-      setGradientButtonSize(button, resolvedW, resolvedH);
-
-      const iconKey = resolveDarkIconTexture(
-        this,
-        RUN_ACTION_ICON_KEYS[action.id] || RUN_ACTION_ICON_KEYS.deal,
-        this.darkIconTextureBySource
-      );
-      if (button.icon) {
-        button.icon.setTexture(iconKey);
-        button.icon.setDisplaySize(
-          compact ? Math.max(14, Math.round(20 * mobileButtonScale)) : 27,
-          compact ? Math.max(14, Math.round(20 * mobileButtonScale)) : 27
-        );
-        button.icon.setAlpha(0.92);
-        button.icon.setVisible(true);
-      }
-      const shortcut = RUN_ACTION_SHORTCUTS[action.id] || "";
-      if (button.shortcut) {
-        button.shortcut.setText(shortcut);
-        button.shortcut.setFontSize(compact ? Math.max(7, Math.round(9 * mobileButtonScale)) : 13);
-        button.shortcut.setColor("#000000");
-        button.shortcut.setAlpha(0.5);
-        button.shortcut.setVisible(showKeyboardHints && Boolean(shortcut));
-      }
-
-      button.text.setText(action.label);
-      const fontSize = compact
-        ? Math.max(11, Math.round((action.id === "confirmIntro" ? 15 : 14) * mobileButtonScale))
-        : action.id === "confirmIntro"
-          ? 20
-          : 18;
-      button.text.setFontSize(fontSize);
-      button.text.setFontStyle(compact ? "800" : "700");
-      const hasIcon = Boolean(button.icon?.visible);
-      const iconPad = hasIcon
-        ? (compact ? Math.round(28 * mobileButtonScale) : 38)
-        : (compact ? Math.round(10 * mobileButtonScale) : 10);
-      button.text.setOrigin(0, 0.5);
-      button.text.setPosition(-resolvedW * 0.5 + iconPad + (compact ? Math.round(4 * mobileButtonScale) : 10), 0);
-      button.text.setAlign("left");
-      if (button.icon) {
-        button.icon.setPosition(-resolvedW * 0.5 + (compact ? Math.round(16 * mobileButtonScale) : 24), 0);
-      }
-      if (button.shortcut) {
-        button.shortcut.setPosition(resolvedW * 0.5 - (compact ? Math.round(12 * mobileButtonScale) : 20), 0);
-      }
-
-      this.setButtonVisual(button, action.enabled ? "idle" : "disabled");
-      button.enabled = action.enabled;
-      button.container.setAlpha(action.enabled ? 1 : 0.82);
-      button.container.setVisible(true);
-    });
-  }
-
-  rebuildButtons(actions) {
-    const signature = actions.map((entry) => entry.id).join("|");
-    if (signature === this.buttonSignature) {
-      return;
-    }
-    this.buttonSignature = signature;
-    this.buttons.forEach((button) => button.container.destroy());
-    this.buttons.clear();
-
-    actions.forEach((action) => {
-      const button = createGradientButton(this, {
-        id: action.id,
-        label: action.label,
-        styleSet: BUTTON_STYLES,
-        onPress: () => this.invokeAction(action.id),
-        width: 210,
-        height: 64,
-        fontSize: 28,
-      });
-      const icon = this.add
-        .image(
-          0,
-          0,
-          resolveDarkIconTexture(
-            this,
-            RUN_ACTION_ICON_KEYS[action.id] || RUN_ACTION_ICON_KEYS.deal,
-            this.darkIconTextureBySource
-          )
-        )
-        .setDisplaySize(18, 18);
-      const shortcut = this.add
-        .text(0, 0, "", {
-          fontFamily: '"Sora", "Segoe UI", sans-serif',
-          fontSize: "13px",
-          color: "#000000",
-          fontStyle: "700",
-        })
-        .setOrigin(1, 0.5)
-        .setAlpha(0.5);
-      button.container.add([icon, shortcut]);
-      button.icon = icon;
-      button.shortcut = shortcut;
-      this.buttons.set(action.id, button);
-    });
-  }
-
   setButtonVisual(button, styleName) {
     applyGradientButtonStyle(button, styleName);
   }
@@ -2462,77 +2051,6 @@ export class RunScene extends Phaser.Scene {
     node.setText(value);
     node.setVisible(true);
     return node;
-  }
-
-  renderTopActions(snapshot, width, runLayout) {
-    if (!snapshot) {
-      this.topButtons.forEach((button) => button.container.setVisible(false));
-      closeRunSceneModals(this);
-      return;
-    }
-    if (!this.topButtons.size) {
-      const definitions = [
-        {
-          id: "logs",
-          iconKey: RUN_TOP_ACTION_ICON_KEYS.logs,
-          onPress: () => {
-            toggleRunSceneModal(this, "logs");
-          },
-        },
-        {
-          id: "home",
-          iconKey: RUN_TOP_ACTION_ICON_KEYS.home,
-          onPress: () => {
-            closeRunSceneModals(this);
-            this.invokeAction("goHome");
-          },
-        },
-      ];
-      definitions.forEach((entry) => {
-        const button = createGradientButton(this, {
-          id: `top-${entry.id}`,
-          label: "",
-          styleSet: BUTTON_STYLES,
-          onPress: entry.onPress,
-          width: 44,
-          height: 44,
-          fontSize: 14,
-          hoverScale: 1,
-          pressedScale: 0.98,
-        });
-        button.text.setVisible(false);
-        const icon = this.add
-          .image(0, 0, resolveDarkIconTexture(this, entry.iconKey, this.darkIconTextureBySource))
-          .setDisplaySize(16, 16)
-          .setAlpha(0.92);
-        button.container.add(icon);
-        button.icon = icon;
-        button.container.setDepth(230);
-        this.topButtons.set(entry.id, button);
-      });
-    }
-    const buttonSize = runLayout.compact ? 38 : 42;
-    const gap = 8;
-    const rightX = width - runLayout.sidePad - buttonSize * 0.5;
-    const y = Math.round(runLayout.topBarH * 0.5);
-    const home = this.topButtons.get("home");
-    const logs = this.topButtons.get("logs");
-    if (home) {
-      setGradientButtonSize(home, buttonSize, buttonSize);
-      home.container.setPosition(rightX, y);
-      home.container.setVisible(true);
-      if (home.icon) {
-        home.icon.setDisplaySize(buttonSize * 0.825, buttonSize * 0.825);
-      }
-    }
-    if (logs) {
-      setGradientButtonSize(logs, buttonSize, buttonSize);
-      logs.container.setPosition(rightX - (buttonSize + gap), y);
-      logs.container.setVisible(true);
-      if (logs.icon) {
-        logs.icon.setDisplaySize(buttonSize * 0.56, buttonSize * 0.56);
-      }
-    }
   }
 
 }
