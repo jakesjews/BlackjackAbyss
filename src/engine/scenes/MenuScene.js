@@ -466,22 +466,18 @@ export class MenuScene extends Phaser.Scene {
   }
 
   refreshResumeAvailability() {
-    const actions = this.getMenuActions();
+    const actions = getMenuActionsFromRuntime(this);
     const hasSavedRun = actions && typeof actions.hasSavedRun === "function" ? Boolean(actions.hasSavedRun()) : false;
     this.setButtonEnabled(this.menuButtons?.resume, hasSavedRun);
   }
 
   runMenuAction(actionName) {
-    const actions = this.getMenuActions();
+    const actions = getMenuActionsFromRuntime(this);
     const action = actions ? actions[actionName] : null;
     if (typeof action !== "function") {
       return;
     }
     action();
-  }
-
-  getMenuActions() {
-    return getMenuActionsFromRuntime(this);
   }
 
   shouldUseFullscreenMobileMenu(width = this.scale.gameSize.width) {

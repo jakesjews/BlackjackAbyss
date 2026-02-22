@@ -2,8 +2,6 @@ export function createRuntimeEncounterHelpers({
   state,
   clampNumber,
   runtimeRandom,
-  sanitizeEnemyAvatarKey,
-  ensureEnemyAvatarLoaded,
   resolveRoomType,
   createDeck,
   shuffle,
@@ -17,8 +15,6 @@ export function createRuntimeEncounterHelpers({
       floor,
       room,
       type,
-      sanitizeEnemyAvatarKey,
-      ensureEnemyAvatarLoaded,
       random: runtimeRandom,
     });
   }
@@ -59,4 +55,3 @@ export function createRuntimeEncounterHelpers({
     createEncounter,
   };
 }
-

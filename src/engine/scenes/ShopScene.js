@@ -353,12 +353,8 @@ export class ShopScene extends Phaser.Scene {
     this.invokeAction("selectIndex", safeIndex);
   }
 
-  getShopApi() {
-    return getShopApiFromRuntime(this);
-  }
-
   getSnapshot() {
-    const api = this.getShopApi();
+    const api = getShopApiFromRuntime(this);
     if (!api || typeof api.getSnapshot !== "function") {
       return null;
     }
@@ -370,7 +366,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   invokeAction(actionName, value = undefined) {
-    const api = this.getShopApi();
+    const api = getShopApiFromRuntime(this);
     const action = api ? api[actionName] : null;
     if (typeof action === "function") {
       action(value);

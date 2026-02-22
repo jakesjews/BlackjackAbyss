@@ -5,6 +5,7 @@ import {
   createEncounterIntroState,
   createEnemy,
   pickEnemyName,
+  sanitizeEnemyAvatarKey,
 } from "../core/encounter-factory.js";
 
 describe("encounter factory", () => {
@@ -18,14 +19,12 @@ describe("encounter factory", () => {
     expect(pickEnemyName("normal", enemyNames, () => 0.99)).toBe("N-2");
   });
 
-  it("creates enemy with scaled stats and triggers avatar preload", () => {
-    const ensureEnemyAvatarLoaded = vi.fn();
+  it("creates enemy with scaled stats and sanitized avatar keys", () => {
     const enemy = createEnemy({
       floor: 2,
       room: 3,
       type: "elite",
       sanitizeEnemyAvatarKey: (name) => name.toLowerCase().replace(/\s+/g, "-"),
-      ensureEnemyAvatarLoaded,
       enemyNames: { normal: ["N"], elite: ["Elite Dealer"], boss: ["B"] },
       enemyAvatarByName: {},
       random: () => 0,
@@ -35,7 +34,13 @@ describe("encounter factory", () => {
     expect(enemy.hp).toBeGreaterThan(0);
     expect(enemy.attack).toBeGreaterThan(0);
     expect(enemy.goldDrop).toBeGreaterThan(0);
-    expect(ensureEnemyAvatarLoaded).toHaveBeenCalledWith("elite-dealer");
+    expect(enemy.avatarKey).toBe("elite-dealer");
+  });
+
+  it("provides default avatar-key sanitization helper", () => {
+    expect(sanitizeEnemyAvatarKey("  Pit Boss #1  ")).toBe("pit-boss-1");
+    expect(sanitizeEnemyAvatarKey("")).toBe("");
+    expect(sanitizeEnemyAvatarKey(null)).toBe("");
   });
 
   it("builds intro dialogue honoring verbatim openers", () => {

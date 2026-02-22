@@ -72,7 +72,6 @@ import { applyHexAlpha, hydrateShopStock, serializeShopStock } from "./core/seri
 import { createRuntimeLoop as createRuntimeLoopFromModule } from "./core/runtime-loop.js";
 import { bindRuntimeLifecycle as bindRuntimeLifecycleFromModule } from "./core/runtime-lifecycle.js";
 import { createRuntimeAudio as createRuntimeAudioFromModule } from "./core/runtime-audio.js";
-import { createRuntimeResources } from "./core/enemy-avatars.js";
 import { initializeRuntimeStartup as initializeRuntimeStartupFromModule } from "./core/runtime-startup.js";
 import { createEncounterLifecycleHandlers as createEncounterLifecycleHandlersFromModule } from "./core/encounter-lifecycle.js";
 import { createCombatImpactHandlers as createCombatImpactHandlersFromModule } from "./core/combat-impact.js";
@@ -92,8 +91,8 @@ import {
   updateProfileBest as updateProfileBestFromModule,
 } from "./core/run-results.js";
 import {
-  passiveDescription as passiveDescriptionFromModule,
-  passiveSummary as passiveSummaryFromModule,
+  passiveDescription,
+  passiveSummary,
 } from "./core/passive-view.js";
 import { createRuntimeProfileHandlers } from "./core/runtime-profile.js";
 import { createRuntimeSaveResumeHandlers } from "./core/runtime-save-resume.js";
@@ -159,14 +158,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     width: WIDTH,
     height: HEIGHT,
   });
-  const {
-    sanitizeEnemyAvatarKey,
-    ensureEnemyAvatarLoaded,
-    passiveThumbCache,
-  } = createRuntimeResources({
-    globalWindow: window,
-    sourceRoots: ["/images/avatars"],
-  });
+  const passiveThumbCache = new Map();
 
   const state = createRuntimeState({
     width: WIDTH,
@@ -240,8 +232,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     state,
     clampNumber,
     runtimeRandom,
-    sanitizeEnemyAvatarKey,
-    ensureEnemyAvatarLoaded,
     resolveRoomType,
     createDeck,
     shuffle,
@@ -315,9 +305,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     saveProfile();
     clearSavedRun();
   }
-
-  const passiveDescription = passiveDescriptionFromModule;
-  const passiveSummary = passiveSummaryFromModule;
 
   function isExternalModeRendering(mode = state.mode) {
     return isExternalRendererActive.call(runtimeContext, mode);

@@ -862,10 +862,6 @@ export class RunScene extends Phaser.Scene {
     return ordered.filter((id) => this.isModalOpen(id));
   }
 
-  getRunApi() {
-    return getRunApiFromRuntime(this);
-  }
-
   getEncounterTypeLabel(type) {
     const normalized = String(type || "normal").trim().toLowerCase();
     if (!normalized) {
@@ -875,7 +871,7 @@ export class RunScene extends Phaser.Scene {
   }
 
   playRunSfx(methodName, ...args) {
-    const api = this.getRunApi();
+    const api = getRunApiFromRuntime(this);
     const fn = api?.[methodName];
     if (typeof fn === "function") {
       fn(...args);
@@ -919,7 +915,7 @@ export class RunScene extends Phaser.Scene {
   }
 
   getSnapshot() {
-    const api = this.getRunApi();
+    const api = getRunApiFromRuntime(this);
     if (!api || typeof api.getSnapshot !== "function") {
       return null;
     }
@@ -935,7 +931,7 @@ export class RunScene extends Phaser.Scene {
     if (gatedActions.has(actionName) && (this.hasActiveCardDealAnimations() || this.hasActiveResolutionAnimations())) {
       return;
     }
-    const api = this.getRunApi();
+    const api = getRunApiFromRuntime(this);
     const action = api ? api[actionName] : null;
     if (typeof action === "function") {
       action();

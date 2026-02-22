@@ -155,12 +155,8 @@ export class RewardScene extends Phaser.Scene {
     });
   }
 
-  getRewardApi() {
-    return getRewardApiFromRuntime(this);
-  }
-
   getSnapshot() {
-    const api = this.getRewardApi();
+    const api = getRewardApiFromRuntime(this);
     if (!api || typeof api.getSnapshot !== "function") {
       return null;
     }
@@ -172,7 +168,7 @@ export class RewardScene extends Phaser.Scene {
   }
 
   invokeAction(actionName, value = undefined) {
-    const api = this.getRewardApi();
+    const api = getRewardApiFromRuntime(this);
     const action = api ? api[actionName] : null;
     if (typeof action === "function") {
       action(value);

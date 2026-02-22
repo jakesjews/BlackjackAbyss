@@ -7,8 +7,6 @@ describe("runtime encounter helpers", () => {
       lastIntroDialogue: "",
     };
     const runtimeRandom = vi.fn(() => 0.25);
-    const sanitizeEnemyAvatarKey = vi.fn((name) => name);
-    const ensureEnemyAvatarLoaded = vi.fn();
     const resolveRoomType = vi.fn(() => "normal");
     const createDeck = vi.fn(() => ["c1", "c2"]);
     const shuffle = vi.fn((cards, randomFn) => {
@@ -18,7 +16,7 @@ describe("runtime encounter helpers", () => {
 
     const createEnemyFn = vi.fn((payload) => ({
       name: "Tin Dealer",
-      avatarKey: payload.sanitizeEnemyAvatarKey("tin-dealer"),
+      avatarKey: "tin-dealer",
     }));
     const buildEnemyIntroDialogueFn = vi.fn(() => ({
       dialogue: "Let's play.",
@@ -40,8 +38,6 @@ describe("runtime encounter helpers", () => {
       state,
       clampNumber: (value, min, max) => Math.max(min, Math.min(max, value)),
       runtimeRandom,
-      sanitizeEnemyAvatarKey,
-      ensureEnemyAvatarLoaded,
       resolveRoomType,
       createDeck,
       shuffle,
@@ -57,8 +53,6 @@ describe("runtime encounter helpers", () => {
       floor: 1,
       room: 2,
       type: "normal",
-      sanitizeEnemyAvatarKey,
-      ensureEnemyAvatarLoaded,
       random: runtimeRandom,
     });
 
@@ -81,4 +75,3 @@ describe("runtime encounter helpers", () => {
     expect(createEncounterFn).toHaveBeenCalledTimes(1);
   });
 });
-

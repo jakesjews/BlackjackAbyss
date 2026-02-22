@@ -225,12 +225,8 @@ export class OverlayScene extends Phaser.Scene {
     });
   }
 
-  getOverlayApi() {
-    return getOverlayApiFromRuntime(this);
-  }
-
   getSnapshot() {
-    const api = this.getOverlayApi();
+    const api = getOverlayApiFromRuntime(this);
     if (!api || typeof api.getSnapshot !== "function") {
       return null;
     }
@@ -243,7 +239,7 @@ export class OverlayScene extends Phaser.Scene {
 
   invokeAction(actionName, value = undefined) {
     const mappedName = actionName === "closeCollection" ? "backToMenu" : actionName;
-    const api = this.getOverlayApi();
+    const api = getOverlayApiFromRuntime(this);
     const action = api ? api[mappedName] : null;
     if (typeof action === "function") {
       action(value);

@@ -36,22 +36,29 @@ export function pickEnemyName(type, enemyNames = ENEMY_NAMES, random = Math.rand
   return "Unknown Dealer";
 }
 
+export function sanitizeEnemyAvatarKey(name) {
+  if (typeof name !== "string") {
+    return "";
+  }
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 export function createEnemy({
   floor,
   room,
   type,
-  sanitizeEnemyAvatarKey,
-  ensureEnemyAvatarLoaded,
+  sanitizeEnemyAvatarKey: sanitizeEnemyAvatarKeyFn,
   enemyNames = ENEMY_NAMES,
   enemyAvatarByName = ENEMY_AVATAR_BY_NAME,
   random = Math.random,
 }) {
   const name = pickEnemyName(type, enemyNames, random);
-  const safeSanitize = typeof sanitizeEnemyAvatarKey === "function" ? sanitizeEnemyAvatarKey : () => "";
+  const safeSanitize = typeof sanitizeEnemyAvatarKeyFn === "function" ? sanitizeEnemyAvatarKeyFn : sanitizeEnemyAvatarKey;
   const avatarKey = enemyAvatarByName[name] || safeSanitize(name);
-  if (typeof ensureEnemyAvatarLoaded === "function") {
-    ensureEnemyAvatarLoaded(avatarKey);
-  }
 
   const baseHp = 14 + floor * 4 + room * 2;
   const hp =

@@ -24,6 +24,7 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - Runtime orchestration helper modules: `src/engine/runtime/core/{runtime-sanitizers,runtime-ui-helpers,runtime-passive-helpers}.js`
 - Runtime run/encounter orchestration helpers: `src/engine/runtime/core/{runtime-run-helpers,runtime-encounter-helpers}.js`
 - Scene layer: `src/engine/scenes/*`
+- Scene asset host: `src/engine/scenes/BootScene.js` preloads shared textures (including enemy avatars/icons) into Phaser's texture manager.
 
 ## Boot Flow
 

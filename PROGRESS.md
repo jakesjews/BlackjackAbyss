@@ -17,7 +17,7 @@
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
 - Smoke coverage is now split from acceptance: `test:acceptance` covers gameplay/browser flow while `test:smoke`/`test:visual` target visual snapshots.
 - `test:smoke` is a focused visual rerun path for artifact refresh.
-- Last Updated: 2026-02-22 20:53:00 EST
+- Last Updated: 2026-02-22 21:12:00 EST
 
 ## Current Focus
 
@@ -30,6 +30,7 @@
 ## Done Recently
 
 - Extracted runtime logic from monolithic `game.js` into `src/engine/runtime/*`.
+- Removed runtime `window.Image` avatar preloading/cache paths; avatar texture loading now runs through Phaser `BootScene` preload while runtime resolves avatar keys only.
 - Flattened runtime API registration into one direct call path (`registerRuntimeApis`) and removed wrapper-heavy API registration registry flow.
 - Switched scene runtime helper consumption to direct runtime APIs (`game.__ABYSS_RUNTIME__.apis`) instead of bridge fallback.
 - Tightened runtime startup to require explicit Phaser runtime payload from app boot (removed runtime-engine window-global fallback path).
@@ -81,7 +82,7 @@
 - Extracted encounter run/hand lifecycle orchestration into `src/engine/runtime/core/encounter-lifecycle.js` and reduced bootstrap shoe/deal/hand/start-run flow to delegation wrappers with dedicated unit tests.
 - Extracted combat impact settlement helpers into `src/engine/runtime/core/combat-impact.js` and reduced bootstrap `finalizeResolveState`/`applyImpactDamage` to delegation wrappers with dedicated unit tests.
 - Restored explicit `handBounds(...)` helper (now delegated through encounter lifecycle module) to keep defeat-transition fallback math safe.
-- Extracted enemy avatar loading/cache helpers into `src/engine/runtime/core/enemy-avatars.js` and removed that implementation detail from `bootstrap.js` with dedicated unit tests.
+- Removed the old runtime enemy-avatar loading/cache helper module; Phaser `BootScene` is now the single avatar texture loader on the active path.
 - Extracted runtime startup orchestration into `src/engine/runtime/core/runtime-startup.js` and reduced bootstrap final boot wiring to a single delegation call with dedicated unit tests.
 - Collapsed wrapper-heavy runtime delegates in `bootstrap.js` by binding directly to handler/module methods (audio, combat impact, encounter lifecycle, combat turn actions, reward/shop handlers), preserving only required forward-reference wrappers.
 - Fixed a persistence regression introduced during wrapper collapse by restoring direct bindings for resume-hydration helpers (`generateCampRelicDraftStock`, etc.) used by `resumeSavedRun`.
@@ -112,7 +113,7 @@
 - Reduced `src/engine/runtime/runtime-engine.js` from 928 lines to 878 lines in this slice.
 - Collapsed additional trivial pass-through wrappers in `src/engine/runtime/runtime-engine.js` (module alias + inline callback use for split lifecycle/resolve hookups) to reduce non-essential indirection.
 - Reduced `src/engine/runtime/runtime-engine.js` from 878 lines to 875 lines in this slice.
-- Consolidated wrapper-only runtime resource wiring into `src/engine/runtime/core/enemy-avatars.js` (`createRuntimeResources`) and removed `src/engine/runtime/core/runtime-resources.js`.
+- Removed wrapper-only runtime resource wiring (`createRuntimeResources`) and kept runtime resource state to a plain passive-thumb cache plus Phaser-managed texture loading.
 - Consolidated wrapper-only bridge and snapshot registry wiring into `src/engine/runtime/core/phaser-runtime-apis.js` (`createRuntimeBridgeRegistry`, `createRuntimeSnapshotRegistry`) and removed `src/engine/runtime/core/runtime-bridge-registry.js` and `src/engine/runtime/core/runtime-snapshot-registry.js`.
 - Extracted additional orchestration helpers into `src/engine/runtime/core/runtime-sanitizers.js`, `src/engine/runtime/core/runtime-ui-helpers.js`, and `src/engine/runtime/core/runtime-passive-helpers.js`.
 - Reduced `src/engine/runtime/runtime-engine.js` from 857 lines to 803 lines in this slice.

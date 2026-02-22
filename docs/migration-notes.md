@@ -13,6 +13,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Obsolete `game.js` compatibility wrapper removed.
 - Dead app service layer removed from host runtime context (`eventBus`, `persistence`, `gameState`, `audio`).
 - Scene runtime access normalized via `src/engine/scenes/runtime-access.js`.
+- Removed runtime browser-image avatar preloading/cache helpers; Phaser `BootScene` now owns avatar texture loading and runtime only resolves avatar keys.
 - Dead runtime audio shim removed (`src/engine/runtime/audio/audio-engine.js`, `MUSIC_STEP_SECONDS`, `audio.stepTimer`, `audio.stepIndex`).
 - Broken balance probe tooling removed temporarily.
 - Added acceptance test harness with one-hand core/camp/persistence coverage.
