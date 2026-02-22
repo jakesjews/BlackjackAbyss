@@ -7,8 +7,6 @@ import { RewardScene } from "./scenes/RewardScene.js";
 import { ShopScene } from "./scenes/ShopScene.js";
 import { OverlayScene } from "./scenes/OverlayScene.js";
 
-const EXTERNAL_RENDER_MODES = new Set(["menu", "playing", "reward", "shop", "collection", "gameover", "victory"]);
-
 function createRuntimeContext() {
   let runtimeStepHandler = null;
   const runtime = {
@@ -32,9 +30,6 @@ function createRuntimeContext() {
     game: null,
     reportMode(mode) {
       syncPhaserScenesForMode(runtime.game, mode);
-    },
-    isExternalRendererActive(mode) {
-      return typeof mode === "string" && EXTERNAL_RENDER_MODES.has(mode);
     },
   };
 

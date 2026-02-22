@@ -140,13 +140,12 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
   const phaserGame = phaserRuntimePayload.game || runtimeContext?.game || null;
   const runtimeApis = runtimeContext?.apis && typeof runtimeContext.apis === "object" ? runtimeContext.apis : null;
   const reportMode = runtimeContext?.reportMode;
-  const isExternalRendererActive = runtimeContext?.isExternalRendererActive;
   const setStepHandler = runtimeContext?.setStepHandler;
   if (!runtimeContext || !runtimeApis || !phaserGame) {
     throw new Error("Unable to initialize Phaser runtime context.");
   }
-  if (typeof reportMode !== "function" || typeof isExternalRendererActive !== "function") {
-    throw new Error("Runtime context is missing Phaser-native mode sync handlers.");
+  if (typeof reportMode !== "function") {
+    throw new Error("Runtime context is missing Phaser-native mode sync handler.");
   }
   if (typeof setStepHandler !== "function") {
     throw new Error("Runtime context is missing Phaser step handler wiring.");
@@ -306,10 +305,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     clearSavedRun();
   }
 
-  function isExternalModeRendering(mode = state.mode) {
-    return isExternalRendererActive.call(runtimeContext, mode);
-  }
-
   const runtimeAudio = createRuntimeAudioFromModule({
     state,
     globalWindow: window,
@@ -319,7 +314,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     musicTrackSources: MUSIC_TRACK_SOURCES,
     gruntSources: GRUNT_SOURCES,
     cardSources: CARD_SOURCES,
-    isExternalModeRendering,
     addLog,
     setAnnouncement,
     clampNumber,
@@ -391,8 +385,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     spawnSparkBurst,
     startDefeatTransition,
     triggerFlash,
-    triggerHandTackle,
-    triggerImpactBurst,
     triggerImpactBurstAt,
     triggerScreenShake,
   } = runtimeEffects;
@@ -405,7 +397,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     setAnnouncementFn: setAnnouncement,
     addLogFn: addLog,
     saveRunSnapshotFn: saveRunSnapshot,
-    isExternalModeRenderingFn: isExternalModeRendering,
     queueEnemyDefeatTransitionFn: queueEnemyDefeatTransition,
     damageFloatAnchorFn: damageFloatAnchor,
     spawnFloatTextFn: spawnFloatText,
@@ -426,7 +417,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     rankValueFn: rankValue,
     computeHandLayoutFn: computeHandLayout,
     computeHandCardPositionFn: computeHandCardPosition,
-    isExternalModeRenderingFn: isExternalModeRendering,
     playUiSfxFn: playUiSfx,
     playDealSfxFn: playDealSfx,
     spawnSparkBurstFn: spawnSparkBurst,
@@ -500,11 +490,8 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     state,
     nonNegInt,
     width: WIDTH,
-    isExternalModeRendering,
     playOutcomeSfx,
-    triggerHandTackle,
     applyImpactDamage,
-    triggerImpactBurst,
     spawnFloatText,
     gainChips,
     updateProfileBest,

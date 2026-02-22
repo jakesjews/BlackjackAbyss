@@ -4,6 +4,7 @@
 
 - Phaser-first runtime migration is active in production with acceptance tests in place as a refactor gate.
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
+- External-renderer gating branches have now been removed from runtime/app flow; Phaser scenes are the only active presentation path.
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
 - Visual regression runs in CI against committed golden images (`tests/visual-baseline/*`) but is currently warning-only (non-blocking) during UI churn.
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
@@ -17,7 +18,7 @@
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
 - Smoke coverage is now split from acceptance: `test:acceptance` covers gameplay/browser flow while `test:smoke`/`test:visual` target visual snapshots.
 - `test:smoke` is a focused visual rerun path for artifact refresh.
-- Last Updated: 2026-02-22 21:12:00 EST
+- Last Updated: 2026-02-22 21:23:00 EST
 
 ## Current Focus
 
@@ -31,6 +32,7 @@
 
 - Extracted runtime logic from monolithic `game.js` into `src/engine/runtime/*`.
 - Removed runtime `window.Image` avatar preloading/cache paths; avatar texture loading now runs through Phaser `BootScene` preload while runtime resolves avatar keys only.
+- Removed remaining `isExternal*` branch plumbing from app/runtime/combat/audio/lifecycle modules and aligned tests to Phaser-only behavior.
 - Flattened runtime API registration into one direct call path (`registerRuntimeApis`) and removed wrapper-heavy API registration registry flow.
 - Switched scene runtime helper consumption to direct runtime APIs (`game.__ABYSS_RUNTIME__.apis`) instead of bridge fallback.
 - Tightened runtime startup to require explicit Phaser runtime payload from app boot (removed runtime-engine window-global fallback path).

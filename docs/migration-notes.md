@@ -40,6 +40,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Scenes now consume runtime APIs directly from `game.__ABYSS_RUNTIME__.apis` (bridge fallback removed from scene helpers).
 - Runtime engine startup now requires the Phaser runtime payload from app boot (no window-global fallback path).
 - Runtime mode synchronization now flows through direct runtime context callbacks in `src/engine/app.js`.
+- Removed remaining runtime/app external-renderer branch plumbing (`isExternal*` checks); runtime combat/audio/lifecycle paths now execute Phaser-only logic.
 - Removed dead compatibility stubs no longer used by runtime/scenes (`setGame`, `getCanvas`, `setInputHandlers`).
 - Runtime frame stepping now uses direct runtime context handlers (`runtime.setStepHandler` + `runtime.tick`).
 - Acceptance boot contracts validate runtime API method sets and test hooks.

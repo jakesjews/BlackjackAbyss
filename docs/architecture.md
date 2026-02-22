@@ -65,6 +65,7 @@ Phaser is the host of record for runtime loop/input/resize/visibility handling.
 - Runtime loop/ticks: scene-driven through `runtime.setStepHandler` + `runtime.tick`.
 - Lifecycle wiring: Phaser game/scale/input events via `src/engine/runtime/core/runtime-phaser-host.js`.
 - Scene sizing/layout decisions use Phaser scale/device/input APIs.
+- Runtime no longer carries an external-renderer switch; Phaser is always the active host/render path.
 
 Browser APIs are intentionally limited to compatibility/host boundaries:
 

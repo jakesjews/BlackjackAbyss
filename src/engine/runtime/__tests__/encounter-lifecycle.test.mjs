@@ -52,7 +52,6 @@ function createHandlers(overrides = {}) {
       w: 88,
       h: 124,
     }),
-    isExternalModeRenderingFn: () => false,
     playUiSfxFn: vi.fn(),
     playDealSfxFn: vi.fn(),
     spawnSparkBurstFn: vi.fn(),

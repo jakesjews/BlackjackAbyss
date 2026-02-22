@@ -4,11 +4,8 @@ export function createCombatResolution({
   state,
   nonNegInt,
   width,
-  isExternalModeRendering,
   playOutcomeSfx,
-  triggerHandTackle,
   applyImpactDamage,
-  triggerImpactBurst,
   spawnFloatText,
   gainChips,
   updateProfileBest,
@@ -123,7 +120,6 @@ export function createCombatResolution({
     }
 
     playOutcomeSfx(outcome, outgoing, incoming);
-    const useLegacyHandTackle = !isExternalModeRendering("playing");
 
     if (outgoing > 0) {
       const outgoingPayload = {
@@ -132,12 +128,7 @@ export function createCombatResolution({
         color: outcome === "blackjack" ? "#f8d37b" : "#ff916e",
         crit: encounter.critTriggered,
       };
-      if (!(useLegacyHandTackle && triggerHandTackle("player", outgoing, outgoingPayload))) {
-        applyImpactDamage(outgoingPayload);
-        if (useLegacyHandTackle) {
-          triggerImpactBurst("enemy", outgoing, outgoingPayload.color);
-        }
-      }
+      applyImpactDamage(outgoingPayload);
     }
 
     if (incoming > 0) {
@@ -146,12 +137,7 @@ export function createCombatResolution({
         amount: incoming,
         color: "#ff86aa",
       };
-      if (!(useLegacyHandTackle && triggerHandTackle("enemy", incoming, incomingPayload))) {
-        applyImpactDamage(incomingPayload);
-        if (useLegacyHandTackle) {
-          triggerImpactBurst("player", incoming, incomingPayload.color);
-        }
-      }
+      applyImpactDamage(incomingPayload);
     } else if (outgoing > 0) {
       run.player.streak += 1;
       run.maxStreak = Math.max(run.maxStreak || 0, run.player.streak);

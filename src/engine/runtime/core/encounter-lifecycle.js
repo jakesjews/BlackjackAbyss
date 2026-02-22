@@ -9,7 +9,6 @@ export function createEncounterLifecycleHandlers({
   rankValueFn,
   computeHandLayoutFn,
   computeHandCardPositionFn,
-  isExternalModeRenderingFn,
   playUiSfxFn,
   playDealSfxFn,
   spawnSparkBurstFn,
@@ -108,9 +107,6 @@ export function createEncounterLifecycleHandlers({
       fromX: spawnX,
       fromY: spawnY,
     });
-    if (!isExternalModeRenderingFn("playing")) {
-      playUiSfxFn("card");
-    }
 
     const pos = handCardPosition(target, hand.length - 1, hand.length);
     state.cardBursts.push({

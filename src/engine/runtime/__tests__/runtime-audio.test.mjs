@@ -57,7 +57,6 @@ describe("runtime audio module", () => {
       musicTrackSources: ["/music.mp3"],
       gruntSources: ["/grunt.wav"],
       cardSources: ["/card.wav"],
-      isExternalModeRendering: () => true,
       addLog,
       setAnnouncement,
       clampNumber: (value, min, max, fallback) => {
@@ -94,7 +93,6 @@ describe("runtime audio module", () => {
       musicTrackSources: ["/music.mp3"],
       gruntSources: ["/grunt.wav"],
       cardSources: ["/card.wav"],
-      isExternalModeRendering: () => true,
       addLog: vi.fn(),
       setAnnouncement: vi.fn(),
       clampNumber: (value, min, max, fallback) => {
@@ -129,7 +127,6 @@ describe("runtime audio module", () => {
       musicTrackSources: ["/music.mp3"],
       gruntSources: ["/grunt.wav"],
       cardSources: ["/card.wav"],
-      isExternalModeRendering: () => true,
       addLog: vi.fn(),
       setAnnouncement: vi.fn(),
       clampNumber: (value, min, max, fallback) => {
@@ -166,7 +163,6 @@ describe("runtime audio module", () => {
       musicTrackSources: ["/music.mp3"],
       gruntSources: ["/grunt.wav"],
       cardSources: ["/card.wav"],
-      isExternalModeRendering: () => true,
       addLog: vi.fn(),
       setAnnouncement: vi.fn(),
       clampNumber: (value, min, max, fallback) => {
@@ -233,7 +229,6 @@ describe("runtime audio module", () => {
       musicTrackSources: ["/music.mp3"],
       gruntSources: ["/grunt.wav"],
       cardSources: ["/card.wav"],
-      isExternalModeRendering: () => true,
       addLog: vi.fn(),
       setAnnouncement: vi.fn(),
       clampNumber: (value, min, max, fallback) => {

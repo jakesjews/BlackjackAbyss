@@ -71,9 +71,7 @@ function createState(overrides = {}) {
 
 function createResolution(state, overrides = {}) {
   const playOutcomeSfx = overrides.playOutcomeSfx || vi.fn();
-  const triggerHandTackle = overrides.triggerHandTackle || vi.fn(() => false);
   const applyImpactDamage = overrides.applyImpactDamage || vi.fn();
-  const triggerImpactBurst = overrides.triggerImpactBurst || vi.fn();
   const spawnFloatText = overrides.spawnFloatText || vi.fn();
   const gainChips = overrides.gainChips || vi.fn();
   const updateProfileBest = overrides.updateProfileBest || vi.fn();
@@ -82,18 +80,14 @@ function createResolution(state, overrides = {}) {
   const triggerFlash = overrides.triggerFlash || vi.fn();
   const triggerScreenShake = overrides.triggerScreenShake || vi.fn();
   const spawnSparkBurst = overrides.spawnSparkBurst || vi.fn();
-  const isExternalModeRendering = overrides.isExternalModeRendering || (() => false);
   const random = overrides.random || (() => 0.9);
 
   const resolution = createCombatResolution({
     state,
     nonNegInt,
     width: 1280,
-    isExternalModeRendering,
     playOutcomeSfx,
-    triggerHandTackle,
     applyImpactDamage,
-    triggerImpactBurst,
     spawnFloatText,
     gainChips,
     updateProfileBest,
@@ -108,9 +102,7 @@ function createResolution(state, overrides = {}) {
   return {
     resolution,
     playOutcomeSfx,
-    triggerHandTackle,
     applyImpactDamage,
-    triggerImpactBurst,
     spawnFloatText,
     gainChips,
     updateProfileBest,
@@ -144,7 +136,6 @@ describe("combat resolution", () => {
       resolution,
       playOutcomeSfx,
       applyImpactDamage,
-      triggerImpactBurst,
       finalizeResolveState,
       updateProfileBest,
       addLog,
@@ -159,7 +150,6 @@ describe("combat resolution", () => {
       color: "#ff916e",
       crit: false,
     });
-    expect(triggerImpactBurst).toHaveBeenCalledWith("enemy", 7, "#ff916e");
     expect(state.run.player.streak).toBe(1);
     expect(state.run.maxStreak).toBe(1);
     expect(state.run.totalHands).toBe(1);

@@ -90,7 +90,6 @@ async function readRuntimeDebugSnapshot(page) {
       mode: parsedState?.mode || "",
       hasRun: Boolean(parsedState?.run),
       hasEncounter: Boolean(parsedState?.encounter),
-      externalRendererActive: Boolean(runtime?.isExternalRendererActive?.(parsedState?.mode || "")),
       activeScenes,
       sceneStates,
       runSnapshotMode: runSnapshot?.mode || "",
@@ -201,7 +200,6 @@ async function runViewportSmoke(config) {
     expect(debug.mode).toBe("playing");
     expect(debug.hasRun).toBe(true);
     expect(debug.hasEncounter).toBe(true);
-    expect(debug.externalRendererActive).toBe(true);
     expect(debug.runSnapshotMode).toBe("playing");
     expect(debug.runSnapshotHasStatus).toBe(true);
     expect(debug.visualFxDisabled).toBe(true);

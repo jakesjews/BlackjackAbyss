@@ -7,7 +7,6 @@ export function createRuntimeAudio({
   musicTrackSources,
   gruntSources,
   cardSources,
-  isExternalModeRendering,
   addLog,
   setAnnouncement,
   clampNumber,
@@ -392,15 +391,6 @@ export function createRuntimeAudio({
       playTone(660, 0.14, { type: "triangle", gain: 0.075, release: 0.12, when: now + 0.05 });
       playTone(990, 0.2, { type: "sine", gain: 0.07, release: 0.16, when: now + 0.1 });
       return;
-    }
-
-    if (!isExternalModeRendering()) {
-      if (outgoing > 0) {
-        playImpactSfx(outgoing, "enemy");
-      }
-      if (incoming > 0) {
-        playImpactSfx(incoming, "player");
-      }
     }
 
     if (outcome === "push") {

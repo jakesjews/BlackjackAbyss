@@ -40,7 +40,6 @@ describe("combat impact handlers", () => {
       setAnnouncementFn,
       addLogFn,
       saveRunSnapshotFn,
-      isExternalModeRenderingFn: () => false,
       queueEnemyDefeatTransitionFn: vi.fn(),
       damageFloatAnchorFn: () => ({ x: 0, y: 0 }),
       spawnFloatTextFn: vi.fn(),
@@ -53,7 +52,7 @@ describe("combat impact handlers", () => {
     expect(saveRunSnapshotFn).toHaveBeenCalledTimes(1);
   });
 
-  it("finalizeResolveState queues enemy defeat under external rendering", () => {
+  it("finalizeResolveState queues enemy defeat transition when enemy HP is zero", () => {
     const state = createBaseState();
     state.encounter.enemy.hp = 0;
     const startDefeatTransitionFn = vi.fn();
@@ -66,7 +65,6 @@ describe("combat impact handlers", () => {
       setAnnouncementFn: vi.fn(),
       addLogFn: vi.fn(),
       saveRunSnapshotFn: vi.fn(),
-      isExternalModeRenderingFn: () => true,
       queueEnemyDefeatTransitionFn,
       damageFloatAnchorFn: () => ({ x: 0, y: 0 }),
       spawnFloatTextFn: vi.fn(),
@@ -88,7 +86,6 @@ describe("combat impact handlers", () => {
       setAnnouncementFn: vi.fn(),
       addLogFn: vi.fn(),
       saveRunSnapshotFn: vi.fn(),
-      isExternalModeRenderingFn: () => false,
       queueEnemyDefeatTransitionFn: vi.fn(),
       damageFloatAnchorFn: () => ({ x: 100, y: 200 }),
       spawnFloatTextFn,
@@ -119,7 +116,6 @@ describe("combat impact handlers", () => {
       setAnnouncementFn: vi.fn(),
       addLogFn: vi.fn(),
       saveRunSnapshotFn: vi.fn(),
-      isExternalModeRenderingFn: () => false,
       queueEnemyDefeatTransitionFn: vi.fn(),
       damageFloatAnchorFn: () => ({ x: 150, y: 260 }),
       spawnFloatTextFn,

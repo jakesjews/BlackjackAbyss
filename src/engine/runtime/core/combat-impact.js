@@ -6,7 +6,6 @@ export function createCombatImpactHandlers({
   setAnnouncementFn,
   addLogFn,
   saveRunSnapshotFn,
-  isExternalModeRenderingFn,
   queueEnemyDefeatTransitionFn,
   damageFloatAnchorFn,
   spawnFloatTextFn,
@@ -32,11 +31,7 @@ export function createCombatImpactHandlers({
     }
 
     if (enemy.hp <= 0) {
-      if (isExternalModeRenderingFn("playing")) {
-        queueEnemyDefeatTransitionFn();
-      } else {
-        startDefeatTransitionFn("enemy");
-      }
+      queueEnemyDefeatTransitionFn();
       setAnnouncementFn(`${enemy.name} down!`, 1.2);
       addLogFn(`${enemy.name} is down.`);
       saveRunSnapshotFn();
