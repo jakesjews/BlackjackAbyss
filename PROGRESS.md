@@ -19,7 +19,7 @@
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
 - Smoke coverage is now split from acceptance: `test:acceptance` covers gameplay/browser flow while `test:smoke`/`test:visual` target visual snapshots.
 - `test:smoke` is a focused visual rerun path for artifact refresh.
-- Last Updated: 2026-02-22 22:42:00 EST
+- Last Updated: 2026-02-22 23:09:00 EST
 
 ## Current Focus
 
@@ -136,6 +136,15 @@
 - Extracted RunScene action-tray and top-action rendering into `src/engine/scenes/run/run-scene-action-renderers.js` and removed the in-class `renderButtons`/`rebuildButtons`/`renderTopActions` monolith methods.
 - Extracted RunScene intro/result message rendering into `src/engine/scenes/run/run-scene-message-renderers.js` and removed in-class `drawRunMessages(...)`.
 - Added RunScene visual-test stabilization for enemy avatar motion (`visual.disableFx` now disables bob/pulse/jitter in scene rendering paths used by smoke baselines).
+- Extracted RunScene encounter/avatar/HP panel rendering into `src/engine/scenes/run/run-scene-encounter-renderers.js` and removed duplicate in-class `drawEncounterPanels`, `drawPlayerAvatar`, `drawEnemyAvatar`, and `drawHpBar` methods.
+- Updated intro modal avatar resolution to consume the shared helper (`resolveRunSceneEnemyAvatarTexture`) from the encounter renderer module.
+- Reduced `src/engine/scenes/RunScene.js` from ~2048 lines to 1633 lines in this slice.
+- Extracted RunScene defeat/impact/fireball orchestration into `src/engine/scenes/run/run-scene-resolution-renderers.js` and removed duplicate in-class `renderEnemyDefeatEffect`, `processHpImpacts`, `launchDamageFireball`, and `spawnDamageNumber` methods.
+- Reduced `src/engine/scenes/RunScene.js` from 1633 lines to 1345 lines in this slice.
+- Moved result-message animation/tone handling into the same resolution module (`animateRunSceneResultMessage`) and removed in-class `tonePalette`/`animateResultMessage` methods from `RunScene`.
+- Reduced `src/engine/scenes/RunScene.js` from 1345 lines to 1274 lines in this slice.
+- Moved texture-cover sizing helpers out of `RunScene` into shared Phaser texture utilities (`src/engine/scenes/ui/texture-processing.js`) and updated run-scene renderer modules to consume those shared helpers directly.
+- Reduced `src/engine/scenes/RunScene.js` from 1274 lines to 1255 lines in this slice.
 - Switched web fonts to local packaged assets (`@fontsource/chakra-petch`, `@fontsource/sora`) and removed remote Google Fonts links to reduce visual test nondeterminism.
 - Added acceptance font-readiness waits around reload bootstrapping (`tests/acceptance/helpers/page.mjs`) to reduce snapshot race conditions.
 - Relaxed absolute visual diff tolerance from `250` to `500` pixels while keeping strict diff-ratio threshold (`0.0005`) to avoid failing on tiny anti-aliasing churn during UI migration.

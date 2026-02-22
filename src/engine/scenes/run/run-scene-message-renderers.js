@@ -1,6 +1,9 @@
 import Phaser from "phaser";
 import { createGradientButton, setGradientButtonSize } from "../ui/gradient-button.js";
+import { coverSizeForTexture } from "../ui/texture-processing.js";
 import { RUN_MODAL_BASE_DEPTH, RUN_MODAL_CONTENT_OFFSET } from "./run-scene-config.js";
+import { resolveRunSceneEnemyAvatarTexture } from "./run-scene-encounter-renderers.js";
+import { animateRunSceneResultMessage } from "./run-scene-resolution-renderers.js";
 
 export function drawRunSceneMessages(
   scene,
@@ -80,10 +83,10 @@ export function drawRunSceneMessages(
       scene.introPortraitMaskShape.fillRoundedRect(avatarInnerX, avatarInnerY, avatarInnerW, avatarInnerH, compact ? 8 : 10);
     }
 
-    const introAvatarTexture = scene.resolveEnemyAvatarTexture(enemy);
+    const introAvatarTexture = resolveRunSceneEnemyAvatarTexture(scene, enemy);
     if (introAvatarTexture && scene.introPortrait) {
       scene.introPortrait.setTexture(introAvatarTexture);
-      const cover = scene.coverSizeForTexture(introAvatarTexture, avatarInnerW, avatarInnerH);
+      const cover = coverSizeForTexture(scene, introAvatarTexture, avatarInnerW, avatarInnerH);
       scene.introPortrait.setDisplaySize(cover.width, cover.height);
       scene.introPortrait.setPosition(avatarOuterX + avatarOuter * 0.5, avatarOuterY + avatarOuter * 0.5);
       scene.introPortrait.setDepth(introContentDepth + 2);
@@ -256,6 +259,6 @@ export function drawRunSceneMessages(
   const signature = `${tone}|${resultText}`;
   if (signature !== scene.lastResultSignature) {
     scene.lastResultSignature = signature;
-    scene.animateResultMessage(node, tone);
+    animateRunSceneResultMessage(scene, node, tone);
   }
 }

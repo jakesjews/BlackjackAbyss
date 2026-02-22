@@ -243,3 +243,23 @@ export function resolveWatermarkTexture(
     },
   });
 }
+
+export function getTextureSourceSize(scene, textureKey) {
+  const texture = scene?.textures?.get?.(textureKey);
+  const source = texture?.source?.[0];
+  return {
+    width: Math.max(1, Number(source?.width) || Number(texture?.getSourceImage?.()?.width) || 1),
+    height: Math.max(1, Number(source?.height) || Number(texture?.getSourceImage?.()?.height) || 1),
+  };
+}
+
+export function coverSizeForTexture(scene, textureKey, boundsW, boundsH) {
+  const source = getTextureSourceSize(scene, textureKey);
+  const sourceW = source.width;
+  const sourceH = source.height;
+  const scale = Math.max(boundsW / sourceW, boundsH / sourceH);
+  return {
+    width: sourceW * scale,
+    height: sourceH * scale,
+  };
+}
