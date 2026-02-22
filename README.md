@@ -86,13 +86,13 @@ Storage keys:
 
 - GitHub Actions workflow: `.github/workflows/ci.yml`
 - Required check for PR merge to `main`: `quality-gate` (`test:unit`, `test:acceptance`, `build`)
-- Informational smoke job: runs on `main` pushes, nightly schedule, and manual dispatch; uploads `artifacts/visual-smoke/latest`
+- Informational smoke job: runs on `main` pushes, nightly schedule, and manual dispatch; executes acceptance-backed smoke capture and uploads `artifacts/visual-smoke/latest`
 
 ## Test Commands
 
 - `npm run test:unit`: fast vitest coverage for extracted runtime logic modules.
-- `npm run test:acceptance`: Playwright acceptance suite (one-hand core flow + natural camp/shop progression + seeded economy + persistence).
-- `npm run test:smoke`: Playwright smoke flow (desktop/mobile snapshots and bridge checks).
+- `npm run test:acceptance`: Playwright acceptance suite (contracts + one-hand core/camp progression + seeded economy + persistence + visual smoke artifacts).
+- `npm run test:smoke`: targeted acceptance smoke capture (`tests/acceptance/visual-smoke.spec.mjs`) for desktop/mobile snapshots.
 
 ## Build / Deploy
 

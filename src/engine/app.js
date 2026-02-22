@@ -9,11 +9,9 @@ import { ShopScene } from "./scenes/ShopScene.js";
 import { OverlayScene } from "./scenes/OverlayScene.js";
 
 function createRuntimeContext() {
-  const bridgeCompat = createPhaserBridgeCompat();
-  const { bridge } = bridgeCompat;
   let runtimeStepHandler = null;
   const runtime = {
-    bridge,
+    bridge: null,
     tick(deltaMs, timeMs) {
       if (typeof runtimeStepHandler !== "function") {
         return;
@@ -34,17 +32,21 @@ function createRuntimeContext() {
     game: null,
     reportMode(mode) {
       syncPhaserScenesForMode(runtime.game, mode);
-      if (typeof bridge.reportMode === "function") {
-        bridge.reportMode(mode);
+      if (typeof runtime.bridge?.reportMode === "function") {
+        runtime.bridge.reportMode(mode);
       }
     },
     isExternalRendererActive(mode) {
-      if (typeof bridge.isExternalRendererActive !== "function") {
+      if (typeof runtime.bridge?.isExternalRendererActive !== "function") {
         return false;
       }
-      return bridge.isExternalRendererActive(mode);
+      return runtime.bridge.isExternalRendererActive(mode);
     },
   };
+  const bridgeCompat = createPhaserBridgeCompat({
+    getRuntimeApis: () => runtime.apis,
+  });
+  runtime.bridge = bridgeCompat.bridge;
 
   return runtime;
 }

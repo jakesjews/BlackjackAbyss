@@ -13,10 +13,12 @@ Compatibility facade surface (current transitional endpoint):
 
 - `window.__ABYSS_PHASER_BRIDGE__`
 - This bridge is maintained for test/tool compatibility while scenes consume direct runtime APIs.
+- Bridge getters are now read-only compatibility views over `runtime.apis.*` (runtime remains source-of-truth).
 
 ## Menu API
 
-Registered via `setMenuActions`:
+Runtime source: `runtime.apis.menuActions`  
+Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getMenuActions()`
 
 - `startRun()`
 - `resumeRun()`
@@ -25,7 +27,8 @@ Registered via `setMenuActions`:
 
 ## Run API
 
-Registered via `setRunApi`:
+Runtime source: `runtime.apis.runApi`  
+Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getRunApi()`
 
 - `getSnapshot()`
 - `hit()`
@@ -42,7 +45,8 @@ Registered via `setRunApi`:
 
 ## Reward API
 
-Registered via `setRewardApi`:
+Runtime source: `runtime.apis.rewardApi`  
+Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getRewardApi()`
 
 - `getSnapshot()`
 - `prev()`
@@ -53,7 +57,8 @@ Registered via `setRewardApi`:
 
 ## Shop API
 
-Registered via `setShopApi`:
+Runtime source: `runtime.apis.shopApi`  
+Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getShopApi()`
 
 - `getSnapshot()`
 - `prev()`
@@ -65,7 +70,8 @@ Registered via `setShopApi`:
 
 ## Overlay API
 
-Registered via `setOverlayApi`:
+Runtime source: `runtime.apis.overlayApi`  
+Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getOverlayApi()`
 
 - `getSnapshot()`
 - `prevPage()`

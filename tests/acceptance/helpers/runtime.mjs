@@ -126,6 +126,10 @@ export async function shopAction(page, method, ...args) {
   return invokeRuntimeApi(page, "shopApi", method, args);
 }
 
+export async function overlayAction(page, method, ...args) {
+  return invokeRuntimeApi(page, "overlayApi", method, args);
+}
+
 export async function playSingleHand(page, { stepMs = 170, maxSteps = 220 } = {}) {
   const startSnapshot = await readStoredRunSnapshot(page);
   const startHands = Number(startSnapshot?.run?.totalHands || 0);

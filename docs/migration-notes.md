@@ -42,6 +42,8 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Removed dead bridge compatibility stubs no longer used by runtime/scenes (`setGame`, `getCanvas`, `setInputHandlers`).
 - Runtime frame stepping now uses direct runtime context handlers (`runtime.setStepHandler` + `runtime.tick`) instead of bridge step-handler plumbing.
 - Acceptance boot contracts now validate runtime API method sets and bridge API method sets independently (no runtime contract fallback to bridge).
+- Bridge API write-registration has been removed; bridge getters now read runtime APIs directly as a compatibility view.
+- Folded smoke capture into acceptance (`tests/acceptance/visual-smoke.spec.mjs`) and replaced standalone smoke harness script.
 
 ## Transitional / Still Present
 

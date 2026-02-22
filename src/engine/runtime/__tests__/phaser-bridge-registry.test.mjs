@@ -2,8 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { registerRuntimeApis } from "../core/phaser-bridge-apis.js";
 
 describe("phaser bridge registry", () => {
-  it("registers runtime APIs in one pass and mirrors them onto runtime.apis", () => {
-    const phaserBridge = {};
+  it("registers runtime APIs in one pass and validates contracts", () => {
     const runtimeApis = {};
     const state = { mode: "menu" };
     const unlockAudio = vi.fn();
@@ -12,7 +11,6 @@ describe("phaser bridge registry", () => {
     const resumeSavedRun = vi.fn();
     const saveRunSnapshot = vi.fn();
     const openCollection = vi.fn();
-    const registerBridgeApi = vi.fn();
     const menuApiMethods = ["startRun", "resumeRun"];
     const assertApiContract = vi.fn();
     const buildPhaserRunSnapshot = vi.fn();
@@ -54,7 +52,6 @@ describe("phaser bridge registry", () => {
     const registerPhaserOverlayApiFn = vi.fn(() => overlayApi);
 
     const registered = registerRuntimeApis({
-      phaserBridge,
       runtimeApis,
       state,
       unlockAudio,
@@ -63,7 +60,6 @@ describe("phaser bridge registry", () => {
       resumeSavedRun,
       saveRunSnapshot,
       openCollection,
-      registerBridgeApi,
       menuApiMethods,
       assertApiContract,
       buildPhaserRunSnapshot,
@@ -116,7 +112,6 @@ describe("phaser bridge registry", () => {
 
     expect(registerPhaserMenuActionsFn).toHaveBeenCalledWith(
       expect.objectContaining({
-        phaserBridge,
         state,
         unlockAudio,
         startRun,
@@ -124,14 +119,10 @@ describe("phaser bridge registry", () => {
         resumeSavedRun,
         saveRunSnapshot,
         openCollection,
-        registerBridgeApi,
-        menuApiMethods,
-        assertApiContract,
       })
     );
     expect(registerPhaserRunApiFn).toHaveBeenCalledWith(
       expect.objectContaining({
-        phaserBridge,
         buildPhaserRunSnapshot,
         unlockAudio,
         hitAction,
@@ -145,14 +136,10 @@ describe("phaser bridge registry", () => {
         beginQueuedEnemyDefeatTransition,
         playUiSfx,
         goHomeFromActiveRun,
-        registerBridgeApi,
-        runApiMethods,
-        assertApiContract,
       })
     );
     expect(registerPhaserRewardApiFn).toHaveBeenCalledWith(
       expect.objectContaining({
-        phaserBridge,
         state,
         buildPhaserRewardSnapshot,
         moveSelection,
@@ -161,14 +148,10 @@ describe("phaser bridge registry", () => {
         playUiSfx,
         unlockAudio,
         goHomeFromActiveRun,
-        registerBridgeApi,
-        rewardApiMethods,
-        assertApiContract,
       })
     );
     expect(registerPhaserShopApiFn).toHaveBeenCalledWith(
       expect.objectContaining({
-        phaserBridge,
         state,
         buildPhaserShopSnapshot,
         moveSelection,
@@ -178,14 +161,10 @@ describe("phaser bridge registry", () => {
         clampNumber,
         playUiSfx,
         goHomeFromActiveRun,
-        registerBridgeApi,
-        shopApiMethods,
-        assertApiContract,
       })
     );
     expect(registerPhaserOverlayApiFn).toHaveBeenCalledWith(
       expect.objectContaining({
-        phaserBridge,
         state,
         collectionEntries,
         collectionPageLayout,
@@ -194,10 +173,13 @@ describe("phaser bridge registry", () => {
         playUiSfx,
         startRun,
         buildPhaserOverlaySnapshot,
-        registerBridgeApi,
-        overlayApiMethods,
-        assertApiContract,
       })
     );
+
+    expect(assertApiContract).toHaveBeenNthCalledWith(1, menuApi, menuApiMethods, "menu");
+    expect(assertApiContract).toHaveBeenNthCalledWith(2, runApi, runApiMethods, "run");
+    expect(assertApiContract).toHaveBeenNthCalledWith(3, rewardApi, rewardApiMethods, "reward");
+    expect(assertApiContract).toHaveBeenNthCalledWith(4, shopApi, shopApiMethods, "shop");
+    expect(assertApiContract).toHaveBeenNthCalledWith(5, overlayApi, overlayApiMethods, "overlay");
   });
 });

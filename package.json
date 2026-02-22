@@ -10,7 +10,7 @@
     "preview": "vite preview --host --port 4173 --strictPort",
     "vercel-build": "npm run build",
     "test": "npm run test:unit",
-    "test:smoke": "node scripts/visual-smoke.js --url http://127.0.0.1:4173",
+    "test:smoke": "vitest run --config vitest.acceptance.config.mjs tests/acceptance/visual-smoke.spec.mjs",
     "test:unit": "vitest run",
     "test:acceptance": "vitest run --config vitest.acceptance.config.mjs",
     "test:dead-refs": "node scripts/check-dead-refs.mjs"

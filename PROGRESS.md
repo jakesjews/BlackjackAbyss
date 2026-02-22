@@ -11,7 +11,9 @@
 - Scene runtime access now reads `game.__ABYSS_RUNTIME__.apis` directly; bridge remains compatibility-only for tests/tools.
 - Runtime mode sync now routes through direct runtime context callbacks in `src/engine/app.js` and only forwards to bridge for compatibility.
 - Runtime frame stepping is now runtime-context owned (`runtime.setStepHandler`/`runtime.tick`), not bridge-owned.
-- Last Updated: 2026-02-21 19:21:53 EST
+- Bridge is now read-only compatibility over runtime APIs (bridge write-registration removed).
+- Smoke coverage is now acceptance-backed (`tests/acceptance/visual-smoke.spec.mjs`) with dedicated `test:smoke` targeting that spec.
+- Last Updated: 2026-02-21 19:31:28 EST
 
 ## Current Focus
 
@@ -31,6 +33,9 @@
 - Shifted scene mode sync ownership to app runtime context (`runtime.reportMode`) and kept bridge mode reporting as compatibility forwarding.
 - Moved scene-driven runtime frame stepping off the bridge and onto direct runtime context step handlers (`runtime.setStepHandler` in runtime loop + `runtime.tick` in scene updates).
 - Tightened acceptance boot contracts so runtime API contracts and bridge API contracts are both asserted independently.
+- Removed bridge API write-registration flow from runtime API setup; runtime APIs are now canonical and bridge getters mirror them for compatibility.
+- Removed obsolete standalone smoke harness (`scripts/visual-smoke.js`) and moved desktop/mobile smoke artifact capture into acceptance (`tests/acceptance/visual-smoke.spec.mjs`).
+- Updated CI smoke job to run acceptance-backed smoke directly (no manual Vite background server management in workflow).
 - Updated app boot flow so `src/main.js` initializes Phaser then runtime bootstrap.
 - Removed obsolete compatibility wrapper `game.js` and package export pointer.
 - Added runtime unit tests and stabilized smoke checks.
@@ -121,7 +126,7 @@
 
 - `npm run test:unit`: passing (runtime module tests).
 - `npm run test:acceptance`: passing (contracts + one-hand core/camp flow + seeded economy + persistence/resume).
-- `npm run test:smoke`: passing (desktop/mobile flow snapshots).
+- `npm run test:smoke`: passing (acceptance-backed desktop/mobile flow snapshots).
 - `npm run build`: passing (Vite production bundle).
 - `npm run test:dead-refs`: passing (no stale bootstrap/legacy-adapter symbol references).
 - Production deploy: `https://blackjackabyss.vercel.app`.

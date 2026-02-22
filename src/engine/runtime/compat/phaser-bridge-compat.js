@@ -11,16 +11,20 @@ function asMethodMap(source, methodNames) {
   return methodMap;
 }
 
-export function createPhaserBridgeCompat({ externalRenderModes = EXTERNAL_RENDER_MODES } = {}) {
+export function createPhaserBridgeCompat({
+  externalRenderModes = EXTERNAL_RENDER_MODES,
+  getRuntimeApis = null,
+} = {}) {
   const state = {
     mode: "menu",
     modeHandler: null,
-    menuActions: null,
-    runApi: null,
-    rewardApi: null,
-    shopApi: null,
-    overlayApi: null,
   };
+  const readRuntimeApis = typeof getRuntimeApis === "function" ? getRuntimeApis : () => null;
+
+  function readApi(runtimeKey, methodNames) {
+    const runtimeApis = readRuntimeApis();
+    return asMethodMap(runtimeApis?.[runtimeKey], methodNames);
+  }
 
   function setMode(mode) {
     if (typeof mode !== "string" || mode.length === 0 || state.mode === mode) {
@@ -42,14 +46,11 @@ export function createPhaserBridgeCompat({ externalRenderModes = EXTERNAL_RENDER
         state.modeHandler(state.mode);
       }
     },
-    setMenuActions(actions) {
-      state.menuActions = asMethodMap(actions, ["startRun", "resumeRun", "openCollection", "hasSavedRun"]);
-    },
     getMenuActions() {
-      return state.menuActions;
+      return readApi("menuActions", ["startRun", "resumeRun", "openCollection", "hasSavedRun"]);
     },
-    setRunApi(api) {
-      state.runApi = asMethodMap(api, [
+    getRunApi() {
+      return readApi("runApi", [
         "getSnapshot",
         "hit",
         "stand",
@@ -64,26 +65,14 @@ export function createPhaserBridgeCompat({ externalRenderModes = EXTERNAL_RENDER
         "goHome",
       ]);
     },
-    getRunApi() {
-      return state.runApi;
-    },
-    setRewardApi(api) {
-      state.rewardApi = asMethodMap(api, ["getSnapshot", "prev", "next", "claim", "selectIndex", "goHome"]);
-    },
     getRewardApi() {
-      return state.rewardApi;
-    },
-    setShopApi(api) {
-      state.shopApi = asMethodMap(api, ["getSnapshot", "prev", "next", "buy", "continueRun", "selectIndex", "goHome"]);
+      return readApi("rewardApi", ["getSnapshot", "prev", "next", "claim", "selectIndex", "goHome"]);
     },
     getShopApi() {
-      return state.shopApi;
-    },
-    setOverlayApi(api) {
-      state.overlayApi = asMethodMap(api, ["getSnapshot", "prevPage", "nextPage", "backToMenu", "restart", "confirm"]);
+      return readApi("shopApi", ["getSnapshot", "prev", "next", "buy", "continueRun", "selectIndex", "goHome"]);
     },
     getOverlayApi() {
-      return state.overlayApi;
+      return readApi("overlayApi", ["getSnapshot", "prevPage", "nextPage", "backToMenu", "restart", "confirm"]);
     },
     isExternalRendererActive(mode) {
       return typeof mode === "string" && externalRenderModes.has(mode);

@@ -47,10 +47,17 @@ async function ensureBrowser() {
   return sharedBrowser;
 }
 
-export async function createAcceptanceSession({ economy = null } = {}) {
+export async function createAcceptanceSession({ economy = null, viewport: requestedViewport = null } = {}) {
   const browser = await ensureBrowser();
+  const defaultViewport = { width: 1280, height: 720 };
+  const viewport = requestedViewport && typeof requestedViewport === "object"
+    ? {
+      width: Math.max(320, Math.floor(Number(requestedViewport.width) || defaultViewport.width)),
+      height: Math.max(240, Math.floor(Number(requestedViewport.height) || defaultViewport.height)),
+    }
+    : defaultViewport;
   const context = await browser.newContext({
-    viewport: { width: 1280, height: 720 },
+    viewport,
   });
   const page = await context.newPage();
   const consoleErrors = [];

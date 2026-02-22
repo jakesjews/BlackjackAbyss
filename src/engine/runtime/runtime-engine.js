@@ -42,7 +42,6 @@ import {
 } from "./bridge/register-apis.js";
 import { publishRuntimeTestHooks } from "./bridge/snapshots.js";
 import { readRuntimeTestFlags } from "./testing/test-controls.js";
-import { registerBridgeApi } from "./core/api-registry.js";
 import { createRuntimeSnapshotRegistry, registerRuntimeApis as registerRuntimeApisFromModule } from "./core/phaser-bridge-apis.js";
 import {
   BOSS_RELIC,
@@ -138,22 +137,16 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
   }
   const runtimeContext = phaserRuntimePayload.runtime || null;
   const phaserGame = phaserRuntimePayload.game || runtimeContext?.game || null;
-  const phaserBridge = phaserRuntimePayload.bridge || runtimeContext?.bridge || null;
   const runtimeApis = runtimeContext?.apis && typeof runtimeContext.apis === "object" ? runtimeContext.apis : null;
   const gameShell = phaserGame?.canvas?.parentElement || null;
   const canvas = phaserGame?.canvas || null;
-  const reportMode = typeof runtimeContext?.reportMode === "function"
-    ? runtimeContext.reportMode.bind(runtimeContext)
-    : (mode) => {
-      if (phaserBridge && typeof phaserBridge.reportMode === "function") {
-        phaserBridge.reportMode(mode);
-      }
-    };
-  const isExternalRendererActive = typeof runtimeContext?.isExternalRendererActive === "function"
-    ? runtimeContext.isExternalRendererActive.bind(runtimeContext)
-    : (mode) => Boolean(phaserBridge?.isExternalRendererActive?.(mode));
+  const reportMode = runtimeContext?.reportMode;
+  const isExternalRendererActive = runtimeContext?.isExternalRendererActive;
   if (!runtimeContext || !runtimeApis || !phaserGame || !gameShell || !canvas) {
     throw new Error("Unable to initialize Phaser runtime context.");
+  }
+  if (typeof reportMode !== "function" || typeof isExternalRendererActive !== "function") {
+    throw new Error("Runtime context is missing Phaser-native mode bridge handlers.");
   }
 
   const WIDTH = RUNTIME_WIDTH;
@@ -180,7 +173,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
 
   installRuntimeModeBridge({
     state,
-    reportMode,
+    reportMode: reportMode.bind(runtimeContext),
     resizeCanvas,
   });
 
@@ -373,7 +366,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
   }
 
   function isExternalModeRendering(mode = state.mode) {
-    return isExternalRendererActive(mode);
+    return isExternalRendererActive.call(runtimeContext, mode);
   }
 
   const runtimeAudio = createRuntimeAudioFromModule({
@@ -803,7 +796,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     buildPhaserOverlaySnapshot,
   } = runtimeSnapshotRegistry;
   const runtimeApiRegistration = {
-    phaserBridge,
     runtimeApis,
     state,
     unlockAudio,
@@ -812,7 +804,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     resumeSavedRun,
     saveRunSnapshot,
     openCollection,
-    registerBridgeApi,
     menuApiMethods: MENU_API_METHODS,
     assertApiContract,
     buildPhaserRunSnapshot,

@@ -15,15 +15,19 @@ describe("phaser bridge compatibility facade", () => {
     expect(bridge.isExternalRendererActive("unknown")).toBe(false);
   });
 
-  it("maps API setters/getters while filtering non-function members", () => {
-    const { bridge } = createPhaserBridgeCompat();
+  it("reads runtime APIs through compatibility getters while filtering non-function members", () => {
+    const runtimeApis = {
+      menuActions: { startRun: () => "ok", hasSavedRun: "nope" },
+      runApi: { getSnapshot: () => ({}) },
+    };
+    const { bridge } = createPhaserBridgeCompat({
+      getRuntimeApis: () => runtimeApis,
+    });
 
-    bridge.setMenuActions({ startRun: () => "ok", hasSavedRun: "nope" });
     const menu = bridge.getMenuActions();
     expect(typeof menu.startRun).toBe("function");
     expect(menu.hasSavedRun).toBeNull();
 
-    bridge.setRunApi({ getSnapshot: () => ({}) });
     const run = bridge.getRunApi();
     expect(typeof run.getSnapshot).toBe("function");
     expect(run.hit).toBeNull();

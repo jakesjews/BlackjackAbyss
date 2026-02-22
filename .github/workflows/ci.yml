@@ -73,33 +73,8 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Start Vite server
-        run: |
-          npm run dev -- --host 127.0.0.1 --port 4173 --strictPort > /tmp/vite-smoke.log 2>&1 &
-          echo "VITE_PID=$!" >> "$GITHUB_ENV"
-
-      - name: Wait for server
-        run: |
-          for _ in {1..120}; do
-            if curl -fsS http://127.0.0.1:4173 >/dev/null; then
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "Server did not become ready at http://127.0.0.1:4173"
-          cat /tmp/vite-smoke.log || true
-          exit 1
-
       - name: Run smoke test
         run: npm run test:smoke
-
-      - name: Stop Vite server
-        if: always()
-        run: |
-          if [ -n "${VITE_PID:-}" ] && kill -0 "$VITE_PID" 2>/dev/null; then
-            kill "$VITE_PID" || true
-            wait "$VITE_PID" || true
-          fi
 
       - name: Upload smoke artifacts
         if: always()

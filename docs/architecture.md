@@ -37,7 +37,7 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - `src/engine/app.js` exposes a direct runtime context: `game`, runtime API slots (`runtime.apis.*`), runtime bridge facade, and runtime tick function.
 - Runtime frame stepping is scene-driven through runtime context handlers (`runtime.tick` + `runtime.setStepHandler`) rather than bridge plumbing.
 - Scenes consume runtime APIs through `src/engine/scenes/runtime-bridge.js` by reading `game.__ABYSS_RUNTIME__.apis`.
-- `window.__ABYSS_PHASER_BRIDGE__` is kept as a thin compatibility facade for test/tool contracts.
+- `window.__ABYSS_PHASER_BRIDGE__` is kept as a thin read-only compatibility facade for test/tool contracts.
 
 ## Runtime vs Scene Responsibilities
 
@@ -79,5 +79,6 @@ Write path:
 
 ## Verification Gate
 
-- Refactors should clear: `test:unit`, `test:acceptance`, `test:smoke`, and `build`.
-- Acceptance tests use one-hand core + natural camp flows, with non-production economy seeding for faster buy-path verification.
+- Refactors should clear: `test:unit`, `test:acceptance`, and `build`.
+- `test:smoke` remains available as a focused acceptance-backed smoke rerun (`tests/acceptance/visual-smoke.spec.mjs`).
+- Acceptance tests use one-hand core + natural camp flows, non-production economy seeding for faster buy-path verification, and desktop/mobile smoke artifact capture.

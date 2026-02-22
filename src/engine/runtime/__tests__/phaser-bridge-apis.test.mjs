@@ -7,17 +7,6 @@ import {
   registerPhaserShopApi,
 } from "../core/phaser-bridge-apis.js";
 
-function createRegisterBridgeApiSpy() {
-  const calls = [];
-  const registerBridgeApi = ({ bridge, setterName, api, ...rest }) => {
-    calls.push({ setterName, api, ...rest });
-    if (bridge && typeof bridge[setterName] === "function") {
-      bridge[setterName](api);
-    }
-  };
-  return { calls, registerBridgeApi };
-}
-
 function clampNumber(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) {
@@ -26,11 +15,9 @@ function clampNumber(value, min, max, fallback) {
   return Math.max(min, Math.min(max, n));
 }
 
-describe("phaser bridge api registrars", () => {
-  it("registers menu API and preserves mode guards", () => {
+describe("phaser runtime API creators", () => {
+  it("creates menu API and preserves mode guards", () => {
     const state = { mode: "menu" };
-    let menuApi = null;
-    const bridge = { setMenuActions: (api) => (menuApi = api) };
     const counters = {
       unlockAudio: 0,
       startRun: 0,
@@ -38,10 +25,8 @@ describe("phaser bridge api registrars", () => {
       saveRunSnapshot: 0,
       openCollection: 0,
     };
-    const { calls, registerBridgeApi } = createRegisterBridgeApiSpy();
 
-    registerPhaserMenuActions({
-      phaserBridge: bridge,
+    const menuApi = registerPhaserMenuActions({
       state,
       unlockAudio: () => {
         counters.unlockAudio += 1;
@@ -60,14 +45,7 @@ describe("phaser bridge api registrars", () => {
       openCollection: () => {
         counters.openCollection += 1;
       },
-      registerBridgeApi,
-      menuApiMethods: ["startRun", "resumeRun", "openCollection", "hasSavedRun"],
-      assertApiContract: () => {},
     });
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0].setterName).toBe("setMenuActions");
-    expect(menuApi).toBeTruthy();
 
     menuApi.startRun();
     menuApi.resumeRun();
@@ -85,9 +63,7 @@ describe("phaser bridge api registrars", () => {
     });
   });
 
-  it("registers run API and wires all actions", () => {
-    let runApi = null;
-    const bridge = { setRunApi: (api) => (runApi = api) };
+  it("creates run API and wires all actions", () => {
     const calls = {
       unlockAudio: 0,
       hit: 0,
@@ -102,10 +78,8 @@ describe("phaser bridge api registrars", () => {
       card: null,
       goHome: 0,
     };
-    const { registerBridgeApi } = createRegisterBridgeApiSpy();
 
-    registerPhaserRunApi({
-      phaserBridge: bridge,
+    const runApi = registerPhaserRunApi({
       buildPhaserRunSnapshot: () => ({ mode: "playing" }),
       unlockAudio: () => {
         calls.unlockAudio += 1;
@@ -143,22 +117,6 @@ describe("phaser bridge api registrars", () => {
       goHomeFromActiveRun: () => {
         calls.goHome += 1;
       },
-      registerBridgeApi,
-      runApiMethods: [
-        "getSnapshot",
-        "hit",
-        "stand",
-        "doubleDown",
-        "split",
-        "deal",
-        "confirmIntro",
-        "fireballLaunch",
-        "fireballImpact",
-        "startEnemyDefeatTransition",
-        "card",
-        "goHome",
-      ],
-      assertApiContract: () => {},
     });
 
     expect(runApi.getSnapshot()).toEqual({ mode: "playing" });
@@ -190,14 +148,12 @@ describe("phaser bridge api registrars", () => {
     });
   });
 
-  it("registers reward API with selection and home behavior", () => {
+  it("creates reward API with selection and home behavior", () => {
     const state = {
       mode: "reward",
       rewardOptions: [{ id: "r1" }, { id: "r2" }],
       selectionIndex: 0,
     };
-    let rewardApi = null;
-    const bridge = { setRewardApi: (api) => (rewardApi = api) };
     const calls = {
       moveSelection: [],
       claim: 0,
@@ -205,10 +161,8 @@ describe("phaser bridge api registrars", () => {
       unlockAudio: 0,
       goHome: 0,
     };
-    const { registerBridgeApi } = createRegisterBridgeApiSpy();
 
-    registerPhaserRewardApi({
-      phaserBridge: bridge,
+    const rewardApi = registerPhaserRewardApi({
       state,
       buildPhaserRewardSnapshot: () => ({ mode: "reward" }),
       moveSelection: (delta, length) => {
@@ -227,9 +181,6 @@ describe("phaser bridge api registrars", () => {
       goHomeFromActiveRun: () => {
         calls.goHome += 1;
       },
-      registerBridgeApi,
-      rewardApiMethods: ["getSnapshot", "prev", "next", "claim", "selectIndex", "goHome"],
-      assertApiContract: () => {},
     });
 
     expect(rewardApi.getSnapshot()).toEqual({ mode: "reward" });
@@ -255,14 +206,12 @@ describe("phaser bridge api registrars", () => {
     expect(calls.goHome).toBe(1);
   });
 
-  it("registers shop API with buy/continue mode guards", () => {
+  it("creates shop API with buy/continue mode guards", () => {
     const state = {
       mode: "shop",
       shopStock: [{ id: "a" }, { id: "b" }],
       selectionIndex: 0,
     };
-    let shopApi = null;
-    const bridge = { setShopApi: (api) => (shopApi = api) };
     const calls = {
       moveSelection: [],
       buy: [],
@@ -271,10 +220,8 @@ describe("phaser bridge api registrars", () => {
       unlockAudio: 0,
       goHome: 0,
     };
-    const { registerBridgeApi } = createRegisterBridgeApiSpy();
 
-    registerPhaserShopApi({
-      phaserBridge: bridge,
+    const shopApi = registerPhaserShopApi({
       state,
       buildPhaserShopSnapshot: () => ({ mode: "shop" }),
       moveSelection: (delta, length) => {
@@ -296,9 +243,6 @@ describe("phaser bridge api registrars", () => {
       goHomeFromActiveRun: () => {
         calls.goHome += 1;
       },
-      registerBridgeApi,
-      shopApiMethods: ["getSnapshot", "prev", "next", "buy", "continueRun", "selectIndex", "goHome"],
-      assertApiContract: () => {},
     });
 
     expect(shopApi.getSnapshot()).toEqual({ mode: "shop" });
@@ -326,22 +270,18 @@ describe("phaser bridge api registrars", () => {
     expect(calls.goHome).toBe(1);
   });
 
-  it("registers overlay API and handles collection + restart transitions", () => {
+  it("creates overlay API and handles collection + restart transitions", () => {
     const state = {
       mode: "collection",
       collectionPage: 0,
     };
-    let overlayApi = null;
-    const bridge = { setOverlayApi: (api) => (overlayApi = api) };
     const calls = {
       unlockAudio: 0,
       playUi: [],
       startRun: 0,
     };
-    const { registerBridgeApi } = createRegisterBridgeApiSpy();
 
-    registerPhaserOverlayApi({
-      phaserBridge: bridge,
+    const overlayApi = registerPhaserOverlayApi({
       state,
       collectionEntries: () => Array.from({ length: 10 }, (_, index) => ({ index })),
       collectionPageLayout: () => ({ cols: 2, rows: 2 }),
@@ -356,9 +296,6 @@ describe("phaser bridge api registrars", () => {
         calls.startRun += 1;
       },
       buildPhaserOverlaySnapshot: () => ({ mode: state.mode }),
-      registerBridgeApi,
-      overlayApiMethods: ["getSnapshot", "prevPage", "nextPage", "backToMenu", "restart", "confirm"],
-      assertApiContract: () => {},
     });
 
     expect(overlayApi.getSnapshot()).toEqual({ mode: "collection" });
