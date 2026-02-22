@@ -1,12 +1,3 @@
-export const GRUNT_SOURCES = [
-  "/audio/soundbites/grunt.wav",
-  "/audio/soundbites/grunt.ogg",
-];
-
-export const CARD_SOURCES = ["/audio/soundbites/card.wav"];
-
-export const MUSIC_TRACK_SOURCES = ["/audio/music/blackjack.mp3"];
-
 export function createAmbientOrbs({
   width,
   height,

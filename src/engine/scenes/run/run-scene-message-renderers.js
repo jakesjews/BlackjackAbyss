@@ -8,6 +8,7 @@ import {
   getRunSceneEncounterTypeLabel,
   getRunSceneTransitionState,
 } from "./run-scene-resolution-renderers.js";
+import { invokeRunSceneAction, isRunSceneCompactLayout } from "./run-scene-runtime-helpers.js";
 
 export function drawRunSceneMessages(
   scene,
@@ -34,7 +35,7 @@ export function drawRunSceneMessages(
   }
 
   if (intro.active || scene.introOverlayProgress > 0.02) {
-    const compact = scene.isCompactLayout(width);
+    const compact = isRunSceneCompactLayout(width);
     const introContentDepth = RUN_MODAL_BASE_DEPTH + RUN_MODAL_CONTENT_OFFSET + 6;
     const introButtonDepth = introContentDepth + 8;
     const introScale = 1.725;
@@ -161,7 +162,7 @@ export function drawRunSceneMessages(
         styleSet,
         onPress: () => {
           if (scene.lastSnapshot?.intro?.active && scene.lastSnapshot?.intro?.ready) {
-            scene.invokeAction("confirmIntro");
+            invokeRunSceneAction(scene, "confirmIntro");
           }
         },
         width: 196,
@@ -213,7 +214,7 @@ export function drawRunSceneMessages(
   const panelY = Math.round(layout?.messageY || height * 0.507);
   const maxPanelW = Math.round(layout?.messagePanelW || Phaser.Math.Clamp(Math.round(width * 0.44), 500, 640));
   const panelH = Math.round(layout?.messagePanelH || 60);
-  const compact = scene.isCompactLayout(width);
+  const compact = isRunSceneCompactLayout(width);
   const minPanelW = compact ? 220 : 300;
   const panelPadX = compact ? 20 : 26;
   const panelPadY = compact ? 12 : 14;

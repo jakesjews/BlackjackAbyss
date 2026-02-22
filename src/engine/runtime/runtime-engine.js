@@ -10,6 +10,7 @@ import {
   STORAGE_KEYS,
 } from "./constants.js";
 import { createRuntimeState, createProfile, defaultPlayerStats } from "./state/store.js";
+import { AUDIO_KEYS } from "../audio/audio-keys.js";
 import { loadAudioEnabled, safeGetStorage, safeRemoveStorage, safeSetStorage, saveAudioEnabled } from "./persistence/storage.js";
 import {
   CARD_RANKS as RANKS,
@@ -101,9 +102,6 @@ import { installRuntimeTestHooks } from "./core/test-hooks.js";
 import { installRuntimeModeSync } from "./core/runtime-mode-sync.js";
 import { createLandscapeLockRequester } from "./core/audio-system.js";
 import {
-  CARD_SOURCES,
-  GRUNT_SOURCES,
-  MUSIC_TRACK_SOURCES,
   createRuntimeVisualSeeds,
 } from "./core/runtime-content-seeds.js";
 import { createRuntimeEffects } from "./core/runtime-effects.js";
@@ -307,13 +305,11 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
 
   const runtimeAudio = createRuntimeAudioFromModule({
     state,
+    phaserGame,
     globalWindow: window,
-    createAudioElement: () => new Audio(),
+    phaserAudioKeys: AUDIO_KEYS,
     storageKeys: STORAGE_KEYS,
     saveAudioEnabled,
-    musicTrackSources: MUSIC_TRACK_SOURCES,
-    gruntSources: GRUNT_SOURCES,
-    cardSources: CARD_SOURCES,
     addLog,
     setAnnouncement,
     clampNumber,

@@ -1,4 +1,5 @@
 import { closeRunSceneTopModal, setRunSceneLogsScroll, toggleRunSceneModal } from "./run-scene-modals.js";
+import { invokeRunSceneAction } from "./run-scene-runtime-helpers.js";
 
 function pointInRect(x, y, rect) {
   if (!rect) {
@@ -16,24 +17,24 @@ export function bindRunSceneKeyboardInput(scene) {
     scene.keyboardHandlers.push({ eventName, handler });
   };
 
-  bind("keydown-Z", () => scene.invokeAction("hit"));
-  bind("keydown-X", () => scene.invokeAction("stand"));
-  bind("keydown-A", () => scene.invokeAction("hit"));
-  bind("keydown-B", () => scene.invokeAction("stand"));
-  bind("keydown-S", () => scene.invokeAction("split"));
-  bind("keydown-C", () => scene.invokeAction("doubleDown"));
+  bind("keydown-Z", () => invokeRunSceneAction(scene, "hit"));
+  bind("keydown-X", () => invokeRunSceneAction(scene, "stand"));
+  bind("keydown-A", () => invokeRunSceneAction(scene, "hit"));
+  bind("keydown-B", () => invokeRunSceneAction(scene, "stand"));
+  bind("keydown-S", () => invokeRunSceneAction(scene, "split"));
+  bind("keydown-C", () => invokeRunSceneAction(scene, "doubleDown"));
   bind("keydown-SPACE", (event) => {
     event.preventDefault();
-    scene.invokeAction("doubleDown");
+    invokeRunSceneAction(scene, "doubleDown");
   });
   bind("keydown-ENTER", (event) => {
     event.preventDefault();
     if (scene.lastSnapshot?.intro?.active && scene.lastSnapshot?.intro?.ready) {
-      scene.invokeAction("confirmIntro");
+      invokeRunSceneAction(scene, "confirmIntro");
     } else if (scene.lastSnapshot?.intro?.active) {
       // Wait for intro text to complete.
     } else {
-      scene.invokeAction("deal");
+      invokeRunSceneAction(scene, "deal");
     }
   });
   bind("keydown-ESC", () => {

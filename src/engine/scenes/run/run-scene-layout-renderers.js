@@ -1,10 +1,9 @@
 import { RUN_BOTTOM_BAR_HEIGHT, RUN_MOBILE_BUTTON_SCALE, RUN_TOP_BAR_HEIGHT } from "./run-scene-config.js";
 import { coverSizeForTexture } from "../ui/texture-processing.js";
+import { isRunSceneCompactLayout } from "./run-scene-runtime-helpers.js";
 
 export function getRunSceneLayout(scene, width, height) {
-  const compact = typeof scene?.isCompactLayout === "function"
-    ? scene.isCompactLayout(width)
-    : width < 760;
+  const compact = isRunSceneCompactLayout(width);
   const topBarH = compact ? 76 : RUN_TOP_BAR_HEIGHT;
   const compactButtonH = Math.max(36, Math.round(50 * RUN_MOBILE_BUTTON_SCALE));
   const compactRowGap = Math.max(8, Math.round(10 * RUN_MOBILE_BUTTON_SCALE));

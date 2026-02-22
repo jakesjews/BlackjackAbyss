@@ -4,6 +4,7 @@
 
 - Phaser-first runtime migration is active in production with acceptance tests in place as a refactor gate.
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
+- Runtime audio fallback cleanup is in progress: music/card/grunt playback now uses Phaser preloaded audio keys and Phaser sound manager only (no `new Audio()` runtime path).
 - External-renderer gating branches have now been removed from runtime/app flow; Phaser scenes are the only active presentation path.
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
 - Visual regression runs in CI against committed golden images (`tests/visual-baseline/*`) but is currently warning-only (non-blocking) during UI churn.
@@ -17,6 +18,7 @@
 - Scene-side browser viewport fallbacks have been removed; scene sizing/input checks use Phaser APIs.
 - RunScene static config (icons, texture keys, style constants, avatar-key map) is now extracted into a dedicated module.
 - RunScene lifecycle setup/teardown now lives in `src/engine/scenes/run/run-scene-lifecycle.js`; `RunScene` remains orchestration-focused.
+- RunScene runtime-coupled scene helpers now live in `src/engine/scenes/run/run-scene-runtime-helpers.js` (action gating, compact/hint checks, avatar shake, SFX dispatch, resolution animation counters).
 - ShopScene is now modularized under `src/engine/scenes/shop/*` with config, lifecycle, input, layout, action, card, and modal modules.
 - RewardScene is now modularized under `src/engine/scenes/reward/*` with config, lifecycle, layout, action, card, and modal modules.
 - OverlayScene is now modularized under `src/engine/scenes/overlay/*` with config, lifecycle/input, and renderer modules.
@@ -24,7 +26,7 @@
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
 - Smoke coverage is now split from acceptance: `test:acceptance` covers gameplay/browser flow while `test:smoke`/`test:visual` target visual snapshots.
 - `test:smoke` is a focused visual rerun path for artifact refresh.
-- Last Updated: 2026-02-23 00:37:00 EST
+- Last Updated: 2026-02-23 01:06:00 EST
 
 ## Current Focus
 
@@ -63,6 +65,7 @@
 - Removed broken balance probe tooling for now.
 - Added one-hand acceptance test harness for core/camp/persistence flows.
 - Replaced procedural generated music with MP3 runtime BGM and retained prominent SFX mixing.
+- Removed runtime HTMLAudio fallback wiring (`new Audio()`, clip-pool state, source-list passthrough imports) and updated lifecycle/audio tests to Phaser sound objects.
 - Added GitHub Actions CI (`quality-gate` + scheduled/main smoke artifact job).
 - Simplified Phaser host/runtime seam by removing dead app service layer and normalizing scene runtime API access.
 - Added test-only economy seed control (`window.__ABYSS_TEST_FLAGS__.economy.startingGold`) and updated acceptance camp coverage to use seeded chips.
@@ -172,6 +175,8 @@
 - Added `src/engine/scenes/overlay/overlay-scene-{config,lifecycle,renderers}.js`; reduced `src/engine/scenes/OverlayScene.js` from 858 lines to 99 lines.
 - Added `src/engine/scenes/menu/menu-scene-{config,lifecycle,layout-renderers,ember-renderers}.js`; reduced `src/engine/scenes/MenuScene.js` from 634 lines to 71 lines.
 - Removed remaining RunScene button-style pass-through wrapper and now route modal/action/relic button visual styling directly through shared gradient style utilities.
+- Added `src/engine/scenes/run/run-scene-runtime-helpers.js` and rewired run renderer/input modules to call helpers directly instead of scene pass-through methods.
+- Reduced `src/engine/scenes/RunScene.js` from 464 lines to 352 lines in this slice.
 
 ## Next Up
 

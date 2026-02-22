@@ -15,7 +15,7 @@ describe("runtime lifecycle module", () => {
     const state = {
       audio: {
         context: { state: "running", suspend },
-        musicElement: { paused: false, pause },
+        musicSound: { isPlaying: true, pause },
       },
     };
 
@@ -40,16 +40,20 @@ describe("runtime lifecycle module", () => {
     expect(saveProfile).toHaveBeenCalledTimes(2);
   });
 
-  it("handleRuntimeVisible resumes audio graph and restarts paused music", async () => {
-    const play = vi.fn(() => Promise.resolve());
-    const resume = vi.fn(() => Promise.resolve());
+  it("handleRuntimeVisible resumes audio graph and resumes paused music", async () => {
+    const resumeMusic = vi.fn();
+    const resumeContext = vi.fn(() => Promise.resolve());
     const requestLandscapeLock = vi.fn();
     const state = {
       audio: {
         enabled: true,
         started: true,
-        context: { state: "suspended", resume },
-        musicElement: { paused: true, play },
+        context: { state: "suspended", resume: resumeContext },
+        musicSound: {
+          isPlaying: false,
+          isPaused: true,
+          resume: resumeMusic,
+        },
       },
     };
 
@@ -61,8 +65,37 @@ describe("runtime lifecycle module", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(resume).toHaveBeenCalledTimes(1);
-    expect(play).toHaveBeenCalledTimes(1);
+    expect(resumeContext).toHaveBeenCalledTimes(1);
+    expect(resumeMusic).toHaveBeenCalledTimes(1);
+    expect(requestLandscapeLock).toHaveBeenCalledTimes(1);
+  });
+
+  it("handleRuntimeVisible falls back to play when resume is unavailable", async () => {
+    const play = vi.fn(() => Promise.resolve());
+    const requestLandscapeLock = vi.fn();
+    const state = {
+      audio: {
+        enabled: true,
+        started: true,
+        context: { state: "suspended", resume: vi.fn(() => Promise.resolve()) },
+        musicSound: {
+          isPlaying: false,
+          isPaused: false,
+          volume: 0.2,
+          play,
+        },
+      },
+    };
+
+    handleRuntimeVisible({
+      state,
+      requestLandscapeLock,
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(play).toHaveBeenCalledWith({ loop: true, volume: 0.2 });
     expect(requestLandscapeLock).toHaveBeenCalledTimes(1);
   });
 
@@ -92,7 +125,7 @@ describe("runtime lifecycle module", () => {
         enabled: false,
         started: false,
         context: null,
-        musicElement: null,
+        musicSound: null,
       },
     };
     const globalWindow = {};

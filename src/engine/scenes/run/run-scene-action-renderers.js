@@ -10,6 +10,12 @@ import {
   RUN_TOP_ACTION_ICON_KEYS,
 } from "./run-scene-config.js";
 import { closeRunSceneModals, setRunSceneModalOpen, toggleRunSceneModal } from "./run-scene-modals.js";
+import {
+  hasActiveRunSceneCardDealAnimations,
+  hasActiveRunSceneResolutionAnimations,
+  invokeRunSceneAction,
+  shouldShowRunSceneKeyboardHints,
+} from "./run-scene-runtime-helpers.js";
 
 export function rebuildRunSceneButtons(scene, actions, styleSet) {
   const safeActions = Array.isArray(actions) ? actions : [];
@@ -26,7 +32,7 @@ export function rebuildRunSceneButtons(scene, actions, styleSet) {
       id: action.id,
       label: action.label,
       styleSet,
-      onPress: () => scene.invokeAction(action.id),
+      onPress: () => invokeRunSceneAction(scene, action.id),
       width: 210,
       height: 64,
       fontSize: 28,
@@ -74,7 +80,9 @@ export function renderRunSceneButtons(
   const introActive = Boolean(snapshot?.intro?.active);
   const status = snapshot?.status || {};
   const deferActionInput =
-    Boolean(deferResolutionUi) || scene.hasActiveResolutionAnimations() || scene.hasActiveCardDealAnimations();
+    Boolean(deferResolutionUi) ||
+    hasActiveRunSceneResolutionAnimations(scene) ||
+    hasActiveRunSceneCardDealAnimations(scene);
   const compact = Boolean(runLayout?.compact);
 
   if (!introActive) {
@@ -97,7 +105,7 @@ export function renderRunSceneButtons(
 
   rebuildRunSceneButtons(scene, actions, styleSet);
   const count = actions.length;
-  const showKeyboardHints = scene.shouldShowKeyboardHints(width);
+  const showKeyboardHints = shouldShowRunSceneKeyboardHints(scene, width);
   const mobileButtonScale = compact ? RUN_MOBILE_BUTTON_SCALE : 1;
   let spacing = compact ? Math.max(6, Math.round(8 * mobileButtonScale)) : 14;
   const rowGap = compact ? Math.max(8, Math.round(10 * mobileButtonScale)) : 14;
@@ -236,7 +244,7 @@ export function renderRunSceneTopActions(scene, { snapshot, width, runLayout, st
         iconKey: RUN_TOP_ACTION_ICON_KEYS.home,
         onPress: () => {
           closeRunSceneModals(scene);
-          scene.invokeAction("goHome");
+          invokeRunSceneAction(scene, "goHome");
         },
       },
     ];
@@ -332,7 +340,7 @@ export function renderRunSceneRelicButton(scene, { snapshot, layout, runLayout, 
   }
   const compact = Boolean(runLayout?.compact);
   const mobileButtonScale = compact ? RUN_MOBILE_BUTTON_SCALE : 1;
-  const showKeyboardHints = scene.shouldShowKeyboardHints(scene.scale.gameSize.width);
+  const showKeyboardHints = shouldShowRunSceneKeyboardHints(scene, scene.scale.gameSize.width);
   const desiredButtonW = compact ? Math.round(170 * mobileButtonScale) : 220;
   const availableButtonW = Math.max(120, Math.round(layout.playerInfoWidth || desiredButtonW));
   const buttonW = Math.max(120, Math.min(desiredButtonW, availableButtonW));

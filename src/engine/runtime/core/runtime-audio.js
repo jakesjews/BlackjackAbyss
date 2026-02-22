@@ -1,38 +1,132 @@
 export function createRuntimeAudio({
   state,
+  phaserGame,
+  phaserAudioKeys,
   globalWindow,
-  createAudioElement = () => new Audio(),
   storageKeys,
   saveAudioEnabled,
-  musicTrackSources,
-  gruntSources,
-  cardSources,
   addLog,
   setAnnouncement,
   clampNumber,
   lerpFn = (a, b, t) => a + (b - a) * t,
 }) {
+  const musicKey = typeof phaserAudioKeys?.music === "string" ? phaserAudioKeys.music : "";
+  const cardKey = typeof phaserAudioKeys?.card === "string" ? phaserAudioKeys.card : "";
+  const gruntKey = typeof phaserAudioKeys?.grunt === "string" ? phaserAudioKeys.grunt : "";
+
   function getAudioContextCtor() {
     return globalWindow.AudioContext || globalWindow.webkitAudioContext || null;
   }
 
-  function ensureMusicElement() {
-    if (state.audio.musicElement) {
-      return state.audio.musicElement;
+  function getSoundManager() {
+    const manager = phaserGame?.sound || null;
+    return manager && typeof manager.add === "function" && typeof manager.play === "function" ? manager : null;
+  }
+
+  function hasCachedAudioKey(key) {
+    if (!key) {
+      return false;
     }
-    const track = createAudioElement();
-    track.preload = "auto";
-    track.loop = true;
-    track.volume = 0;
-    track.src = musicTrackSources[state.audio.musicSourceIndex] || musicTrackSources[0];
-    track.addEventListener("error", () => {
-      if (state.audio.musicSourceIndex < musicTrackSources.length - 1) {
-        state.audio.musicSourceIndex += 1;
-        track.src = musicTrackSources[state.audio.musicSourceIndex];
+    const audioCache = phaserGame?.cache?.audio;
+    return Boolean(audioCache && typeof audioCache.exists === "function" && audioCache.exists(key));
+  }
+
+  function setMusicVolume(sound, value) {
+    if (!sound) {
+      return;
+    }
+    const safeVolume = clampNumber(value, 0, 1, 0);
+    if (typeof sound.setVolume === "function") {
+      sound.setVolume(safeVolume);
+      return;
+    }
+    sound.volume = safeVolume;
+  }
+
+  function getMusicVolume(sound) {
+    if (!sound) {
+      return 0;
+    }
+    return clampNumber(sound.volume, 0, 1, 0);
+  }
+
+  function pauseMusic(sound) {
+    if (!sound) {
+      return;
+    }
+    if (typeof sound.pause === "function") {
+      try {
+        sound.pause();
+        return;
+      } catch {
+        // Ignore pause errors and try stopping.
       }
-    });
-    state.audio.musicElement = track;
-    return track;
+    }
+    if (typeof sound.stop === "function") {
+      try {
+        sound.stop();
+      } catch {
+        // Ignore stop errors.
+      }
+    }
+  }
+
+  function resumeMusic(sound) {
+    if (!sound || sound.isPlaying) {
+      return;
+    }
+    if (sound.isPaused && typeof sound.resume === "function") {
+      try {
+        sound.resume();
+        return;
+      } catch {
+        // Fall through to play.
+      }
+    }
+    if (typeof sound.play === "function") {
+      try {
+        const playResult = sound.play({ loop: true, volume: getMusicVolume(sound) });
+        if (playResult && typeof playResult.catch === "function") {
+          playResult.catch(() => {});
+        }
+      } catch {
+        // Ignore play errors.
+      }
+    }
+  }
+
+  function ensureMusicSound() {
+    if (state.audio.musicSound) {
+      return state.audio.musicSound;
+    }
+    const manager = getSoundManager();
+    if (!manager || !hasCachedAudioKey(musicKey)) {
+      return null;
+    }
+    try {
+      const track = manager.add(musicKey, { loop: true, volume: 0 });
+      if (!track) {
+        return null;
+      }
+      setMusicVolume(track, 0);
+      state.audio.musicSound = track;
+      return track;
+    } catch {
+      return null;
+    }
+  }
+
+  function playPhaserSfx(key, volume) {
+    const manager = getSoundManager();
+    if (!manager || !hasCachedAudioKey(key)) {
+      return false;
+    }
+    try {
+      manager.play(key, { volume: clampNumber(volume, 0, 1, volume) });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   function musicTargetVolumeForMode(mode) {
@@ -82,31 +176,25 @@ export function createRuntimeAudio({
   }
 
   function syncAudioEnabled() {
-    if (!state.audio.context || !state.audio.masterGain) {
-      return;
+    if (state.audio.context && state.audio.masterGain) {
+      const target = state.audio.enabled ? 0.86 : 0;
+      state.audio.masterGain.gain.setTargetAtTime(target, state.audio.context.currentTime, 0.08);
     }
-    const target = state.audio.enabled ? 0.86 : 0;
-    state.audio.masterGain.gain.setTargetAtTime(target, state.audio.context.currentTime, 0.08);
-    const track = ensureMusicElement();
+    const track = ensureMusicSound();
     if (!track) {
       return;
     }
     if (!state.audio.enabled) {
-      track.volume = 0;
-      if (!track.paused) {
-        track.pause();
-      }
+      setMusicVolume(track, 0);
+      pauseMusic(track);
     }
   }
 
   function unlockAudio() {
     const context = ensureAudioGraph();
-    if (!context) {
-      return;
-    }
     state.audio.started = true;
     const prime = () => {
-      if (!state.audio.primed) {
+      if (context && !state.audio.primed) {
         try {
           const osc = context.createOscillator();
           const gain = context.createGain();
@@ -122,17 +210,14 @@ export function createRuntimeAudio({
         }
       }
       syncAudioEnabled();
-      const track = ensureMusicElement();
-      if (track && state.audio.enabled && track.paused) {
-        const playPromise = track.play();
-        if (playPromise && typeof playPromise.catch === "function") {
-          playPromise.catch(() => {});
-        }
+      const track = ensureMusicSound();
+      if (track && state.audio.enabled) {
+        resumeMusic(track);
       }
     };
 
-    if (context.state !== "running" && state.audio.enabled) {
-      context.resume().then(prime).catch(() => {});
+    if (context && context.state !== "running" && state.audio.enabled) {
+      context.resume().then(prime).catch(() => prime());
     } else {
       prime();
     }
@@ -158,16 +243,15 @@ export function createRuntimeAudio({
   }
 
   function canPlayAudio() {
-    return (
-      state.audio.enabled &&
-      state.audio.started &&
-      Boolean(state.audio.context) &&
-      state.audio.context.state === "running"
-    );
+    return state.audio.enabled && state.audio.started;
+  }
+
+  function canPlayToneAudio() {
+    return canPlayAudio() && Boolean(state.audio.context) && state.audio.context.state === "running";
   }
 
   function playTone(freq, duration, opts = {}) {
-    if (!canPlayAudio()) {
+    if (!canPlayToneAudio()) {
       return;
     }
     const context = state.audio.context;
@@ -263,66 +347,12 @@ export function createRuntimeAudio({
     });
   }
 
-  function ensureGruntElement() {
-    if (state.audio.gruntElement) {
-      return state.audio.gruntElement;
-    }
-    const clip = createAudioElement();
-    clip.preload = "auto";
-    clip.src = gruntSources[state.audio.gruntSourceIndex] || gruntSources[0];
-    clip.addEventListener("error", () => {
-      if (state.audio.gruntSourceIndex < gruntSources.length - 1) {
-        state.audio.gruntSourceIndex += 1;
-        clip.src = gruntSources[state.audio.gruntSourceIndex];
-      }
-    });
-    state.audio.gruntElement = clip;
-    return clip;
-  }
-
-  function ensureCardElements() {
-    if (Array.isArray(state.audio.cardElements) && state.audio.cardElements.length > 0) {
-      return state.audio.cardElements;
-    }
-    const poolSize = 3;
-    const clips = [];
-    for (let i = 0; i < poolSize; i += 1) {
-      const clip = createAudioElement();
-      clip.preload = "auto";
-      clip.src = cardSources[state.audio.cardSourceIndex] || cardSources[0];
-      clip.addEventListener("error", () => {
-        if (state.audio.cardSourceIndex < cardSources.length - 1) {
-          state.audio.cardSourceIndex += 1;
-          clip.src = cardSources[state.audio.cardSourceIndex];
-        }
-      });
-      clips.push(clip);
-    }
-    state.audio.cardElements = clips;
-    return clips;
-  }
-
   function playCardSfx() {
     if (!canPlayAudio()) {
       return;
     }
     markSfxActivity(1.25);
-    const clips = ensureCardElements();
-    if (!Array.isArray(clips) || clips.length === 0) {
-      return;
-    }
-    const index = Math.max(0, Math.floor(state.audio.cardNextIndex || 0)) % clips.length;
-    const clip = clips[index];
-    state.audio.cardNextIndex = (index + 1) % clips.length;
-    if (!clip) {
-      return;
-    }
-    clip.currentTime = 0;
-    clip.volume = 0.62;
-    const playPromise = clip.play();
-    if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch(() => {});
-    }
+    playPhaserSfx(cardKey, 0.62);
   }
 
   function playGruntSfx() {
@@ -330,16 +360,7 @@ export function createRuntimeAudio({
       return;
     }
     markSfxActivity(1.35);
-    const clip = ensureGruntElement();
-    if (!clip) {
-      return;
-    }
-    clip.currentTime = 0;
-    clip.volume = 0.72;
-    const playPromise = clip.play();
-    if (playPromise && typeof playPromise.catch === "function") {
-      playPromise.catch(() => {});
-    }
+    playPhaserSfx(gruntKey, 0.72);
   }
 
   function playUiSfx(kind) {
@@ -399,31 +420,24 @@ export function createRuntimeAudio({
   }
 
   function updateMusic(dt) {
-    const track = ensureMusicElement();
+    const track = ensureMusicSound();
     if (!track) {
       return;
     }
     if (!canPlayAudio()) {
-      track.volume = 0;
-      if (!track.paused) {
-        track.pause();
-      }
+      setMusicVolume(track, 0);
+      pauseMusic(track);
       return;
     }
 
-    if (track.paused) {
-      const playPromise = track.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch(() => {});
-      }
-    }
+    resumeMusic(track);
 
     state.audio.musicDuckTimer = Math.max(0, (Number(state.audio.musicDuckTimer) || 0) - dt);
     const ducking = state.audio.musicDuckTimer > 0 ? 0.4 : 1;
     const targetVolume = musicTargetVolumeForMode(state.mode) * ducking;
-    const currentVolume = clampNumber(track.volume, 0, 1, 0);
+    const currentVolume = getMusicVolume(track);
     const easedVolume = lerpFn(currentVolume, targetVolume, Math.min(1, Math.max(0, dt * 7.2)));
-    track.volume = clampNumber(easedVolume, 0, 1, targetVolume);
+    setMusicVolume(track, clampNumber(easedVolume, 0, 1, targetVolume));
     state.audio.lastMusicMode = state.mode;
   }
 
@@ -445,7 +459,7 @@ export function createRuntimeAudio({
     updateMusic,
     markSfxActivity,
     syncAudioEnabled,
-    ensureMusicElement,
+    ensureMusicSound,
     ensureAudioGraph,
   };
 }

@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { SCENE_KEYS } from "../constants.js";
+import { AUDIO_KEYS, AUDIO_SOURCE_PATHS } from "../audio/audio-keys.js";
 import {
   ENEMY_AVATAR_KEY_BY_NAME,
   ENEMY_AVATAR_TEXTURE_PREFIX,
@@ -30,6 +31,15 @@ export class BootScene extends Phaser.Scene {
     });
     if (!this.textures.exists(REWARD_CHIPS_ICON_KEY)) {
       this.load.image(REWARD_CHIPS_ICON_KEY, "/images/icons/chips.png");
+    }
+    if (!this.cache.audio.exists(AUDIO_KEYS.music)) {
+      this.load.audio(AUDIO_KEYS.music, AUDIO_SOURCE_PATHS.music);
+    }
+    if (!this.cache.audio.exists(AUDIO_KEYS.card)) {
+      this.load.audio(AUDIO_KEYS.card, AUDIO_SOURCE_PATHS.card);
+    }
+    if (!this.cache.audio.exists(AUDIO_KEYS.grunt)) {
+      this.load.audio(AUDIO_KEYS.grunt, AUDIO_SOURCE_PATHS.grunt);
     }
   }
 

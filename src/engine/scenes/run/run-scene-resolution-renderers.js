@@ -5,6 +5,14 @@ import {
   RUN_FIRE_CORE_PARTICLE_KEY,
   RUN_FIRE_GLOW_PARTICLE_KEY,
 } from "./run-scene-config.js";
+import {
+  beginRunSceneResolutionAnimation,
+  endRunSceneResolutionAnimation,
+  hasActiveRunSceneResolutionAnimations,
+  isRunSceneCompactLayout,
+  playRunSceneSfx,
+  triggerRunSceneAvatarShake,
+} from "./run-scene-runtime-helpers.js";
 
 export function getRunSceneEncounterTypeLabel(type) {
   if (type === "elite") {
@@ -52,10 +60,10 @@ export function tryStartRunSceneQueuedEnemyDefeatTransition(scene, snapshot, { d
   if (deferResolutionUi) {
     return;
   }
-  if (scene.hasActiveResolutionAnimations()) {
+  if (hasActiveRunSceneResolutionAnimations(scene)) {
     return;
   }
-  scene.playRunSfx("startEnemyDefeatTransition");
+  playRunSceneSfx(scene, "startEnemyDefeatTransition");
 }
 
 export function renderRunSceneEnemyDefeatEffect(scene, transitionState, layout) {
@@ -163,9 +171,9 @@ function launchRunSceneDamageFireball(scene, attackerSide, targetSide, amount, l
     : layout.playerAvatarY + layout.playerAvatarH * 0.5;
   const controlX = Phaser.Math.Linear(fromX, toX, 0.5) + Phaser.Math.Between(-88, 88);
   const controlY = Math.min(fromY, toY) - Phaser.Math.Between(84, 176);
-  const compact = scene.isCompactLayout(width);
+  const compact = isRunSceneCompactLayout(width);
   const travelDuration = compact ? 430 : 540;
-  scene.playRunSfx("fireballLaunch", attackerSide, targetSide, safeAmount);
+  playRunSceneSfx(scene, "fireballLaunch", attackerSide, targetSide, safeAmount);
 
   const glow = scene.add
     .image(0, 0, RUN_FIRE_GLOW_PARTICLE_KEY)
@@ -198,7 +206,7 @@ function launchRunSceneDamageFireball(scene, attackerSide, targetSide, amount, l
     .setAlpha(0.62)
     .setScale(compact ? 0.95 : 1.18);
   const fireball = scene.add.container(fromX, fromY, [streak, glow, flame, hotCore, ember]).setDepth(122);
-  scene.beginResolutionAnimation();
+  beginRunSceneResolutionAnimation(scene);
   scene.tweens.add({
     targets: [glow, flame, hotCore],
     scaleX: compact ? 1.22 : 1.34,
@@ -237,8 +245,8 @@ function launchRunSceneDamageFireball(scene, attackerSide, targetSide, amount, l
       if (scene.resultEmitter) {
         scene.resultEmitter.explode(compact ? 52 : 76, toX, toY);
       }
-      scene.playRunSfx("fireballImpact", safeAmount, targetSide);
-      scene.triggerAvatarShake(targetSide, compact ? 7.5 : 10, compact ? 220 : 280);
+      playRunSceneSfx(scene, "fireballImpact", safeAmount, targetSide);
+      triggerRunSceneAvatarShake(scene, targetSide, compact ? 7.5 : 10, compact ? 220 : 280);
       const blast = scene.add
         .image(toX, toY, RUN_FIRE_GLOW_PARTICLE_KEY)
         .setDepth(130)
@@ -257,7 +265,7 @@ function launchRunSceneDamageFireball(scene, attackerSide, targetSide, amount, l
       ring.setStrokeStyle(compact ? 3.2 : 4.2, 0xffca74, 0.8);
       const ringInner = scene.add.circle(toX, toY, compact ? 10 : 14, 0xffdd9b, 0.34).setDepth(130).setBlendMode(Phaser.BlendModes.ADD);
       ringInner.setStrokeStyle(compact ? 2 : 2.8, 0xfff0ca, 0.74);
-      scene.beginResolutionAnimation();
+      beginRunSceneResolutionAnimation(scene);
       scene.tweens.add({
         targets: blast,
         scaleX: compact ? 3.7 : 4.8,
@@ -267,10 +275,10 @@ function launchRunSceneDamageFireball(scene, attackerSide, targetSide, amount, l
         ease: "Cubic.easeOut",
         onComplete: () => {
           blast.destroy();
-          scene.endResolutionAnimation();
+          endRunSceneResolutionAnimation(scene);
         },
       });
-      scene.beginResolutionAnimation();
+      beginRunSceneResolutionAnimation(scene);
       scene.tweens.add({
         targets: coreBlast,
         scaleX: compact ? 2.6 : 3.4,
@@ -280,10 +288,10 @@ function launchRunSceneDamageFireball(scene, attackerSide, targetSide, amount, l
         ease: "Cubic.easeOut",
         onComplete: () => {
           coreBlast.destroy();
-          scene.endResolutionAnimation();
+          endRunSceneResolutionAnimation(scene);
         },
       });
-      scene.beginResolutionAnimation();
+      beginRunSceneResolutionAnimation(scene);
       scene.tweens.add({
         targets: ring,
         scaleX: compact ? 3.8 : 4.8,
@@ -293,10 +301,10 @@ function launchRunSceneDamageFireball(scene, attackerSide, targetSide, amount, l
         ease: "Cubic.easeOut",
         onComplete: () => {
           ring.destroy();
-          scene.endResolutionAnimation();
+          endRunSceneResolutionAnimation(scene);
         },
       });
-      scene.beginResolutionAnimation();
+      beginRunSceneResolutionAnimation(scene);
       scene.tweens.add({
         targets: ringInner,
         scaleX: compact ? 3 : 3.9,
@@ -306,7 +314,7 @@ function launchRunSceneDamageFireball(scene, attackerSide, targetSide, amount, l
         ease: "Cubic.easeOut",
         onComplete: () => {
           ringInner.destroy();
-          scene.endResolutionAnimation();
+          endRunSceneResolutionAnimation(scene);
         },
       });
       scene.cameras.main.shake(compact ? 180 : 240, compact ? 0.0033 : 0.0043, true);
@@ -322,13 +330,13 @@ function launchRunSceneDamageFireball(scene, attackerSide, targetSide, amount, l
       const damageX = Phaser.Math.Clamp(Math.round(damageXRaw), 44, width - 44);
       const damageY = Phaser.Math.Clamp(Math.round(damageYRaw), 24, height - 24);
       spawnRunSceneDamageNumber(scene, targetSide, safeAmount, damageX, damageY);
-      scene.endResolutionAnimation();
+      endRunSceneResolutionAnimation(scene);
     },
   });
 }
 
 function spawnRunSceneDamageNumber(scene, targetSide, amount, x, y) {
-  const compact = scene.isCompactLayout(scene.scale.gameSize.width);
+  const compact = isRunSceneCompactLayout(scene.scale.gameSize.width);
   const tone = targetSide === "enemy" ? "#ffd4c6" : "#ffc3c8";
   const node = scene.add.text(x, y, `-${Math.max(1, Math.round(amount || 0))}`, {
     fontFamily: '"Cinzel", "Chakra Petch", "Sora", sans-serif',
@@ -341,7 +349,7 @@ function spawnRunSceneDamageNumber(scene, targetSide, amount, x, y) {
   node.setStroke("#1d0a0d", compact ? 4 : 6);
   node.setShadow(0, 0, "#000000", compact ? 6 : 9, true, true);
   node.setScale(0.72);
-  scene.beginResolutionAnimation();
+  beginRunSceneResolutionAnimation(scene);
   scene.tweens.add({
     targets: node,
     scaleX: 1.08,
@@ -357,7 +365,7 @@ function spawnRunSceneDamageNumber(scene, targetSide, amount, x, y) {
     ease: "Cubic.easeOut",
     onComplete: () => {
       node.destroy();
-      scene.endResolutionAnimation();
+      endRunSceneResolutionAnimation(scene);
     },
   });
 }
@@ -376,7 +384,7 @@ export function animateRunSceneResultMessage(scene, node, tone) {
   if (!node) {
     return;
   }
-  const compact = scene.isCompactLayout(scene.scale.gameSize.width);
+  const compact = isRunSceneCompactLayout(scene.scale.gameSize.width);
   const palette = tonePalette(tone);
   if (scene.resultEmitter) {
     if (typeof scene.resultEmitter.setParticleTint === "function") {
@@ -389,7 +397,7 @@ export function animateRunSceneResultMessage(scene, node, tone) {
     .circle(node.x, node.y + 4, compact ? 28 : 36, palette[2], 0.26)
     .setDepth(132)
     .setBlendMode(Phaser.BlendModes.ADD);
-  scene.beginResolutionAnimation();
+  beginRunSceneResolutionAnimation(scene);
   scene.tweens.add({
     targets: burstCircle,
     scaleX: compact ? 2.1 : 2.8,
@@ -399,14 +407,14 @@ export function animateRunSceneResultMessage(scene, node, tone) {
     ease: "Cubic.easeOut",
     onComplete: () => {
       burstCircle.destroy();
-      scene.endResolutionAnimation();
+      endRunSceneResolutionAnimation(scene);
     },
   });
 
   node.setScale(compact ? 0.64 : 0.56);
   node.setRotation(-0.04);
   node.setAlpha(0);
-  scene.beginResolutionAnimation();
+  beginRunSceneResolutionAnimation(scene);
   scene.tweens.add({
     targets: node,
     scaleX: 1.14,
@@ -424,7 +432,7 @@ export function animateRunSceneResultMessage(scene, node, tone) {
         duration: compact ? 100 : 130,
         ease: "Sine.easeOut",
         onComplete: () => {
-          scene.endResolutionAnimation();
+          endRunSceneResolutionAnimation(scene);
         },
       });
     },

@@ -33,15 +33,8 @@ import {
   renderRunSceneButtons,
   renderRunSceneTopActions,
 } from "./run/run-scene-action-renderers.js";
-import { resolveDarkIconTexture } from "./ui/texture-processing.js";
+import { tickRuntime } from "./runtime-access.js";
 import {
-  getRunApi as getRunApiFromRuntime,
-  isCoarsePointer as isCoarsePointerFromRuntime,
-  tickRuntime,
-} from "./runtime-access.js";
-import {
-  RUN_DEALER_CARD_ENTRY_MS,
-  RUN_DEALER_CARD_FLIP_MS,
   RUN_THEME_BLUE_HUE_MAX,
   RUN_THEME_BLUE_HUE_MIN,
   RUN_THEME_BROWN_HUE,
@@ -49,6 +42,7 @@ import {
   RUN_THEME_SATURATION_SCALE,
 } from "./run/run-scene-config.js";
 import { initializeRunSceneLifecycle, teardownRunSceneLifecycle } from "./run/run-scene-lifecycle.js";
+import { getRunSceneSnapshot } from "./run/run-scene-runtime-helpers.js";
 const BUTTON_STYLES = ACTION_BUTTON_STYLE;
 const RUN_BROWN_THEME = createBrownTheme({
   blueHueMin: RUN_THEME_BLUE_HUE_MIN,
@@ -150,7 +144,7 @@ export class RunScene extends Phaser.Scene {
 
   update(time, delta) {
     tickRuntime(this, time, delta);
-    const snapshot = this.getSnapshot();
+    const snapshot = getRunSceneSnapshot(this);
     this.lastSnapshot = snapshot;
     this.renderSnapshot(snapshot);
   }
@@ -159,112 +153,6 @@ export class RunScene extends Phaser.Scene {
     if (this.lastSnapshot) {
       this.renderSnapshot(this.lastSnapshot);
     }
-  }
-
-  beginResolutionAnimation() {
-    this.activeResolutionAnimations = Math.max(0, Math.round(this.activeResolutionAnimations || 0)) + 1;
-  }
-
-  endResolutionAnimation() {
-    this.activeResolutionAnimations = Math.max(0, Math.round(this.activeResolutionAnimations || 0) - 1);
-  }
-
-  hasActiveResolutionAnimations() {
-    return Math.max(0, Math.round(this.activeResolutionAnimations || 0)) > 0;
-  }
-
-  hasActiveCardDealAnimations() {
-    const now = this.time.now;
-    for (const state of this.cardAnimStates.values()) {
-      if (now < (Number(state?.start) || 0) + RUN_DEALER_CARD_ENTRY_MS) {
-        return true;
-      }
-    }
-    for (const state of this.cardFlipStates.values()) {
-      const duration = Math.max(120, Number(state?.duration) || RUN_DEALER_CARD_FLIP_MS);
-      if (now < (Number(state?.start) || 0) + duration) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  playRunSfx(methodName, ...args) {
-    const api = getRunApiFromRuntime(this);
-    const fn = api?.[methodName];
-    if (typeof fn === "function") {
-      fn(...args);
-    }
-  }
-
-  triggerAvatarShake(side, magnitude = 6.5, duration = 220) {
-    const key = side === "enemy" ? "enemy" : "player";
-    const shake = this.avatarShake?.[key];
-    if (!shake) {
-      return;
-    }
-    const now = this.time.now;
-    shake.start = now;
-    shake.duration = Math.max(80, Math.round(duration || 0));
-    shake.until = now + shake.duration;
-    shake.magnitude = Math.max(0, Number(magnitude) || 0);
-  }
-
-  getAvatarShakeOffset(side) {
-    const key = side === "enemy" ? "enemy" : "player";
-    const shake = this.avatarShake?.[key];
-    if (!shake) {
-      return { x: 0, y: 0 };
-    }
-    const now = this.time.now;
-    if (!Number.isFinite(shake.until) || now >= shake.until || !Number.isFinite(shake.magnitude) || shake.magnitude <= 0) {
-      shake.magnitude = 0;
-      return { x: 0, y: 0 };
-    }
-    const elapsed = Math.max(0, now - (Number.isFinite(shake.start) ? shake.start : now));
-    const life = Math.max(80, Number(shake.duration) || 180);
-    const lifeT = Phaser.Math.Clamp(elapsed / life, 0, 1);
-    const damping = 1 - lifeT;
-    const mag = shake.magnitude * damping;
-    const wiggle = Math.sin(now * 0.11) * 0.7 + Math.sin(now * 0.21) * 0.3;
-    return {
-      x: Phaser.Math.Between(-1000, 1000) / 1000 * mag * 0.55 + wiggle * mag * 0.24,
-      y: Phaser.Math.Between(-1000, 1000) / 1000 * mag * 0.28,
-    };
-  }
-
-  getSnapshot() {
-    const api = getRunApiFromRuntime(this);
-    if (!api || typeof api.getSnapshot !== "function") {
-      return null;
-    }
-    try {
-      return api.getSnapshot();
-    } catch {
-      return null;
-    }
-  }
-
-  invokeAction(actionName) {
-    const gatedActions = new Set(["hit", "stand", "doubleDown", "split", "deal", "confirmIntro"]);
-    if (gatedActions.has(actionName) && (this.hasActiveCardDealAnimations() || this.hasActiveResolutionAnimations())) {
-      return;
-    }
-    const api = getRunApiFromRuntime(this);
-    const action = api ? api[actionName] : null;
-    if (typeof action === "function") {
-      action();
-    }
-  }
-
-  isCompactLayout(width) {
-    return width < 760;
-  }
-
-  shouldShowKeyboardHints(width) {
-    const viewportWidth = Number(width) || 0;
-    const coarsePointer = isCoarsePointerFromRuntime(this);
-    return viewportWidth >= 1100 && !coarsePointer;
   }
 
   renderSnapshot(snapshot) {

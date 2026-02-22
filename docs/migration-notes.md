@@ -23,6 +23,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Modularized `RewardScene` into focused modules under `src/engine/scenes/reward/*` (config, lifecycle, layout, action, card, modal renderers) and reduced `RewardScene` to orchestration flow.
 - Modularized `OverlayScene` into focused modules under `src/engine/scenes/overlay/*` (config, lifecycle/input, renderers) and reduced `OverlayScene` to orchestration flow.
 - Modularized `MenuScene` into focused modules under `src/engine/scenes/menu/*` (config, lifecycle/runtime actions, layout, ember simulation) and reduced `MenuScene` to orchestration flow.
+- Added `src/engine/scenes/run/run-scene-runtime-helpers.js` and moved run scene action gating, compact/hint checks, avatar shake offsets, and SFX dispatch out of `RunScene` class methods so run modules call shared helpers directly.
 - Dead runtime audio shim removed (`src/engine/runtime/audio/audio-engine.js`, `MUSIC_STEP_SECONDS`, `audio.stepTimer`, `audio.stepIndex`).
 - Broken balance probe tooling removed temporarily.
 - Added acceptance test harness with one-hand core/camp/persistence coverage.
@@ -39,6 +40,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Extracted run-result/profile tally helpers (`updateProfileBest`, `finalizeRun`, chip delta handling) into `src/engine/runtime/core/run-results.js`.
 - Extracted passive/relic view formatting and collection list helpers into `src/engine/runtime/core/passive-view.js`.
 - Replaced procedural generated BGM with MP3-backed runtime soundtrack.
+- Removed native HTMLAudio fallback for BGM/SFX assets; runtime now relies on Phaser preloaded audio keys/sound manager for music/card/grunt playback.
 - Added GitHub Actions CI workflow with required `quality-gate` and non-required smoke job.
 - Replaced runtime entrypoint with `src/engine/runtime/runtime-engine.js` and removed the former runtime bootstrap entry file.
 - Removed legacy adapter seam (`src/engine/legacy/legacy-runtime-adapter.js`) and switched app/scenes to direct runtime context/tick wiring.

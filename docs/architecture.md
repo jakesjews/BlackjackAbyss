@@ -28,6 +28,7 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - Scene run config module: `src/engine/scenes/run/run-scene-config.js` (RunScene/BootScene shared run asset keys + style constants).
 - Scene run modal state helper: `src/engine/scenes/run/run-scene-modals.js` (RunScene modal order/state/blocker synchronization helpers).
 - Scene run modal renderer helper: `src/engine/scenes/run/run-scene-modal-renderers.js` (RunScene logs/relics modal rendering and close-button plumbing).
+- Scene run runtime helper: `src/engine/scenes/run/run-scene-runtime-helpers.js` (run action gating, compact/hint checks, avatar shake offsets, SFX dispatch).
 - Scene brown-theme utility: `src/engine/scenes/ui/brown-theme.js` (shared blue-to-brown palette conversion for text + graphics across scenes).
 - Scene shared texture helpers: `src/engine/scenes/ui/texture-processing.js` (tight alpha trims + icon/watermark derived textures via Phaser texture manager).
 - Scene asset host: `src/engine/scenes/BootScene.js` preloads shared textures (including enemy avatars/icons) into Phaser's texture manager.
@@ -63,6 +64,7 @@ Scene responsibilities:
 - Poll snapshots from runtime APIs (`runtime.apis.*`).
 - Call runtime actions in response to user input.
 - Manage Phaser-specific layout, animations, and modal presentation.
+- Drive audio playback through Phaser's sound manager (music + SFX assets preloaded in `BootScene`).
 
 ## Host API Policy
 
@@ -79,6 +81,7 @@ Browser APIs are intentionally limited to compatibility/host boundaries:
 - Global test hooks and test flags.
 - `beforeunload` save guard.
 - App boot DOM mount (`#game-shell`) and shell mode class toggle in `src/engine/app.js`.
+- AudioContext for generated tone cues only; there is no HTMLAudio fallback path for BGM/SFX assets.
 
 ## Data Flow
 

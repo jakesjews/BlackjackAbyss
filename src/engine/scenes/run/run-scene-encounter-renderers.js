@@ -8,6 +8,7 @@ import {
   sanitizeEnemyAvatarKey,
 } from "./run-scene-config.js";
 import { coverSizeForTexture } from "../ui/texture-processing.js";
+import { getRunSceneAvatarShakeOffset, isRunSceneCompactLayout } from "./run-scene-runtime-helpers.js";
 
 function enemyAccent(type) {
   if (type === "boss") {
@@ -31,7 +32,7 @@ export function resolveRunSceneEnemyAvatarTexture(scene, enemy) {
 }
 
 function drawRunScenePlayerAvatar(scene, x, y, width, height) {
-  const shake = scene.getAvatarShakeOffset("player");
+  const shake = getRunSceneAvatarShakeOffset(scene, "player");
   const drawX = x + shake.x;
   const drawY = y + shake.y;
   scene.graphics.fillStyle(0x2a1a0f, 1);
@@ -75,7 +76,7 @@ function drawRunSceneEnemyAvatar(scene, enemy, x, y, width, height, options = {}
   const defeatProgress = Phaser.Math.Clamp(Number(options?.defeatProgress) || 0, 0, 1);
   const fadeProgress = Phaser.Math.Clamp(Number(options?.fadeProgress) || 0, 0, 1);
   const avatarAlpha = Phaser.Math.Clamp(1 - fadeProgress, 0, 1);
-  const shake = scene.getAvatarShakeOffset("enemy");
+  const shake = getRunSceneAvatarShakeOffset(scene, "enemy");
   const dissolveJitterX = disableVisualFx || defeatProgress <= 0
     ? 0
     : Math.sin(scene.time.now * 0.046) * (1.4 + defeatProgress * 3);
@@ -158,7 +159,7 @@ function drawRunSceneEnemyAvatar(scene, enemy, x, y, width, height, options = {}
 }
 
 function drawRunSceneHpBar(scene, keyPrefix, x, y, width, height, value, maxValue, colorHex, options = {}) {
-  const compact = scene.isCompactLayout(scene.scale.gameSize.width);
+  const compact = isRunSceneCompactLayout(scene.scale.gameSize.width);
   const labelWeight = compact ? "800" : "700";
   const safeMax = Math.max(1, Number(maxValue) || 1);
   const safeValue = Math.max(0, Math.min(safeMax, Number(value) || 0));

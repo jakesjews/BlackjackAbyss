@@ -1,3 +1,51 @@
+function pauseMusicSound(sound) {
+  if (!sound) {
+    return;
+  }
+  if (typeof sound.pause === "function") {
+    try {
+      sound.pause();
+      return;
+    } catch {
+      // Fall back to stop when pause is unavailable.
+    }
+  }
+  if (typeof sound.stop === "function") {
+    try {
+      sound.stop();
+    } catch {
+      // Ignore stop failures.
+    }
+  }
+}
+
+function resumeMusicSound(sound) {
+  if (!sound || sound.isPlaying) {
+    return;
+  }
+  if (sound.isPaused && typeof sound.resume === "function") {
+    try {
+      sound.resume();
+      return;
+    } catch {
+      // Fall through to play.
+    }
+  }
+  if (typeof sound.play === "function") {
+    try {
+      const playPromise = sound.play({
+        loop: true,
+        volume: typeof sound.volume === "number" ? sound.volume : 0,
+      });
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => {});
+      }
+    } catch {
+      // Ignore play failures.
+    }
+  }
+}
+
 export function handleRuntimeHidden({
   state,
   saveRunSnapshot,
@@ -8,8 +56,8 @@ export function handleRuntimeHidden({
   if (state.audio.context && state.audio.context.state === "running") {
     state.audio.context.suspend().catch(() => {});
   }
-  if (state.audio.musicElement && !state.audio.musicElement.paused) {
-    state.audio.musicElement.pause();
+  if (state.audio.musicSound && state.audio.musicSound.isPlaying) {
+    pauseMusicSound(state.audio.musicSound);
   }
 }
 
@@ -21,12 +69,7 @@ export function handleRuntimeVisible({
     state.audio.context
       .resume()
       .then(() => {
-        if (state.audio.musicElement && state.audio.musicElement.paused) {
-          const playPromise = state.audio.musicElement.play();
-          if (playPromise && typeof playPromise.catch === "function") {
-            playPromise.catch(() => {});
-          }
-        }
+        resumeMusicSound(state.audio.musicSound);
       })
       .catch(() => {});
   }

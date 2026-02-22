@@ -1,23 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  CARD_SOURCES,
-  GRUNT_SOURCES,
-  MUSIC_TRACK_SOURCES,
   createAmbientOrbs,
   createMenuMotes,
   createRuntimeVisualSeeds,
 } from "../core/runtime-content-seeds.js";
 
 describe("runtime content seeds", () => {
-  it("exports expected audio source lists", () => {
-    expect(GRUNT_SOURCES).toEqual([
-      "/audio/soundbites/grunt.wav",
-      "/audio/soundbites/grunt.ogg",
-    ]);
-    expect(CARD_SOURCES).toEqual(["/audio/soundbites/card.wav"]);
-    expect(MUSIC_TRACK_SOURCES).toEqual(["/audio/music/blackjack.mp3"]);
-  });
-
   it("creates ambient orbs with deterministic values", () => {
     const ambientOrbs = createAmbientOrbs({
       width: 200,

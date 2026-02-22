@@ -10,6 +10,11 @@ import {
   RUN_PARTICLE_KEY,
   SUIT_SYMBOL,
 } from "./run-scene-config.js";
+import {
+  hasActiveRunSceneCardDealAnimations,
+  isRunSceneCompactLayout,
+  playRunSceneSfx,
+} from "./run-scene-runtime-helpers.js";
 
 export function drawRunSceneCards(scene, { snapshot, width, height, layout, theme }) {
   if (snapshot?.intro?.active) {
@@ -27,7 +32,7 @@ export function drawRunSceneCards(scene, { snapshot, width, height, layout, them
   const cardHeight = layout?.cardHeight || Math.round(cardWidth * 1.42);
   const enemyCards = Array.isArray(snapshot.cards?.dealer) ? snapshot.cards.dealer : [];
   const playerCards = Array.isArray(snapshot.cards?.player) ? snapshot.cards.player : [];
-  const compact = scene.isCompactLayout(width);
+  const compact = isRunSceneCompactLayout(width);
   const computeSpacing = (count) => {
     const base = Math.max(Math.round(cardWidth * (compact ? 0.68 : 0.74)), compact ? 32 : 44);
     if (!Number.isFinite(count) || count <= 1) {
@@ -79,7 +84,7 @@ export function drawRunSceneCards(scene, { snapshot, width, height, layout, them
 
   const totals = snapshot.totals || {};
   const cardsAnimatingInProgress = Boolean(
-    enemyRevealInProgress || playerRevealInProgress || scene.hasActiveCardDealAnimations()
+    enemyRevealInProgress || playerRevealInProgress || hasActiveRunSceneCardDealAnimations(scene)
   );
   const deferResolutionUi = cardsAnimatingInProgress;
   const enemyHasHidden = enemyCards.some((card) => card.hidden);
@@ -244,7 +249,7 @@ function drawRunSceneCardRow(
     const targetCenterX = targetX + cardW * 0.5;
     const targetCenterY = y + cardH * 0.5;
     if (!anim.cardSfxPlayed) {
-      scene.playRunSfx("card");
+      playRunSceneSfx(scene, "card");
       anim.cardSfxPlayed = true;
     }
 
@@ -289,7 +294,7 @@ function drawRunSceneCardRow(
     }
     if (flipState) {
       if (!flipState.cardSfxPlayed && now >= flipState.start) {
-        scene.playRunSfx("card");
+        playRunSceneSfx(scene, "card");
         flipState.cardSfxPlayed = true;
       }
       const duration = Math.max(120, Number(flipState.duration) || RUN_DEALER_CARD_FLIP_MS);
