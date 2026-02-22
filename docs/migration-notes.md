@@ -35,6 +35,9 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Added runtime compatibility bridge module `src/engine/runtime/compat/phaser-bridge-compat.js`.
 - Renamed runtime helper folder to `src/engine/runtime/core/*`.
 - Added dead-reference check script `scripts/check-dead-refs.mjs`.
+- Flattened Phaser API registration into a single runtime call (`registerRuntimeApis`) instead of wrapper registries.
+- Scenes now consume runtime APIs directly from `game.__ABYSS_RUNTIME__.apis` (bridge fallback removed from scene helpers).
+- Runtime engine startup now requires the Phaser runtime payload from app boot (no window-global fallback path).
 
 ## Transitional / Still Present
 
@@ -43,7 +46,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 
 ## Kept For Compatibility
 
-- `window.__ABYSS_PHASER_BRIDGE__` as a thin compatibility facade for scenes/tests/tools.
+- `window.__ABYSS_PHASER_BRIDGE__` as a thin compatibility facade for tests/tools.
 - Bridge method names in menu/run/reward/shop/overlay APIs.
 - `window.render_game_to_text()` and `window.advanceTime(ms)` hooks for smoke/acceptance tooling.
 - Existing storage keys:

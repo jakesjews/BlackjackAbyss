@@ -2,16 +2,18 @@ export function getRuntime(scene) {
   return scene?.game?.__ABYSS_RUNTIME__ || null;
 }
 
-export function getBridge(scene) {
-  return getRuntime(scene)?.bridge || null;
+function getRuntimeApis(scene) {
+  const runtime = getRuntime(scene);
+  return runtime?.apis && typeof runtime.apis === "object" ? runtime.apis : null;
 }
 
-function getBridgeApi(scene, methodName) {
-  const bridge = getBridge(scene);
-  if (!bridge || typeof bridge[methodName] !== "function") {
+function getRuntimeApi(scene, runtimeKey) {
+  const runtimeApis = getRuntimeApis(scene);
+  if (!runtimeApis) {
     return null;
   }
-  return bridge[methodName]();
+  const api = runtimeApis[runtimeKey];
+  return api && typeof api === "object" ? api : null;
 }
 
 export function tickRuntime(scene, time, delta) {
@@ -22,21 +24,21 @@ export function tickRuntime(scene, time, delta) {
 }
 
 export function getMenuActions(scene) {
-  return getBridgeApi(scene, "getMenuActions");
+  return getRuntimeApi(scene, "menuActions");
 }
 
 export function getRunApi(scene) {
-  return getBridgeApi(scene, "getRunApi");
+  return getRuntimeApi(scene, "runApi");
 }
 
 export function getRewardApi(scene) {
-  return getBridgeApi(scene, "getRewardApi");
+  return getRuntimeApi(scene, "rewardApi");
 }
 
 export function getShopApi(scene) {
-  return getBridgeApi(scene, "getShopApi");
+  return getRuntimeApi(scene, "shopApi");
 }
 
 export function getOverlayApi(scene) {
-  return getBridgeApi(scene, "getOverlayApi");
+  return getRuntimeApi(scene, "overlayApi");
 }

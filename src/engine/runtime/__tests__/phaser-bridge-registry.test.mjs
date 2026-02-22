@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeBridgeRegistry } from "../core/phaser-bridge-apis.js";
+import { registerRuntimeApis } from "../core/phaser-bridge-apis.js";
 
 describe("phaser bridge registry", () => {
-  it("wires Phaser bridge API registration blocks through a single registry", () => {
+  it("registers runtime APIs in one pass and mirrors them onto runtime.apis", () => {
     const phaserBridge = {};
+    const runtimeApis = {};
     const state = { mode: "menu" };
     const unlockAudio = vi.fn();
     const startRun = vi.fn();
@@ -41,14 +42,20 @@ describe("phaser bridge registry", () => {
     const buildPhaserOverlaySnapshot = vi.fn();
     const overlayApiMethods = ["getSnapshot", "closeCollection"];
 
-    const registerPhaserMenuActionsFn = vi.fn();
-    const registerPhaserRunApiFn = vi.fn();
-    const registerPhaserRewardApiFn = vi.fn();
-    const registerPhaserShopApiFn = vi.fn();
-    const registerPhaserOverlayApiFn = vi.fn();
+    const menuApi = { startRun: vi.fn() };
+    const runApi = { getSnapshot: vi.fn() };
+    const rewardApi = { claim: vi.fn() };
+    const shopApi = { buy: vi.fn() };
+    const overlayApi = { confirm: vi.fn() };
+    const registerPhaserMenuActionsFn = vi.fn(() => menuApi);
+    const registerPhaserRunApiFn = vi.fn(() => runApi);
+    const registerPhaserRewardApiFn = vi.fn(() => rewardApi);
+    const registerPhaserShopApiFn = vi.fn(() => shopApi);
+    const registerPhaserOverlayApiFn = vi.fn(() => overlayApi);
 
-    const registry = createRuntimeBridgeRegistry({
+    const registered = registerRuntimeApis({
       phaserBridge,
+      runtimeApis,
       state,
       unlockAudio,
       startRun,
@@ -92,11 +99,20 @@ describe("phaser bridge registry", () => {
       registerPhaserOverlayApiFn,
     });
 
-    registry.registerPhaserMenuActions();
-    registry.registerPhaserRunApi();
-    registry.registerPhaserRewardApi();
-    registry.registerPhaserShopApi();
-    registry.registerPhaserOverlayApi();
+    expect(registered).toMatchObject({
+      menuActions: menuApi,
+      runApi,
+      rewardApi,
+      shopApi,
+      overlayApi,
+    });
+    expect(runtimeApis).toMatchObject({
+      menuActions: menuApi,
+      runApi,
+      rewardApi,
+      shopApi,
+      overlayApi,
+    });
 
     expect(registerPhaserMenuActionsFn).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -4,6 +4,7 @@ export function createRuntimeLoop({
   height,
   gameShell,
   canvas,
+  phaserGame,
   phaserBridge,
   globalWindow,
   globalDocument,
@@ -59,7 +60,6 @@ export function createRuntimeLoop({
       portraitZoomed: false,
     };
 
-    const phaserGame = globalWindow.__ABYSS_PHASER_GAME__;
     if (phaserGame?.scale && typeof phaserGame.scale.resize === "function") {
       const currentW = Math.round(phaserGame.scale.gameSize?.width || 0);
       const currentH = Math.round(phaserGame.scale.gameSize?.height || 0);

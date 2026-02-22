@@ -35,7 +35,7 @@ npm run start
 - Runtime modules in `src/engine/runtime/*` own gameplay state, progression, persistence, and scene-facing APIs.
 - Runtime entrypoint is `src/engine/runtime/runtime-engine.js`.
 - `src/engine/runtime/core/*` contains extracted runtime helpers, factories, snapshot/persistence helpers, run-results/profile helpers, passive/collection view helpers, sanitizers, and content catalogs.
-- `window.__ABYSS_PHASER_BRIDGE__` is a thin compatibility facade used by scenes/tests/tools while runtime remains Phaser-native.
+- `window.__ABYSS_PHASER_BRIDGE__` is a thin compatibility facade used by tests/tools while runtime remains Phaser-native.
 - Host/runtime seam in `src/engine/app.js` is direct (`game` + runtime bridge/tick), with no legacy adapter class.
 
 ## Controls
@@ -63,7 +63,7 @@ The action tray is mode-aware and updates labels/actions as the run state change
 - `shop`: `Prev`/`Next`, `Buy`, `Continue` (leave camp)
 - `gameover` / `victory`: `New Run`
 
-Tray button actions route through runtime bridge APIs consumed by Phaser scenes.
+Tray button actions route through runtime APIs on `game.__ABYSS_RUNTIME__.apis` consumed by Phaser scenes.
 
 ## Persistence
 

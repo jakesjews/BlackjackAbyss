@@ -2,11 +2,8 @@ export function initializeRuntimeStartup({
   state,
   loadProfile,
   loadSavedRunSnapshot,
-  registerPhaserMenuActions,
-  registerPhaserRunApi,
-  registerPhaserRewardApi,
-  registerPhaserShopApi,
-  registerPhaserOverlayApi,
+  registerRuntimeApisFn,
+  runtimeApiRegistration,
   createLandscapeLockRequesterFn,
   globalWindow,
   globalDocument,
@@ -24,11 +21,7 @@ export function initializeRuntimeStartup({
 }) {
   state.profile = loadProfile();
   state.savedRunSnapshot = loadSavedRunSnapshot();
-  registerPhaserMenuActions();
-  registerPhaserRunApi();
-  registerPhaserRewardApi();
-  registerPhaserShopApi();
-  registerPhaserOverlayApi();
+  registerRuntimeApisFn(runtimeApiRegistration);
 
   const requestLandscapeLock = createLandscapeLockRequesterFn(globalWindow);
 

@@ -18,9 +18,6 @@ export function registerPhaserMenuActions({
   menuApiMethods,
   assertApiContract,
 }) {
-  if (!phaserBridge || typeof phaserBridge.setMenuActions !== "function") {
-    return;
-  }
   const api = {
     startRun: () => {
       unlockAudio();
@@ -44,14 +41,17 @@ export function registerPhaserMenuActions({
     },
     hasSavedRun: () => hasSavedRun(),
   };
-  registerBridgeApi({
-    bridge: phaserBridge,
-    setterName: "setMenuActions",
-    api,
-    methods: menuApiMethods,
-    label: "menu",
-    assertApiContract,
-  });
+  if (phaserBridge && typeof phaserBridge.setMenuActions === "function") {
+    registerBridgeApi({
+      bridge: phaserBridge,
+      setterName: "setMenuActions",
+      api,
+      methods: menuApiMethods,
+      label: "menu",
+      assertApiContract,
+    });
+  }
+  return api;
 }
 
 export function registerPhaserRunApi({
@@ -73,9 +73,6 @@ export function registerPhaserRunApi({
   runApiMethods,
   assertApiContract,
 }) {
-  if (!phaserBridge || typeof phaserBridge.setRunApi !== "function") {
-    return;
-  }
   const api = {
     getSnapshot: () => buildPhaserRunSnapshot(),
     hit: () => {
@@ -123,14 +120,17 @@ export function registerPhaserRunApi({
       goHomeFromActiveRun();
     },
   };
-  registerBridgeApi({
-    bridge: phaserBridge,
-    setterName: "setRunApi",
-    api,
-    methods: runApiMethods,
-    label: "run",
-    assertApiContract,
-  });
+  if (phaserBridge && typeof phaserBridge.setRunApi === "function") {
+    registerBridgeApi({
+      bridge: phaserBridge,
+      setterName: "setRunApi",
+      api,
+      methods: runApiMethods,
+      label: "run",
+      assertApiContract,
+    });
+  }
+  return api;
 }
 
 export function registerPhaserRewardApi({
@@ -147,9 +147,6 @@ export function registerPhaserRewardApi({
   rewardApiMethods,
   assertApiContract,
 }) {
-  if (!phaserBridge || typeof phaserBridge.setRewardApi !== "function") {
-    return;
-  }
   const api = {
     getSnapshot: () => buildPhaserRewardSnapshot(),
     prev: () => {
@@ -180,14 +177,17 @@ export function registerPhaserRewardApi({
       goHomeFromActiveRun();
     },
   };
-  registerBridgeApi({
-    bridge: phaserBridge,
-    setterName: "setRewardApi",
-    api,
-    methods: rewardApiMethods,
-    label: "reward",
-    assertApiContract,
-  });
+  if (phaserBridge && typeof phaserBridge.setRewardApi === "function") {
+    registerBridgeApi({
+      bridge: phaserBridge,
+      setterName: "setRewardApi",
+      api,
+      methods: rewardApiMethods,
+      label: "reward",
+      assertApiContract,
+    });
+  }
+  return api;
 }
 
 export function registerPhaserShopApi({
@@ -205,9 +205,6 @@ export function registerPhaserShopApi({
   shopApiMethods,
   assertApiContract,
 }) {
-  if (!phaserBridge || typeof phaserBridge.setShopApi !== "function") {
-    return;
-  }
   const api = {
     getSnapshot: () => buildPhaserShopSnapshot(),
     prev: () => {
@@ -253,14 +250,17 @@ export function registerPhaserShopApi({
       goHomeFromActiveRun();
     },
   };
-  registerBridgeApi({
-    bridge: phaserBridge,
-    setterName: "setShopApi",
-    api,
-    methods: shopApiMethods,
-    label: "shop",
-    assertApiContract,
-  });
+  if (phaserBridge && typeof phaserBridge.setShopApi === "function") {
+    registerBridgeApi({
+      bridge: phaserBridge,
+      setterName: "setShopApi",
+      api,
+      methods: shopApiMethods,
+      label: "shop",
+      assertApiContract,
+    });
+  }
+  return api;
 }
 
 export function registerPhaserOverlayApi({
@@ -277,10 +277,6 @@ export function registerPhaserOverlayApi({
   overlayApiMethods,
   assertApiContract,
 }) {
-  if (!phaserBridge || typeof phaserBridge.setOverlayApi !== "function") {
-    return;
-  }
-
   const collectionPages = () => {
     const entries = collectionEntries();
     const { cols, rows } = collectionPageLayout();
@@ -344,14 +340,17 @@ export function registerPhaserOverlayApi({
     },
   };
 
-  registerBridgeApi({
-    bridge: phaserBridge,
-    setterName: "setOverlayApi",
-    api,
-    methods: overlayApiMethods,
-    label: "overlay",
-    assertApiContract,
-  });
+  if (phaserBridge && typeof phaserBridge.setOverlayApi === "function") {
+    registerBridgeApi({
+      bridge: phaserBridge,
+      setterName: "setOverlayApi",
+      api,
+      methods: overlayApiMethods,
+      label: "overlay",
+      assertApiContract,
+    });
+  }
+  return api;
 }
 
 export function createRuntimeSnapshotRegistry({
@@ -440,8 +439,16 @@ export function createRuntimeSnapshotRegistry({
   };
 }
 
-export function createRuntimeBridgeRegistry({
+function setRuntimeApi(runtimeApis, key, api) {
+  if (runtimeApis && typeof runtimeApis === "object") {
+    runtimeApis[key] = api && typeof api === "object" ? api : null;
+  }
+  return api;
+}
+
+export function registerRuntimeApis({
   phaserBridge,
+  runtimeApis,
   state,
   unlockAudio,
   startRun,
@@ -484,101 +491,87 @@ export function createRuntimeBridgeRegistry({
   registerPhaserShopApiFn = registerPhaserShopApi,
   registerPhaserOverlayApiFn = registerPhaserOverlayApi,
 }) {
-  function registerMenu() {
-    registerPhaserMenuActionsFn({
-      phaserBridge,
-      state,
-      unlockAudio,
-      startRun,
-      hasSavedRun,
-      resumeSavedRun,
-      saveRunSnapshot,
-      openCollection,
-      registerBridgeApi,
-      menuApiMethods,
-      assertApiContract,
-    });
-  }
-
-  function registerRun() {
-    registerPhaserRunApiFn({
-      phaserBridge,
-      buildPhaserRunSnapshot,
-      unlockAudio,
-      hitAction,
-      standAction,
-      doubleAction,
-      splitAction,
-      advanceToNextDeal,
-      advanceEncounterIntro,
-      playFireballLaunchSfx,
-      playFireballImpactSfx,
-      beginQueuedEnemyDefeatTransition,
-      playUiSfx,
-      goHomeFromActiveRun,
-      registerBridgeApi,
-      runApiMethods,
-      assertApiContract,
-    });
-  }
-
-  function registerReward() {
-    registerPhaserRewardApiFn({
-      phaserBridge,
-      state,
-      buildPhaserRewardSnapshot,
-      moveSelection,
-      claimReward,
-      clampNumber,
-      playUiSfx,
-      unlockAudio,
-      goHomeFromActiveRun,
-      registerBridgeApi,
-      rewardApiMethods,
-      assertApiContract,
-    });
-  }
-
-  function registerShop() {
-    registerPhaserShopApiFn({
-      phaserBridge,
-      state,
-      buildPhaserShopSnapshot,
-      moveSelection,
-      unlockAudio,
-      buyShopItem,
-      leaveShop,
-      clampNumber,
-      playUiSfx,
-      goHomeFromActiveRun,
-      registerBridgeApi,
-      shopApiMethods,
-      assertApiContract,
-    });
-  }
-
-  function registerOverlay() {
-    registerPhaserOverlayApiFn({
-      phaserBridge,
-      state,
-      collectionEntries,
-      collectionPageLayout,
-      clampNumber,
-      unlockAudio,
-      playUiSfx,
-      startRun,
-      buildPhaserOverlaySnapshot,
-      registerBridgeApi,
-      overlayApiMethods,
-      assertApiContract,
-    });
-  }
+  const menuActions = setRuntimeApi(runtimeApis, "menuActions", registerPhaserMenuActionsFn({
+    phaserBridge,
+    state,
+    unlockAudio,
+    startRun,
+    hasSavedRun,
+    resumeSavedRun,
+    saveRunSnapshot,
+    openCollection,
+    registerBridgeApi,
+    menuApiMethods,
+    assertApiContract,
+  }));
+  const runApi = setRuntimeApi(runtimeApis, "runApi", registerPhaserRunApiFn({
+    phaserBridge,
+    buildPhaserRunSnapshot,
+    unlockAudio,
+    hitAction,
+    standAction,
+    doubleAction,
+    splitAction,
+    advanceToNextDeal,
+    advanceEncounterIntro,
+    playFireballLaunchSfx,
+    playFireballImpactSfx,
+    beginQueuedEnemyDefeatTransition,
+    playUiSfx,
+    goHomeFromActiveRun,
+    registerBridgeApi,
+    runApiMethods,
+    assertApiContract,
+  }));
+  const rewardApi = setRuntimeApi(runtimeApis, "rewardApi", registerPhaserRewardApiFn({
+    phaserBridge,
+    state,
+    buildPhaserRewardSnapshot,
+    moveSelection,
+    claimReward,
+    clampNumber,
+    playUiSfx,
+    unlockAudio,
+    goHomeFromActiveRun,
+    registerBridgeApi,
+    rewardApiMethods,
+    assertApiContract,
+  }));
+  const shopApi = setRuntimeApi(runtimeApis, "shopApi", registerPhaserShopApiFn({
+    phaserBridge,
+    state,
+    buildPhaserShopSnapshot,
+    moveSelection,
+    unlockAudio,
+    buyShopItem,
+    leaveShop,
+    clampNumber,
+    playUiSfx,
+    goHomeFromActiveRun,
+    registerBridgeApi,
+    shopApiMethods,
+    assertApiContract,
+  }));
+  const overlayApi = setRuntimeApi(runtimeApis, "overlayApi", registerPhaserOverlayApiFn({
+    phaserBridge,
+    state,
+    collectionEntries,
+    collectionPageLayout,
+    clampNumber,
+    unlockAudio,
+    playUiSfx,
+    startRun,
+    buildPhaserOverlaySnapshot,
+    registerBridgeApi,
+    overlayApiMethods,
+    assertApiContract,
+  }));
 
   return {
-    registerPhaserMenuActions: registerMenu,
-    registerPhaserRunApi: registerRun,
-    registerPhaserRewardApi: registerReward,
-    registerPhaserShopApi: registerShop,
-    registerPhaserOverlayApi: registerOverlay,
+    menuActions,
+    runApi,
+    rewardApi,
+    shopApi,
+    overlayApi,
   };
 }

@@ -6,7 +6,7 @@
 - Phaser scenes are the active presentation and input layer.
 - Runtime modules are the gameplay/state engine.
 - Legacy raw-canvas rendering paths have been removed from active runtime execution.
-- `window.__ABYSS_PHASER_BRIDGE__` is currently a compatibility facade for scene/test/tool contracts.
+- `window.__ABYSS_PHASER_BRIDGE__` is currently a compatibility facade for test/tool contracts.
 
 ## System Overview
 
@@ -34,9 +34,9 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 
 ## Runtime Seam
 
-- `src/engine/app.js` exposes a direct runtime context: `game`, runtime bridge facade, and runtime tick function.
-- `window.__ABYSS_PHASER_BRIDGE__` is kept as a thin compatibility facade.
-- Scenes consume bridge APIs through `src/engine/scenes/runtime-bridge.js`, which reads from the direct runtime context.
+- `src/engine/app.js` exposes a direct runtime context: `game`, runtime API slots (`runtime.apis.*`), runtime bridge facade, and runtime tick function.
+- Scenes consume runtime APIs through `src/engine/scenes/runtime-bridge.js` by reading `game.__ABYSS_RUNTIME__.apis`.
+- `window.__ABYSS_PHASER_BRIDGE__` is kept as a thin compatibility facade for test/tool contracts.
 
 ## Runtime vs Scene Responsibilities
 
@@ -52,8 +52,8 @@ Runtime responsibilities:
 Scene responsibilities:
 
 - Render UI and visual effects.
-- Poll snapshots from bridge APIs.
-- Call bridge actions in response to user input.
+- Poll snapshots from runtime APIs (`runtime.apis.*`).
+- Call runtime actions in response to user input.
 - Manage Phaser-specific layout, animations, and modal presentation.
 
 ## Data Flow
@@ -61,20 +61,20 @@ Scene responsibilities:
 Read path:
 
 1. Runtime computes canonical state.
-2. Bridge `getSnapshot` APIs expose scene-specific state views.
+2. Runtime `getSnapshot` APIs expose scene-specific state views.
 3. Scenes render from snapshots each frame/tick.
 
 Write path:
 
 1. User input in scene (button/key/pointer).
-2. Scene calls bridge action (`hit`, `claim`, `buy`, etc.).
+2. Scene calls runtime action (`hit`, `claim`, `buy`, etc.) on `runtime.apis.*`.
 3. Runtime mutates state and emits updated snapshots.
 4. Scene reflects new state on the next render/update cycle.
 
 ## Legacy Boundary
 
 - Legacy adapter seam has been removed.
-- Bridge compatibility remains intentionally in `window.__ABYSS_PHASER_BRIDGE__` for scene/tool stability.
+- Bridge compatibility remains intentionally in `window.__ABYSS_PHASER_BRIDGE__` for test/tool stability.
 
 ## Verification Gate
 

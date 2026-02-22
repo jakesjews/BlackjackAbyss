@@ -17,7 +17,6 @@ function createEnv(overrides = {}) {
     innerWidth: 1024,
     innerHeight: 768,
     visualViewport: null,
-    __ABYSS_PHASER_GAME__: null,
   };
 
   return {
@@ -57,11 +56,11 @@ describe("runtime loop module", () => {
         innerWidth: 640,
         innerHeight: 480,
         visualViewport: { width: 801.9, height: 611.4 },
-        __ABYSS_PHASER_GAME__: {
-          scale: {
-            gameSize: { width: 1280, height: 720 },
-            resize,
-          },
+      },
+      phaserGame: {
+        scale: {
+          gameSize: { width: 1280, height: 720 },
+          resize,
         },
       },
     });

@@ -43,7 +43,7 @@ import {
 import { publishRuntimeTestHooks } from "./bridge/snapshots.js";
 import { readRuntimeTestFlags } from "./testing/test-controls.js";
 import { registerBridgeApi } from "./core/api-registry.js";
-import { createRuntimeBridgeRegistry, createRuntimeSnapshotRegistry } from "./core/phaser-bridge-apis.js";
+import { createRuntimeSnapshotRegistry, registerRuntimeApis as registerRuntimeApisFromModule } from "./core/phaser-bridge-apis.js";
 import {
   BOSS_RELIC,
   RELIC_BY_ID,
@@ -127,16 +127,22 @@ import { createRuntimeEffects } from "./core/runtime-effects.js";
 
 let runtimeEngineStarted = false;
 
-export function startRuntimeEngine() {
+export function startRuntimeEngine(phaserRuntimePayload = null) {
   if (runtimeEngineStarted) {
     return;
   }
   runtimeEngineStarted = true;
 
-  const phaserBridge = window.__ABYSS_PHASER_BRIDGE__ || null;
-  const gameShell = document.getElementById("game-shell");
-  const canvas = phaserBridge?.getCanvas?.() || document.getElementById("game-canvas");
-  if (!gameShell || !canvas) {
+  if (!phaserRuntimePayload || typeof phaserRuntimePayload !== "object") {
+    throw new Error("Runtime engine requires Phaser runtime payload.");
+  }
+  const runtimeContext = phaserRuntimePayload.runtime || null;
+  const phaserGame = phaserRuntimePayload.game || runtimeContext?.game || null;
+  const phaserBridge = phaserRuntimePayload.bridge || runtimeContext?.bridge || null;
+  const runtimeApis = runtimeContext?.apis && typeof runtimeContext.apis === "object" ? runtimeContext.apis : null;
+  const gameShell = phaserGame?.canvas?.parentElement || null;
+  const canvas = phaserGame?.canvas || null;
+  if (!runtimeContext || !runtimeApis || !phaserGame || !phaserBridge || !gameShell || !canvas) {
     throw new Error("Unable to initialize Phaser runtime context.");
   }
 
@@ -707,6 +713,7 @@ export function startRuntimeEngine() {
     height: HEIGHT,
     gameShell,
     canvas,
+    phaserGame,
     phaserBridge,
     globalWindow: window,
     globalDocument: document,
@@ -793,8 +800,9 @@ export function startRuntimeEngine() {
     buildPhaserShopSnapshot,
     buildPhaserOverlaySnapshot,
   } = runtimeSnapshotRegistry;
-  const runtimeBridgeRegistry = createRuntimeBridgeRegistry({
+  const runtimeApiRegistration = {
     phaserBridge,
+    runtimeApis,
     state,
     unlockAudio,
     startRun,
@@ -831,24 +839,14 @@ export function startRuntimeEngine() {
     collectionPageLayout,
     buildPhaserOverlaySnapshot,
     overlayApiMethods: OVERLAY_API_METHODS,
-  });
-  const {
-    registerPhaserMenuActions,
-    registerPhaserRunApi,
-    registerPhaserRewardApi,
-    registerPhaserShopApi,
-    registerPhaserOverlayApi,
-  } = runtimeBridgeRegistry;
+  };
 
   initializeRuntimeStartupFromModule({
     state,
     loadProfile,
     loadSavedRunSnapshot,
-    registerPhaserMenuActions,
-    registerPhaserRunApi,
-    registerPhaserRewardApi,
-    registerPhaserShopApi,
-    registerPhaserOverlayApi,
+    registerRuntimeApisFn: registerRuntimeApisFromModule,
+    runtimeApiRegistration,
     createLandscapeLockRequesterFn: createLandscapeLockRequester,
     globalWindow: window,
     globalDocument: document,

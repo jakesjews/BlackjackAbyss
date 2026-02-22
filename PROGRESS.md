@@ -8,18 +8,22 @@
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
 - Docs-first checkpoint completed and runtime docs are synced to Phaser-native runtime architecture.
 - Runtime entry now uses `src/engine/runtime/runtime-engine.js` with direct app/runtime seam wiring.
-- Last Updated: 2026-02-21 18:48:50 EST
+- Scene runtime access now reads `game.__ABYSS_RUNTIME__.apis` directly; bridge remains compatibility-only for tests/tools.
+- Last Updated: 2026-02-21 19:10:11 EST
 
 ## Current Focus
 
 - Keep acceptance tests green before each cleanup/modularization pass.
 - Continue shrinking `src/engine/runtime/runtime-engine.js` by extracting focused orchestration slices into `src/engine/runtime/core/*`.
-- Keep bridge contracts stable while evaluating eventual compatibility-facade reduction.
+- Keep bridge contracts stable while reducing remaining compatibility-facade dependence outside tests/tools.
 - Keep docs aligned with runtime contracts and test-only controls.
 
 ## Done Recently
 
 - Extracted runtime logic from monolithic `game.js` into `src/engine/runtime/*`.
+- Flattened runtime API registration into one direct call path (`registerRuntimeApis`) and removed wrapper-heavy API registration registry flow.
+- Switched scene runtime helper consumption to direct runtime APIs (`game.__ABYSS_RUNTIME__.apis`) instead of bridge fallback.
+- Tightened runtime startup to require explicit Phaser runtime payload from app boot (removed runtime-engine window-global fallback path).
 - Updated app boot flow so `src/main.js` initializes Phaser then runtime bootstrap.
 - Removed obsolete compatibility wrapper `game.js` and package export pointer.
 - Added runtime unit tests and stabilized smoke checks.

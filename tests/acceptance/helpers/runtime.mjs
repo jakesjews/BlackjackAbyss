@@ -54,19 +54,26 @@ export async function waitForMode(page, modes, { maxTicks = 160, stepMs = 140 } 
 export async function readBridgeContracts(page) {
   return page.evaluate(() => {
     const bridge = window.__ABYSS_PHASER_BRIDGE__ || null;
+    const runtime = window.__ABYSS_ENGINE_RUNTIME__ || null;
+    const runtimeApis = runtime?.apis && typeof runtime.apis === "object" ? runtime.apis : null;
     const extractMethods = (obj) =>
       obj && typeof obj === "object"
         ? Object.keys(obj).filter((name) => typeof obj[name] === "function").sort()
         : [];
 
-    const menuApi = bridge && typeof bridge.getMenuActions === "function" ? bridge.getMenuActions() : null;
-    const runApi = bridge && typeof bridge.getRunApi === "function" ? bridge.getRunApi() : null;
-    const rewardApi = bridge && typeof bridge.getRewardApi === "function" ? bridge.getRewardApi() : null;
-    const shopApi = bridge && typeof bridge.getShopApi === "function" ? bridge.getShopApi() : null;
-    const overlayApi = bridge && typeof bridge.getOverlayApi === "function" ? bridge.getOverlayApi() : null;
+    const menuApi =
+      runtimeApis?.menuActions || (bridge && typeof bridge.getMenuActions === "function" ? bridge.getMenuActions() : null);
+    const runApi = runtimeApis?.runApi || (bridge && typeof bridge.getRunApi === "function" ? bridge.getRunApi() : null);
+    const rewardApi =
+      runtimeApis?.rewardApi || (bridge && typeof bridge.getRewardApi === "function" ? bridge.getRewardApi() : null);
+    const shopApi =
+      runtimeApis?.shopApi || (bridge && typeof bridge.getShopApi === "function" ? bridge.getShopApi() : null);
+    const overlayApi =
+      runtimeApis?.overlayApi || (bridge && typeof bridge.getOverlayApi === "function" ? bridge.getOverlayApi() : null);
 
     return {
       phaserReady: Boolean(window.__ABYSS_PHASER_GAME__),
+      runtimeReady: Boolean(runtime),
       bridgeReady: Boolean(bridge),
       menuMethods: extractMethods(menuApi),
       runMethods: extractMethods(runApi),
@@ -79,56 +86,37 @@ export async function readBridgeContracts(page) {
   });
 }
 
-export async function menuAction(page, method, ...args) {
+async function invokeRuntimeApi(page, runtimeApiName, methodName, methodArgs) {
   return page.evaluate(
-    ({ methodName, methodArgs }) => {
-      const api = window.__ABYSS_PHASER_BRIDGE__?.getMenuActions?.();
-      if (!api || typeof api[methodName] !== "function") {
+    ({ apiName, method, args }) => {
+      const runtimeApi = window.__ABYSS_ENGINE_RUNTIME__?.apis?.[apiName];
+      if (!runtimeApi || typeof runtimeApi[method] !== "function") {
         return null;
       }
-      return api[methodName](...methodArgs);
+      return runtimeApi[method](...args);
     },
-    { methodName: method, methodArgs: args }
+    {
+      apiName: runtimeApiName,
+      method: methodName,
+      args: methodArgs,
+    }
   );
+}
+
+export async function menuAction(page, method, ...args) {
+  return invokeRuntimeApi(page, "menuActions", method, args);
 }
 
 export async function runAction(page, method, ...args) {
-  return page.evaluate(
-    ({ methodName, methodArgs }) => {
-      const api = window.__ABYSS_PHASER_BRIDGE__?.getRunApi?.();
-      if (!api || typeof api[methodName] !== "function") {
-        return null;
-      }
-      return api[methodName](...methodArgs);
-    },
-    { methodName: method, methodArgs: args }
-  );
+  return invokeRuntimeApi(page, "runApi", method, args);
 }
 
 export async function rewardAction(page, method, ...args) {
-  return page.evaluate(
-    ({ methodName, methodArgs }) => {
-      const api = window.__ABYSS_PHASER_BRIDGE__?.getRewardApi?.();
-      if (!api || typeof api[methodName] !== "function") {
-        return null;
-      }
-      return api[methodName](...methodArgs);
-    },
-    { methodName: method, methodArgs: args }
-  );
+  return invokeRuntimeApi(page, "rewardApi", method, args);
 }
 
 export async function shopAction(page, method, ...args) {
-  return page.evaluate(
-    ({ methodName, methodArgs }) => {
-      const api = window.__ABYSS_PHASER_BRIDGE__?.getShopApi?.();
-      if (!api || typeof api[methodName] !== "function") {
-        return null;
-      }
-      return api[methodName](...methodArgs);
-    },
-    { methodName: method, methodArgs: args }
-  );
+  return invokeRuntimeApi(page, "shopApi", method, args);
 }
 
 export async function playSingleHand(page, { stepMs = 170, maxSteps = 220 } = {}) {

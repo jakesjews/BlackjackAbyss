@@ -7,11 +7,12 @@ Bridge API method names are compatibility-critical for Phaser scenes and tooling
 Authoritative source:
 
 - `src/engine/runtime/bridge/register-apis.js`
+- Primary scene/runtime path: `game.__ABYSS_RUNTIME__.apis.*`
 
 Compatibility facade surface (current transitional endpoint):
 
 - `window.__ABYSS_PHASER_BRIDGE__`
-- This bridge is maintained for scene/test/tool compatibility while runtime wiring is simplified to a direct Phaser-native runtime service architecture.
+- This bridge is maintained for test/tool compatibility while scenes consume direct runtime APIs.
 
 ## Menu API
 

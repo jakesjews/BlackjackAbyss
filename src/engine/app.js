@@ -15,6 +15,13 @@ function createRuntimeContext() {
     bridge: bridgeCompat.bridge,
     tick: bridgeCompat.tick,
     setGame: bridgeCompat.setGame,
+    apis: {
+      menuActions: null,
+      runApi: null,
+      rewardApi: null,
+      shopApi: null,
+      overlayApi: null,
+    },
     game: null,
   };
 }
@@ -54,8 +61,8 @@ function syncPhaserScenesForMode(game, mode) {
 }
 
 export function createPhaserApp() {
-  if (window.__ABYSS_PHASER_READY_PROMISE__) {
-    return window.__ABYSS_PHASER_READY_PROMISE__;
+  if (window.__ABYSS_PHASER_RUNTIME_PROMISE__) {
+    return window.__ABYSS_PHASER_RUNTIME_PROMISE__;
   }
 
   const shell = document.getElementById("game-shell");
@@ -142,5 +149,5 @@ export function createPhaserApp() {
 
   window.__ABYSS_PHASER_RUNTIME_PROMISE__ = readyPayloadPromise;
   window.__ABYSS_PHASER_READY_PROMISE__ = readyPayloadPromise.then((payload) => payload.bridge);
-  return window.__ABYSS_PHASER_READY_PROMISE__;
+  return readyPayloadPromise;
 }

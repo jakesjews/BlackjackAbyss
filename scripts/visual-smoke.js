@@ -50,6 +50,9 @@ async function readState(page) {
 
 async function debugRuntimeSnapshot(page) {
   return page.evaluate(() => {
+    const runtime = window.__ABYSS_ENGINE_RUNTIME__ || null;
+    const runtimeApis = runtime?.apis && typeof runtime.apis === "object" ? runtime.apis : null;
+    const bridge = window.__ABYSS_PHASER_BRIDGE__ || null;
     let parsedState = {};
     if (typeof window.render_game_to_text === "function") {
       try {
@@ -77,7 +80,7 @@ async function debugRuntimeSnapshot(page) {
         });
       });
     }
-    const runApi = window.__ABYSS_PHASER_BRIDGE__?.getRunApi?.() || null;
+    const runApi = runtimeApis?.runApi || null;
     let runSnapshot = null;
     if (runApi && typeof runApi.getSnapshot === "function") {
       try {
@@ -90,7 +93,7 @@ async function debugRuntimeSnapshot(page) {
       mode: parsedState?.mode || "",
       hasRun: Boolean(parsedState?.run),
       hasEncounter: Boolean(parsedState?.encounter),
-      externalRendererActive: Boolean(window.__ABYSS_PHASER_BRIDGE__?.isExternalRendererActive?.(parsedState?.mode || "")),
+      externalRendererActive: Boolean(bridge?.isExternalRendererActive?.(parsedState?.mode || "")),
       activeScenes,
       sceneStates,
       runSnapshotMode: runSnapshot?.mode || "",

@@ -6,11 +6,8 @@ describe("runtime startup bootstrap", () => {
     const state = {};
     const loadProfile = vi.fn(() => ({ id: "profile" }));
     const loadSavedRunSnapshot = vi.fn(() => ({ id: "snapshot" }));
-    const registerPhaserMenuActions = vi.fn();
-    const registerPhaserRunApi = vi.fn();
-    const registerPhaserRewardApi = vi.fn();
-    const registerPhaserShopApi = vi.fn();
-    const registerPhaserOverlayApi = vi.fn();
+    const registerRuntimeApisFn = vi.fn();
+    const runtimeApiRegistration = { id: "runtime-api-registration" };
     const requestLandscapeLock = vi.fn();
     const createLandscapeLockRequesterFn = vi.fn(() => requestLandscapeLock);
     const bindRuntimeLifecycle = vi.fn();
@@ -32,11 +29,8 @@ describe("runtime startup bootstrap", () => {
       state,
       loadProfile,
       loadSavedRunSnapshot,
-      registerPhaserMenuActions,
-      registerPhaserRunApi,
-      registerPhaserRewardApi,
-      registerPhaserShopApi,
-      registerPhaserOverlayApi,
+      registerRuntimeApisFn,
+      runtimeApiRegistration,
       createLandscapeLockRequesterFn,
       globalWindow,
       globalDocument,
@@ -55,11 +49,8 @@ describe("runtime startup bootstrap", () => {
 
     expect(state.profile).toEqual({ id: "profile" });
     expect(state.savedRunSnapshot).toEqual({ id: "snapshot" });
-    expect(registerPhaserMenuActions).toHaveBeenCalledTimes(1);
-    expect(registerPhaserRunApi).toHaveBeenCalledTimes(1);
-    expect(registerPhaserRewardApi).toHaveBeenCalledTimes(1);
-    expect(registerPhaserShopApi).toHaveBeenCalledTimes(1);
-    expect(registerPhaserOverlayApi).toHaveBeenCalledTimes(1);
+    expect(registerRuntimeApisFn).toHaveBeenCalledTimes(1);
+    expect(registerRuntimeApisFn).toHaveBeenCalledWith(runtimeApiRegistration);
     expect(createLandscapeLockRequesterFn).toHaveBeenCalledWith(globalWindow);
     expect(bindRuntimeLifecycle).toHaveBeenCalledWith({
       bindRuntimeWindowLifecycle,
