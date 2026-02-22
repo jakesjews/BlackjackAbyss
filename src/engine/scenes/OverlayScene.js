@@ -3,7 +3,7 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
-import { getOverlayApi as getOverlayApiFromRuntime, tickRuntime } from "./runtime-bridge.js";
+import { getOverlayApi as getOverlayApiFromRuntime, tickRuntime } from "./runtime-access.js";
 
 const BUTTON_STYLE = ACTION_BUTTON_STYLE;
 const COLLECTION_ROW_GAP = 9;

@@ -2,23 +2,16 @@
 
 ## Contract Position
 
-Bridge API method names are compatibility-critical for Phaser scenes and tooling. Update them only with coordinated scene + docs + test changes.
+Runtime API method names are compatibility-critical for Phaser scenes and tooling. Update them only with coordinated scene + docs + test changes.
 
 Authoritative source:
 
 - `src/engine/runtime/bridge/register-apis.js`
 - Primary scene/runtime path: `game.__ABYSS_RUNTIME__.apis.*`
 
-Compatibility facade surface (current transitional endpoint):
-
-- `window.__ABYSS_PHASER_BRIDGE__`
-- This bridge is maintained for test/tool compatibility while scenes consume direct runtime APIs.
-- Bridge getters are now read-only compatibility views over `runtime.apis.*` (runtime remains source-of-truth).
-
 ## Menu API
 
-Runtime source: `runtime.apis.menuActions`  
-Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getMenuActions()`
+Runtime source: `runtime.apis.menuActions`
 
 - `startRun()`
 - `resumeRun()`
@@ -27,8 +20,7 @@ Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getMenuActions()`
 
 ## Run API
 
-Runtime source: `runtime.apis.runApi`  
-Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getRunApi()`
+Runtime source: `runtime.apis.runApi`
 
 - `getSnapshot()`
 - `hit()`
@@ -45,8 +37,7 @@ Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getRunApi()`
 
 ## Reward API
 
-Runtime source: `runtime.apis.rewardApi`  
-Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getRewardApi()`
+Runtime source: `runtime.apis.rewardApi`
 
 - `getSnapshot()`
 - `prev()`
@@ -57,8 +48,7 @@ Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getRewardApi()`
 
 ## Shop API
 
-Runtime source: `runtime.apis.shopApi`  
-Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getShopApi()`
+Runtime source: `runtime.apis.shopApi`
 
 - `getSnapshot()`
 - `prev()`
@@ -70,8 +60,7 @@ Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getShopApi()`
 
 ## Overlay API
 
-Runtime source: `runtime.apis.overlayApi`  
-Compatibility getter: `window.__ABYSS_PHASER_BRIDGE__.getOverlayApi()`
+Runtime source: `runtime.apis.overlayApi`
 
 - `getSnapshot()`
 - `prevPage()`
@@ -99,7 +88,7 @@ Notes:
 - These controls are ignored in production builds.
 - Default behavior with no flags remains normal gameplay flow.
 - Acceptance tests follow natural mode transitions and may seed chips with `economy.startingGold` to exercise camp buy paths quickly.
-- Scene bridge method names and global test hooks are unchanged.
+- Scene runtime method names and global test hooks are unchanged.
 
 Hook publisher source:
 

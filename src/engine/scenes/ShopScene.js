@@ -3,7 +3,7 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
-import { getShopApi as getShopApiFromRuntime, tickRuntime } from "./runtime-bridge.js";
+import { getShopApi as getShopApiFromRuntime, tickRuntime } from "./runtime-access.js";
 
 const CARD_STYLE = Object.freeze({
   fill: 0x22384a,

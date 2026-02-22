@@ -51,9 +51,8 @@ export async function waitForMode(page, modes, { maxTicks = 160, stepMs = 140 } 
   return null;
 }
 
-export async function readBridgeContracts(page) {
+export async function readRuntimeContracts(page) {
   return page.evaluate(() => {
-    const bridge = window.__ABYSS_PHASER_BRIDGE__ || null;
     const runtime = window.__ABYSS_ENGINE_RUNTIME__ || null;
     const runtimeApis = runtime?.apis && typeof runtime.apis === "object" ? runtime.apis : null;
     const extractMethods = (obj) =>
@@ -67,26 +66,14 @@ export async function readBridgeContracts(page) {
     const shopApi = runtimeApis?.shopApi || null;
     const overlayApi = runtimeApis?.overlayApi || null;
 
-    const bridgeMenuApi = bridge && typeof bridge.getMenuActions === "function" ? bridge.getMenuActions() : null;
-    const bridgeRunApi = bridge && typeof bridge.getRunApi === "function" ? bridge.getRunApi() : null;
-    const bridgeRewardApi = bridge && typeof bridge.getRewardApi === "function" ? bridge.getRewardApi() : null;
-    const bridgeShopApi = bridge && typeof bridge.getShopApi === "function" ? bridge.getShopApi() : null;
-    const bridgeOverlayApi = bridge && typeof bridge.getOverlayApi === "function" ? bridge.getOverlayApi() : null;
-
     return {
       phaserReady: Boolean(window.__ABYSS_PHASER_GAME__),
       runtimeReady: Boolean(runtime),
-      bridgeReady: Boolean(bridge),
       menuMethods: extractMethods(menuApi),
       runMethods: extractMethods(runApi),
       rewardMethods: extractMethods(rewardApi),
       shopMethods: extractMethods(shopApi),
       overlayMethods: extractMethods(overlayApi),
-      bridgeMenuMethods: extractMethods(bridgeMenuApi),
-      bridgeRunMethods: extractMethods(bridgeRunApi),
-      bridgeRewardMethods: extractMethods(bridgeRewardApi),
-      bridgeShopMethods: extractMethods(bridgeShopApi),
-      bridgeOverlayMethods: extractMethods(bridgeOverlayApi),
       hasRenderHook: typeof window.render_game_to_text === "function",
       hasAdvanceHook: typeof window.advanceTime === "function",
     };

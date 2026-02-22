@@ -1,4 +1,4 @@
-export function installRuntimeModeBridge({
+export function installRuntimeModeSync({
   state,
   reportMode,
   resizeCanvas,

@@ -2,7 +2,7 @@
 
 ## Control Model
 
-Controls are mode-driven. Keyboard shortcuts and action tray buttons map to the same runtime actions through bridge APIs.
+Controls are mode-driven. Keyboard shortcuts and action tray buttons map to the same runtime actions through runtime APIs.
 
 ## Keyboard Reference
 

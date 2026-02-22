@@ -6,7 +6,6 @@
 - Phaser scenes are the active presentation and input layer.
 - Runtime modules are the gameplay/state engine.
 - Legacy raw-canvas rendering paths have been removed from active runtime execution.
-- `window.__ABYSS_PHASER_BRIDGE__` is currently a compatibility facade for test/tool contracts.
 
 ## System Overview
 
@@ -30,14 +29,13 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 2. `createPhaserApp()` creates the Phaser game and scene manager.
 3. `src/main.js` starts runtime state/logic entry.
 4. Runtime entry registers scene-facing APIs and test hooks.
-5. Scene mode changes are synchronized through direct runtime context mode reporting (forwarded to bridge for compatibility).
+5. Scene mode changes are synchronized through direct runtime context mode reporting.
 
 ## Runtime Seam
 
-- `src/engine/app.js` exposes a direct runtime context: `game`, runtime API slots (`runtime.apis.*`), runtime bridge facade, and runtime tick function.
-- Runtime frame stepping is scene-driven through runtime context handlers (`runtime.tick` + `runtime.setStepHandler`) rather than bridge plumbing.
-- Scenes consume runtime APIs through `src/engine/scenes/runtime-bridge.js` by reading `game.__ABYSS_RUNTIME__.apis`.
-- `window.__ABYSS_PHASER_BRIDGE__` is kept as a thin read-only compatibility facade for test/tool contracts.
+- `src/engine/app.js` exposes a direct runtime context: `game`, runtime API slots (`runtime.apis.*`), and runtime tick function.
+- Runtime frame stepping is scene-driven through runtime context handlers (`runtime.tick` + `runtime.setStepHandler`) rather than legacy shim plumbing.
+- Scenes consume runtime APIs through `src/engine/scenes/runtime-access.js` by reading `game.__ABYSS_RUNTIME__.apis`.
 
 ## Runtime vs Scene Responsibilities
 
@@ -47,7 +45,7 @@ Runtime responsibilities:
 - Resolve combat/progression/reward/shop transitions.
 - Provide reusable combat/card primitives in runtime domain modules (`domain/combat.js`).
 - Persist state and profile snapshots.
-- Expose snapshots and mutating actions via bridge contracts.
+- Expose snapshots and mutating actions via runtime API contracts.
 - Own runtime audio behavior (MP3 BGM + SFX mixing policy).
 
 Scene responsibilities:
@@ -75,7 +73,6 @@ Write path:
 ## Legacy Boundary
 
 - Legacy adapter seam has been removed.
-- Bridge compatibility remains intentionally in `window.__ABYSS_PHASER_BRIDGE__` for test/tool stability.
 
 ## Verification Gate
 

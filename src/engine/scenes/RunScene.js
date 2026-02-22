@@ -3,7 +3,7 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
-import { getRunApi as getRunApiFromRuntime, tickRuntime } from "./runtime-bridge.js";
+import { getRunApi as getRunApiFromRuntime, tickRuntime } from "./runtime-access.js";
 
 const BUTTON_STYLES = ACTION_BUTTON_STYLE;
 const RUN_PARTICLE_KEY = "__run-particle__";

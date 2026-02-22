@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { expectMethodContract, expectNoRuntimeErrors } from "./helpers/assertions.mjs";
 import { closeSharedAcceptanceBrowser, createAcceptanceSession, captureFailureArtifacts } from "./helpers/page.mjs";
-import { advanceTime, readBridgeContracts } from "./helpers/runtime.mjs";
+import { advanceTime, readRuntimeContracts } from "./helpers/runtime.mjs";
 import { startAcceptanceServer, stopAcceptanceServer } from "./helpers/server.mjs";
 
 const MENU_METHODS = ["startRun", "resumeRun", "openCollection", "hasSavedRun"];
@@ -33,22 +33,17 @@ describe("acceptance: boot contracts", () => {
     await stopAcceptanceServer();
   });
 
-  test("boots Phaser host and publishes stable bridge contracts + test hooks", async () => {
+  test("boots Phaser host and publishes stable runtime contracts + test hooks", async () => {
     const session = await createAcceptanceSession();
     try {
-      const contracts = await readBridgeContracts(session.page);
+      const contracts = await readRuntimeContracts(session.page);
       expect(contracts.phaserReady).toBe(true);
-      expect(contracts.bridgeReady).toBe(true);
+      expect(contracts.runtimeReady).toBe(true);
       expectMethodContract(contracts.menuMethods, MENU_METHODS, "menu");
       expectMethodContract(contracts.runMethods, RUN_METHODS, "run");
       expectMethodContract(contracts.rewardMethods, REWARD_METHODS, "reward");
       expectMethodContract(contracts.shopMethods, SHOP_METHODS, "shop");
       expectMethodContract(contracts.overlayMethods, OVERLAY_METHODS, "overlay");
-      expectMethodContract(contracts.bridgeMenuMethods, MENU_METHODS, "bridge menu");
-      expectMethodContract(contracts.bridgeRunMethods, RUN_METHODS, "bridge run");
-      expectMethodContract(contracts.bridgeRewardMethods, REWARD_METHODS, "bridge reward");
-      expectMethodContract(contracts.bridgeShopMethods, SHOP_METHODS, "bridge shop");
-      expectMethodContract(contracts.bridgeOverlayMethods, OVERLAY_METHODS, "bridge overlay");
       expect(contracts.hasRenderHook).toBe(true);
       expect(contracts.hasAdvanceHook).toBe(true);
 

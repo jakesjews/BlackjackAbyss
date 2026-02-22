@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { installRuntimeModeBridge } from "../core/runtime-mode-bridge.js";
+import { installRuntimeModeSync } from "../core/runtime-mode-sync.js";
 
-describe("runtime mode bridge", () => {
+describe("runtime mode sync", () => {
   it("reports initial mode and resizes only when mode changes", () => {
     const state = { mode: "menu" };
     const reportMode = vi.fn();
     const resizeCanvas = vi.fn();
 
-    installRuntimeModeBridge({
+    installRuntimeModeSync({
       state,
       reportMode,
       resizeCanvas,
@@ -29,7 +29,7 @@ describe("runtime mode bridge", () => {
     const state = {};
     const reportMode = vi.fn();
 
-    installRuntimeModeBridge({
+    installRuntimeModeSync({
       state,
       reportMode,
       resizeCanvas: () => {},

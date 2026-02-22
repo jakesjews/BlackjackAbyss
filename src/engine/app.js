@@ -1,6 +1,5 @@
 import Phaser from "phaser";
 import { BASE_HEIGHT, BASE_WIDTH, SCENE_KEYS } from "./constants.js";
-import { createPhaserBridgeCompat } from "./runtime/compat/phaser-bridge-compat.js";
 import { BootScene } from "./scenes/BootScene.js";
 import { MenuScene } from "./scenes/MenuScene.js";
 import { RunScene } from "./scenes/RunScene.js";
@@ -8,10 +7,11 @@ import { RewardScene } from "./scenes/RewardScene.js";
 import { ShopScene } from "./scenes/ShopScene.js";
 import { OverlayScene } from "./scenes/OverlayScene.js";
 
+const EXTERNAL_RENDER_MODES = new Set(["menu", "playing", "reward", "shop", "collection", "gameover", "victory"]);
+
 function createRuntimeContext() {
   let runtimeStepHandler = null;
   const runtime = {
-    bridge: null,
     tick(deltaMs, timeMs) {
       if (typeof runtimeStepHandler !== "function") {
         return;
@@ -32,21 +32,11 @@ function createRuntimeContext() {
     game: null,
     reportMode(mode) {
       syncPhaserScenesForMode(runtime.game, mode);
-      if (typeof runtime.bridge?.reportMode === "function") {
-        runtime.bridge.reportMode(mode);
-      }
     },
     isExternalRendererActive(mode) {
-      if (typeof runtime.bridge?.isExternalRendererActive !== "function") {
-        return false;
-      }
-      return runtime.bridge.isExternalRendererActive(mode);
+      return typeof mode === "string" && EXTERNAL_RENDER_MODES.has(mode);
     },
   };
-  const bridgeCompat = createPhaserBridgeCompat({
-    getRuntimeApis: () => runtime.apis,
-  });
-  runtime.bridge = bridgeCompat.bridge;
 
   return runtime;
 }
@@ -147,13 +137,10 @@ export function createPhaserApp() {
           }
           runtime.game = bootedGame;
           bootedGame.__ABYSS_RUNTIME__ = runtime;
-          const bridge = runtime.bridge;
 
           window.__ABYSS_PHASER_GAME__ = bootedGame;
-          window.__ABYSS_PHASER_BRIDGE__ = bridge;
           window.__ABYSS_ENGINE_RUNTIME__ = runtime;
           resolve({
-            bridge,
             runtime,
             game: bootedGame,
           });
@@ -165,6 +152,5 @@ export function createPhaserApp() {
   });
 
   window.__ABYSS_PHASER_RUNTIME_PROMISE__ = readyPayloadPromise;
-  window.__ABYSS_PHASER_READY_PROMISE__ = readyPayloadPromise.then((payload) => payload.bridge);
   return readyPayloadPromise;
 }

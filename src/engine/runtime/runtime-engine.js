@@ -42,7 +42,7 @@ import {
 } from "./bridge/register-apis.js";
 import { publishRuntimeTestHooks } from "./bridge/snapshots.js";
 import { readRuntimeTestFlags } from "./testing/test-controls.js";
-import { createRuntimeSnapshotRegistry, registerRuntimeApis as registerRuntimeApisFromModule } from "./core/phaser-bridge-apis.js";
+import { createRuntimeSnapshotRegistry, registerRuntimeApis as registerRuntimeApisFromModule } from "./core/phaser-runtime-apis.js";
 import {
   BOSS_RELIC,
   RELIC_BY_ID,
@@ -114,7 +114,7 @@ import {
   sanitizeRun as sanitizeRunFromModule,
 } from "./core/state-sanitizers.js";
 import { installRuntimeTestHooks } from "./core/test-hooks.js";
-import { installRuntimeModeBridge } from "./core/runtime-mode-bridge.js";
+import { installRuntimeModeSync } from "./core/runtime-mode-sync.js";
 import { bindRuntimeWindowLifecycle, createLandscapeLockRequester } from "./core/audio-system.js";
 import {
   CARD_SOURCES,
@@ -146,7 +146,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     throw new Error("Unable to initialize Phaser runtime context.");
   }
   if (typeof reportMode !== "function" || typeof isExternalRendererActive !== "function") {
-    throw new Error("Runtime context is missing Phaser-native mode bridge handlers.");
+    throw new Error("Runtime context is missing Phaser-native mode sync handlers.");
   }
 
   const WIDTH = RUNTIME_WIDTH;
@@ -171,7 +171,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
   });
   const runtimeTestFlags = readRuntimeTestFlags(window);
 
-  installRuntimeModeBridge({
+  installRuntimeModeSync({
     state,
     reportMode: reportMode.bind(runtimeContext),
     resizeCanvas,

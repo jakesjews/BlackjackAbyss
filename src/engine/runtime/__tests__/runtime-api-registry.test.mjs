@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { registerRuntimeApis } from "../core/phaser-bridge-apis.js";
+import { registerRuntimeApis } from "../core/phaser-runtime-apis.js";
 
-describe("phaser bridge registry", () => {
+describe("runtime API registry", () => {
   it("registers runtime APIs in one pass and validates contracts", () => {
     const runtimeApis = {};
     const state = { mode: "menu" };

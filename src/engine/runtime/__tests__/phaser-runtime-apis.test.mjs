@@ -5,7 +5,7 @@ import {
   registerPhaserRewardApi,
   registerPhaserRunApi,
   registerPhaserShopApi,
-} from "../core/phaser-bridge-apis.js";
+} from "../core/phaser-runtime-apis.js";
 
 function clampNumber(value, min, max, fallback) {
   const n = Number(value);
@@ -15,7 +15,7 @@ function clampNumber(value, min, max, fallback) {
   return Math.max(min, Math.min(max, n));
 }
 
-describe("phaser runtime API creators", () => {
+describe("runtime API creators", () => {
   it("creates menu API and preserves mode guards", () => {
     const state = { mode: "menu" };
     const counters = {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createRuntimeSnapshotRegistry } from "../core/phaser-bridge-apis.js";
+import { createRuntimeSnapshotRegistry } from "../core/phaser-runtime-apis.js";
 
 describe("phaser snapshot registry", () => {
   it("wires run/reward/shop/overlay snapshot builders through a single registry", () => {

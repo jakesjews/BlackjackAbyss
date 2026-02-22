@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { SCENE_KEYS } from "../constants.js";
 import { MENU_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
-import { getMenuActions as getMenuActionsFromRuntime } from "./runtime-bridge.js";
+import { getMenuActions as getMenuActionsFromRuntime } from "./runtime-access.js";
 
 const MENU_SPLASH_BUNDLED_URL = new URL("../../assets/splash_art.png", import.meta.url).href;
 const MENU_SPLASH_KEY = "__menu-splash-art__";

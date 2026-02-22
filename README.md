@@ -8,7 +8,7 @@ Blackjack Abyss is a Phaser 3 app: a roguelike blackjack combat game where Phase
 - Floor and room progression with normal, elite, and boss encounters.
 - Relics, rewards, and shop choices that modify run strategy.
 - Run and profile persistence via browser localStorage.
-- Phaser-first rendering and scene flow, with runtime logic bridged into scenes.
+- Phaser-first rendering and scene flow, with runtime logic consumed directly by scenes.
 - Mode-driven action button tray with desktop keyboard shortcut hints.
 - MP3 background soundtrack with SFX-priority mixing so combat/UI sounds stay prominent.
 
@@ -35,8 +35,7 @@ npm run start
 - Runtime modules in `src/engine/runtime/*` own gameplay state, progression, persistence, and scene-facing APIs.
 - Runtime entrypoint is `src/engine/runtime/runtime-engine.js`.
 - `src/engine/runtime/core/*` contains extracted runtime helpers, factories, snapshot/persistence helpers, run-results/profile helpers, passive/collection view helpers, sanitizers, and content catalogs.
-- `window.__ABYSS_PHASER_BRIDGE__` is a thin compatibility facade used by tests/tools while runtime remains Phaser-native.
-- Host/runtime seam in `src/engine/app.js` is direct (`game` + runtime bridge/tick), with no legacy adapter class.
+- Host/runtime seam in `src/engine/app.js` is direct (`game` + runtime APIs + runtime tick), with no legacy adapter class.
 
 ## Controls
 
@@ -79,7 +78,7 @@ Storage keys:
 - [`PROGRESS.md`](./PROGRESS.md): rolling project state and handoff context
 - [`docs/architecture.md`](./docs/architecture.md): Phaser-first system architecture and data flow
 - [`docs/controls-and-modes.md`](./docs/controls-and-modes.md): mode-specific controls and tray behavior
-- [`docs/runtime-apis.md`](./docs/runtime-apis.md): bridge API contracts and test hooks
+- [`docs/runtime-apis.md`](./docs/runtime-apis.md): runtime API contracts and test hooks
 - [`docs/migration-notes.md`](./docs/migration-notes.md): migration status, transitional boundaries, cleanup notes
 
 ## CI
