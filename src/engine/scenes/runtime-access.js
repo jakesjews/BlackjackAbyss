@@ -2,6 +2,17 @@ export function getRuntime(scene) {
   return scene?.game?.__ABYSS_RUNTIME__ || null;
 }
 
+export function isVisualFxDisabled(scene) {
+  return Boolean(getRuntime(scene)?.testFlags?.visual?.disableFx);
+}
+
+export function isCoarsePointer(scene) {
+  const game = scene?.sys?.game || scene?.game;
+  const hasTouchInput = Boolean(game?.device?.input?.touch);
+  const mouseEnabled = scene?.input?.manager?.mouse?.enabled !== false;
+  return hasTouchInput && !mouseEnabled;
+}
+
 function getRuntimeApis(scene) {
   const runtime = getRuntime(scene);
   return runtime?.apis && typeof runtime.apis === "object" ? runtime.apis : null;

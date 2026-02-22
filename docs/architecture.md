@@ -21,6 +21,7 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - Runtime snapshot/persistence module: `src/engine/runtime/core/run-snapshot.js`
 - Runtime run-result/profile module: `src/engine/runtime/core/run-results.js`
 - Runtime passive/collection view module: `src/engine/runtime/core/passive-view.js`
+- Runtime orchestration helper modules: `src/engine/runtime/core/{runtime-sanitizers,runtime-ui-helpers,runtime-passive-helpers}.js`
 - Scene layer: `src/engine/scenes/*`
 
 ## Boot Flow
@@ -55,6 +56,21 @@ Scene responsibilities:
 - Call runtime actions in response to user input.
 - Manage Phaser-specific layout, animations, and modal presentation.
 
+## Host API Policy
+
+Phaser is the host of record for runtime loop/input/resize/visibility handling.
+
+- Runtime loop/ticks: scene-driven through `runtime.setStepHandler` + `runtime.tick`.
+- Lifecycle wiring: Phaser game/scale/input events via `src/engine/runtime/core/runtime-phaser-host.js`.
+- Scene sizing/layout decisions use Phaser scale/device/input APIs.
+
+Browser APIs are intentionally limited to compatibility/host boundaries:
+
+- `localStorage` persistence.
+- Global test hooks and test flags.
+- `beforeunload` save guard.
+- App boot DOM mount (`#game-shell`) and shell mode class toggle in `src/engine/app.js`.
+
 ## Data Flow
 
 Read path:
@@ -76,6 +92,8 @@ Write path:
 
 ## Verification Gate
 
-- Refactors should clear: `test:unit`, `test:acceptance`, and `build`.
-- `test:smoke` remains available as a focused acceptance-backed smoke rerun (`tests/acceptance/visual-smoke.spec.mjs`).
+- Refactors should clear: `test:unit`, `test:acceptance`, `test:visual`, and `build`.
+- Visual regression is PR-blocking through committed baselines in `tests/visual-baseline/*`.
+- `test:acceptance` includes `tests/acceptance/visual-smoke.spec.mjs`.
+- `test:smoke` remains available as a focused rerun of that same smoke spec when artifact-only refresh is needed.
 - Acceptance tests use one-hand core + natural camp flows, non-production economy seeding for faster buy-path verification, and desktop/mobile smoke artifact capture.

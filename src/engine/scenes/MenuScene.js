@@ -2,12 +2,15 @@ import Phaser from "phaser";
 import { SCENE_KEYS } from "../constants.js";
 import { MENU_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
-import { getMenuActions as getMenuActionsFromRuntime } from "./runtime-access.js";
+import {
+  getMenuActions as getMenuActionsFromRuntime,
+  isCoarsePointer as isCoarsePointerFromRuntime,
+  isVisualFxDisabled as isVisualFxDisabledFromRuntime,
+} from "./runtime-access.js";
 
 const MENU_SPLASH_BUNDLED_URL = new URL("../../assets/splash_art.png", import.meta.url).href;
 const MENU_SPLASH_KEY = "__menu-splash-art__";
 const MENU_SPLASH_KEY_ALT = "__menu-splash-art-alt__";
-const MENU_SPLASH_RUNTIME_KEY = "__menu-splash-runtime__";
 const MENU_EMBER_TEXTURE_KEYS = ["__menu-ember-diamond__", "__menu-ember-shard__", "__menu-ember-tri__", "__menu-ember-chip__"];
 const MENU_SPLASH_FALLBACK_KEY = "__menu-splash-fallback__";
 const MENU_CANVAS_WIDTH = 512;
@@ -36,7 +39,7 @@ export class MenuScene extends Phaser.Scene {
     this.frameMask = null;
     this.emberSprites = [];
     this.introTweens = [];
-    this.runtimeSplashLoading = false;
+    this.disableVisualFx = false;
   }
 
   preload() {
@@ -49,13 +52,21 @@ export class MenuScene extends Phaser.Scene {
   }
 
   create() {
+    const parentWidth = Math.max(
+      1,
+      Math.floor(this.scale.parentSize?.width || this.scale.gameSize.width || MENU_CANVAS_WIDTH)
+    );
+    const parentHeight = Math.max(
+      1,
+      Math.floor(this.scale.parentSize?.height || this.scale.gameSize.height || MENU_CANVAS_HEIGHT)
+    );
     const viewportW = Math.max(
       1,
-      Math.floor(window.visualViewport?.width || document.documentElement.clientWidth || window.innerWidth || MENU_CANVAS_WIDTH)
+      Math.floor(parentWidth || MENU_CANVAS_WIDTH)
     );
     const viewportH = Math.max(
       1,
-      Math.floor(window.visualViewport?.height || document.documentElement.clientHeight || window.innerHeight || MENU_CANVAS_HEIGHT)
+      Math.floor(parentHeight || MENU_CANVAS_HEIGHT)
     );
     const fullscreenMobileMenu = this.shouldUseFullscreenMobileMenu(viewportW);
     const targetW = fullscreenMobileMenu ? viewportW : MENU_CANVAS_WIDTH;
@@ -65,9 +76,8 @@ export class MenuScene extends Phaser.Scene {
     }
     this.cameras.main.setBackgroundColor("#081420");
     this.cameras.main.setAlpha(1);
-    this.setMenuShellActive(true);
+    this.disableVisualFx = isVisualFxDisabledFromRuntime(this);
     this.buildMenuUi();
-    this.ensureRuntimeSplashTexture();
     this.bindKeyboardInput();
     this.onResize(this.scale.gameSize);
     this.refreshResumeAvailability();
@@ -80,11 +90,6 @@ export class MenuScene extends Phaser.Scene {
 
     this.scale.on("resize", this.onResize, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.teardown());
-    if (typeof window !== "undefined") {
-      window.requestAnimationFrame(() => {
-        window.dispatchEvent(new Event("resize"));
-      });
-    }
   }
 
   update(time, delta) {
@@ -140,7 +145,6 @@ export class MenuScene extends Phaser.Scene {
   }
 
   teardown() {
-    this.setMenuShellActive(false);
     this.scale.off("resize", this.onResize, this);
     this.keyboardHandlers.forEach(({ eventName, handler }) => {
       this.input.keyboard?.off(eventName, handler);
@@ -165,10 +169,6 @@ export class MenuScene extends Phaser.Scene {
     }
     this.menuColumnContainer = null;
     this.menuFrameRect = null;
-  }
-
-  setMenuShellActive(isActive) {
-    document.body.classList.toggle("menu-screen", Boolean(isActive));
   }
 
   ensureMenuParticleTexture() {
@@ -275,45 +275,8 @@ export class MenuScene extends Phaser.Scene {
     if (this.validTextureKey(MENU_SPLASH_KEY_ALT)) {
       return MENU_SPLASH_KEY_ALT;
     }
-    if (this.validTextureKey(MENU_SPLASH_RUNTIME_KEY)) {
-      return MENU_SPLASH_RUNTIME_KEY;
-    }
     this.ensureMenuFallbackTexture();
     return MENU_SPLASH_FALLBACK_KEY;
-  }
-
-  ensureRuntimeSplashTexture() {
-    if (this.validTextureKey(MENU_SPLASH_KEY) || this.validTextureKey(MENU_SPLASH_KEY_ALT) || this.validTextureKey(MENU_SPLASH_RUNTIME_KEY)) {
-      return;
-    }
-    if (this.runtimeSplashLoading || typeof window === "undefined") {
-      return;
-    }
-    this.runtimeSplashLoading = true;
-    const image = new window.Image();
-    image.decoding = "async";
-    image.onload = () => {
-      this.runtimeSplashLoading = false;
-      if (!this.sys?.isActive?.()) {
-        return;
-      }
-      try {
-        if (this.textures.exists(MENU_SPLASH_RUNTIME_KEY)) {
-          this.textures.remove(MENU_SPLASH_RUNTIME_KEY);
-        }
-        this.textures.addImage(MENU_SPLASH_RUNTIME_KEY, image);
-        if (this.bgImage) {
-          this.bgImage.setTexture(MENU_SPLASH_RUNTIME_KEY);
-          this.onResize(this.scale.gameSize);
-        }
-      } catch {
-        // Keep scene stable if runtime texture registration fails.
-      }
-    };
-    image.onerror = () => {
-      this.runtimeSplashLoading = false;
-    };
-    image.src = MENU_SPLASH_BUNDLED_URL;
   }
 
   buildMenuUi() {
@@ -327,13 +290,15 @@ export class MenuScene extends Phaser.Scene {
     this.frameMaskShape = this.add.graphics().setDepth(-30).setVisible(false);
     this.frameMask = this.frameMaskShape.createGeometryMask();
 
-    this.ensureMenuParticleTexture();
-    this.syncEmberField({
-      x: 0,
-      y: 0,
-      width: this.scale.gameSize.width,
-      height: this.scale.gameSize.height,
-    });
+    if (!this.disableVisualFx) {
+      this.ensureMenuParticleTexture();
+      this.syncEmberField({
+        x: 0,
+        y: 0,
+        width: this.scale.gameSize.width,
+        height: this.scale.gameSize.height,
+      });
+    }
 
     this.title = this.add
       .text(0, 0, "BLACKJACK\nABYSS", {
@@ -362,6 +327,14 @@ export class MenuScene extends Phaser.Scene {
   }
 
   syncEmberField(frame) {
+    if (this.disableVisualFx) {
+      while (this.emberSprites.length > 0) {
+        const ember = this.emberSprites.pop();
+        ember?.destroy?.();
+      }
+      return;
+    }
+
     const safeFrame = frame || {
       x: 0,
       y: 0,
@@ -535,9 +508,7 @@ export class MenuScene extends Phaser.Scene {
 
   shouldUseFullscreenMobileMenu(width = this.scale.gameSize.width) {
     const viewportWidth = Number(width) || 0;
-    const coarsePointer = typeof window !== "undefined"
-      && typeof window.matchMedia === "function"
-      && window.matchMedia("(pointer: coarse)").matches;
+    const coarsePointer = isCoarsePointerFromRuntime(this);
     return coarsePointer || viewportWidth <= 980;
   }
 

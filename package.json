@@ -11,6 +11,8 @@
     "vercel-build": "npm run build",
     "test": "npm run test:unit",
     "test:smoke": "vitest run --config vitest.acceptance.config.mjs tests/acceptance/visual-smoke.spec.mjs",
+    "test:visual": "vitest run --config vitest.acceptance.config.mjs tests/acceptance/visual-smoke.spec.mjs",
+    "test:visual:update": "VISUAL_UPDATE=1 vitest run --config vitest.acceptance.config.mjs tests/acceptance/visual-smoke.spec.mjs",
     "test:unit": "vitest run",
     "test:acceptance": "vitest run --config vitest.acceptance.config.mjs",
     "test:dead-refs": "node scripts/check-dead-refs.mjs"
@@ -24,6 +26,8 @@
     "playwright": "^1.58.2"
   },
   "devDependencies": {
+    "pixelmatch": "^7.1.0",
+    "pngjs": "^7.0.0",
     "vite": "^7.1.5",
     "vitest": "^3.2.4"
   }

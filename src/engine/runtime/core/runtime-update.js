@@ -19,18 +19,21 @@ export function createRuntimeUpdater({
   random = Math.random,
 }) {
   function update(dt) {
+    const visualFxDisabled = Boolean(state.visual?.disableFx);
     state.worldTime += dt;
     updateMusic(dt);
 
-    for (const orb of ambientOrbs) {
-      orb.y += orb.speed * dt;
-      if (orb.y > height + 12) {
-        orb.y = -12;
-        orb.x = random() * width;
+    if (!visualFxDisabled) {
+      for (const orb of ambientOrbs) {
+        orb.y += orb.speed * dt;
+        if (orb.y > height + 12) {
+          orb.y = -12;
+          orb.x = random() * width;
+        }
       }
     }
 
-    if (state.mode === "menu") {
+    if (!visualFxDisabled && state.mode === "menu") {
       for (const mote of menuMotes) {
         const speedScale = mote.speedScale || 1;
         const turbulence = Math.sin(state.worldTime * (1.6 + mote.swirl) + mote.phase) * (18 * mote.drift * speedScale);
@@ -78,6 +81,9 @@ export function createRuntimeUpdater({
     });
 
     state.sparkParticles = state.sparkParticles.filter((spark) => {
+      if (visualFxDisabled) {
+        return false;
+      }
       spark.life -= dt;
       spark.x += spark.vx * dt;
       spark.y += spark.vy * dt;
@@ -107,6 +113,9 @@ export function createRuntimeUpdater({
     });
 
     state.menuSparks = state.menuSparks.filter((spark) => {
+      if (visualFxDisabled) {
+        return false;
+      }
       spark.life -= dt;
       spark.x += spark.vx * dt;
       spark.y += spark.vy * dt;
@@ -116,6 +125,9 @@ export function createRuntimeUpdater({
     });
 
     state.flashOverlays = state.flashOverlays.filter((flash) => {
+      if (visualFxDisabled) {
+        return false;
+      }
       flash.life -= dt;
       return flash.life > 0;
     });

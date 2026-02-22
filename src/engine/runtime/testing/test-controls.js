@@ -13,6 +13,13 @@ function normalizeEconomy(rawEconomy) {
   };
 }
 
+function normalizeVisual(rawVisual) {
+  const source = rawVisual && typeof rawVisual === "object" ? rawVisual : {};
+  return {
+    disableFx: Boolean(source.disableFx),
+  };
+}
+
 export function readRuntimeTestFlags(globalObject = globalThis) {
   const isProduction = Boolean(import.meta.env?.PROD);
   if (isProduction) {
@@ -20,11 +27,15 @@ export function readRuntimeTestFlags(globalObject = globalThis) {
       economy: {
         startingGold: 0,
       },
+      visual: {
+        disableFx: false,
+      },
     };
   }
 
   const raw = globalObject && typeof globalObject === "object" ? globalObject.__ABYSS_TEST_FLAGS__ : null;
   const source = raw && typeof raw === "object" ? raw : {};
   const economy = normalizeEconomy(source.economy);
-  return { economy };
+  const visual = normalizeVisual(source.visual);
+  return { economy, visual };
 }

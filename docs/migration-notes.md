@@ -44,12 +44,20 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Acceptance boot contracts validate runtime API method sets and test hooks.
 - Runtime API write-registration wrappers have been removed; runtime APIs are the only contract surface.
 - Folded smoke capture into acceptance (`tests/acceptance/visual-smoke.spec.mjs`) and replaced standalone smoke harness script.
+- `npm run test:smoke` now intentionally reruns only `tests/acceptance/visual-smoke.spec.mjs` for quick artifact capture; it is a subset of `test:acceptance`, not an additional independent gate.
 - Removed `window.__ABYSS_PHASER_BRIDGE__` publication and deleted `src/engine/runtime/compat/phaser-bridge-compat.js`; runtime APIs are now the only contract surface.
+- Added committed visual regression baselines under `tests/visual-baseline/*` with near-strict diff policy (`pixelmatch` + threshold metrics) and CI PR blocking via `test:visual`.
+- Added test-only visual stabilization flag (`window.__ABYSS_TEST_FLAGS__.visual.disableFx`) for deterministic snapshot capture.
+- Removed scene-side native browser viewport/input fallbacks (`window.visualViewport`, `matchMedia`, direct DOM canvas/image paths) from active scene flows.
+- Runtime host lifecycle now uses Phaser events for hidden/visible, input unlock, and scale resize wiring; browser lifecycle usage is reduced to explicit compatibility boundaries.
+- Runtime loop fallback to browser RAF removed; active runtime stepping is now Phaser scene-driven through runtime step handlers.
+- Extracted additional runtime-engine orchestration helpers into `src/engine/runtime/core/runtime-sanitizers.js`, `src/engine/runtime/core/runtime-ui-helpers.js`, and `src/engine/runtime/core/runtime-passive-helpers.js`.
 
 ## Transitional / Still Present
 
 - `src/engine/runtime/runtime-engine.js` is still the largest runtime file and continues to be the next extraction target.
 - Test-only economy seed controls are present in runtime for non-production acceptance execution only.
+- Runtime test flags now include visual stabilization controls for acceptance visual snapshots.
 
 ## Kept For Compatibility
 
@@ -69,6 +77,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 
 - Reintroduce a reliable balance probe with bounded execution and cleanup guarantees.
 - Continue extracting remaining runtime concerns from `runtime-engine.js` into module files.
+- Continue trimming runtime-engine orchestration size while avoiding wrapper-only indirection.
 - Continue reducing wrapper-only indirection while keeping runtime-engine non-monolithic.
 
 ## Cleanup Guardrails

@@ -84,14 +84,19 @@ Storage keys:
 ## CI
 
 - GitHub Actions workflow: `.github/workflows/ci.yml`
-- Required check for PR merge to `main`: `quality-gate` (`test:unit`, `test:acceptance`, `build`)
-- Informational smoke job: runs on `main` pushes, nightly schedule, and manual dispatch; executes acceptance-backed smoke capture and uploads `artifacts/visual-smoke/latest`
+- Required check for PR merge to `main`: `quality-gate` (`test:unit`, `test:acceptance`, `test:visual`, `build`)
+- Visual regression diffs are PR-blocking and compare screenshots against committed baselines in `tests/visual-baseline/*`.
+- `test:acceptance` includes the same visual smoke flow used by `test:visual`; `test:visual` is the strict golden-diff gate.
+- Informational smoke job: runs on `main` pushes, nightly schedule, and manual dispatch; reruns the same visual smoke spec for artifact capture (`artifacts/visual-smoke/latest`).
 
 ## Test Commands
 
 - `npm run test:unit`: fast vitest coverage for extracted runtime logic modules.
-- `npm run test:acceptance`: Playwright acceptance suite (contracts + one-hand core/camp progression + seeded economy + persistence + visual smoke artifacts).
-- `npm run test:smoke`: targeted acceptance smoke capture (`tests/acceptance/visual-smoke.spec.mjs`) for desktop/mobile snapshots.
+- `npm run test:acceptance`: primary Playwright gate (contracts + one-hand core/camp progression + seeded economy + persistence + visual smoke artifacts).
+- `npm run test:visual`: strict golden-image regression check for desktop/mobile smoke shots.
+- `npm run test:visual:update`: intentional golden refresh (`VISUAL_UPDATE=1`) after approved visual changes.
+- `npm run test:smoke`: focused rerun of `tests/acceptance/visual-smoke.spec.mjs` for desktop/mobile snapshots and artifact refresh.
+- If `test:acceptance` has already passed in a cycle, running `test:smoke` again is optional unless you specifically want fresh smoke artifacts.
 
 ## Build / Deploy
 

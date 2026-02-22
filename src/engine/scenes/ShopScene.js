@@ -3,7 +3,12 @@ import { SCENE_KEYS } from "../constants.js";
 import { ACTION_BUTTON_STYLE } from "./ui/button-styles.js";
 import { applyGradientButtonStyle, createGradientButton, setGradientButtonSize } from "./ui/gradient-button.js";
 import { createModalCloseButton, drawFramedModalPanel, drawModalBackdrop, placeModalCloseButton } from "./ui/modal-ui.js";
-import { getShopApi as getShopApiFromRuntime, tickRuntime } from "./runtime-access.js";
+import { createTightTextureFromAlpha } from "./ui/texture-processing.js";
+import {
+  getShopApi as getShopApiFromRuntime,
+  isCoarsePointer as isCoarsePointerFromRuntime,
+  tickRuntime,
+} from "./runtime-access.js";
 
 const CARD_STYLE = Object.freeze({
   fill: 0x22384a,
@@ -315,9 +320,7 @@ export class ShopScene extends Phaser.Scene {
 
   shouldShowKeyboardHints(width) {
     const viewportWidth = Number(width) || 0;
-    const coarsePointer = typeof window !== "undefined"
-      && typeof window.matchMedia === "function"
-      && window.matchMedia("(pointer: coarse)").matches;
+    const coarsePointer = isCoarsePointerFromRuntime(this);
     return viewportWidth >= 1100 && !coarsePointer;
   }
 
@@ -1191,66 +1194,11 @@ export class ShopScene extends Phaser.Scene {
   }
 
   resolveTightTexture(sourceKey, outputKey, alphaThreshold = 8) {
-    if (!sourceKey || !outputKey || !this.textures.exists(sourceKey)) {
-      return sourceKey;
-    }
-    if (this.textures.exists(outputKey) || typeof this.textures.createCanvas !== "function") {
-      return this.textures.exists(outputKey) ? outputKey : sourceKey;
-    }
-    const texture = this.textures.get(sourceKey);
-    const sourceImage =
-      texture?.getSourceImage?.() ||
-      texture?.source?.[0]?.image ||
-      texture?.source?.[0]?.source ||
-      null;
-    const sourceW = Math.max(1, Number(sourceImage?.width) || 0);
-    const sourceH = Math.max(1, Number(sourceImage?.height) || 0);
-    if (!sourceImage || sourceW < 1 || sourceH < 1) {
-      return sourceKey;
-    }
-    const scanCanvas = document.createElement("canvas");
-    scanCanvas.width = sourceW;
-    scanCanvas.height = sourceH;
-    const scanCtx = scanCanvas.getContext("2d");
-    if (!scanCtx) {
-      return sourceKey;
-    }
-    scanCtx.clearRect(0, 0, sourceW, sourceH);
-    scanCtx.drawImage(sourceImage, 0, 0);
-    const image = scanCtx.getImageData(0, 0, sourceW, sourceH);
-    const pixels = image.data;
-    let minX = sourceW;
-    let minY = sourceH;
-    let maxX = -1;
-    let maxY = -1;
-    for (let y = 0; y < sourceH; y += 1) {
-      for (let x = 0; x < sourceW; x += 1) {
-        const alpha = pixels[(y * sourceW + x) * 4 + 3];
-        if (alpha > alphaThreshold) {
-          if (x < minX) minX = x;
-          if (y < minY) minY = y;
-          if (x > maxX) maxX = x;
-          if (y > maxY) maxY = y;
-        }
-      }
-    }
-    if (maxX < minX || maxY < minY) {
-      return sourceKey;
-    }
-    const pad = 2;
-    const sx = Math.max(0, minX - pad);
-    const sy = Math.max(0, minY - pad);
-    const sw = Math.max(1, Math.min(sourceW - sx, maxX - minX + 1 + pad * 2));
-    const sh = Math.max(1, Math.min(sourceH - sy, maxY - minY + 1 + pad * 2));
-    const canvasTexture = this.textures.createCanvas(outputKey, sw, sh);
-    const ctx = canvasTexture?.getContext?.();
-    if (!ctx) {
-      return sourceKey;
-    }
-    ctx.clearRect(0, 0, sw, sh);
-    ctx.drawImage(sourceImage, sx, sy, sw, sh, 0, 0, sw, sh);
-    canvasTexture.refresh();
-    return outputKey;
+    return createTightTextureFromAlpha(this, {
+      sourceKey,
+      outputKey,
+      alphaThreshold,
+    });
   }
 
   resolveDarkIconTexture(sourceKey) {

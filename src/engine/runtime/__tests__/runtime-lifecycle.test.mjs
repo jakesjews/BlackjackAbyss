@@ -7,7 +7,7 @@ import {
 } from "../core/runtime-lifecycle.js";
 
 describe("runtime lifecycle module", () => {
-  it("handleRuntimeHidden saves state and pauses audio only when document is hidden", () => {
+  it("handleRuntimeHidden always saves state and pauses audio", () => {
     const suspend = vi.fn(() => Promise.resolve());
     const pause = vi.fn();
     const saveRunSnapshot = vi.fn();
@@ -19,9 +19,7 @@ describe("runtime lifecycle module", () => {
       },
     };
 
-    const globalDocument = { hidden: true };
     handleRuntimeHidden({
-      globalDocument,
       state,
       saveRunSnapshot,
       saveProfile,
@@ -32,16 +30,14 @@ describe("runtime lifecycle module", () => {
     expect(suspend).toHaveBeenCalledTimes(1);
     expect(pause).toHaveBeenCalledTimes(1);
 
-    globalDocument.hidden = false;
     handleRuntimeHidden({
-      globalDocument,
       state,
       saveRunSnapshot,
       saveProfile,
     });
 
-    expect(saveRunSnapshot).toHaveBeenCalledTimes(1);
-    expect(saveProfile).toHaveBeenCalledTimes(1);
+    expect(saveRunSnapshot).toHaveBeenCalledTimes(2);
+    expect(saveProfile).toHaveBeenCalledTimes(2);
   });
 
   it("handleRuntimeVisible resumes audio graph and restarts paused music", async () => {
@@ -83,7 +79,7 @@ describe("runtime lifecycle module", () => {
 
   it("bindRuntimeLifecycle wires callbacks into lifecycle binder", () => {
     const captured = {};
-    const bindRuntimeWindowLifecycle = vi.fn((payload) => {
+    const bindRuntimeHostLifecycle = vi.fn((payload) => {
       Object.assign(captured, payload);
     });
     const saveRunSnapshot = vi.fn();
@@ -100,12 +96,12 @@ describe("runtime lifecycle module", () => {
       },
     };
     const globalWindow = {};
-    const globalDocument = { hidden: true };
+    const phaserGame = { id: "phaser-game" };
 
     bindRuntimeLifecycle({
-      bindRuntimeWindowLifecycle,
+      bindRuntimeHostLifecycle,
+      phaserGame,
       globalWindow,
-      globalDocument,
       unlockAudio,
       requestLandscapeLock,
       resizeCanvas,
@@ -114,9 +110,9 @@ describe("runtime lifecycle module", () => {
       saveProfile,
     });
 
-    expect(bindRuntimeWindowLifecycle).toHaveBeenCalledTimes(1);
+    expect(bindRuntimeHostLifecycle).toHaveBeenCalledTimes(1);
+    expect(captured.phaserGame).toBe(phaserGame);
     expect(captured.globalWindow).toBe(globalWindow);
-    expect(captured.globalDocument).toBe(globalDocument);
     expect(captured.unlockAudio).toBe(unlockAudio);
     expect(captured.requestLandscapeLock).toBe(requestLandscapeLock);
     expect(captured.resizeCanvas).toBe(resizeCanvas);

@@ -82,12 +82,14 @@ Used by acceptance tests to run deterministic economy scenarios:
 
 - `window.__ABYSS_TEST_FLAGS__`
 - `window.__ABYSS_TEST_FLAGS__.economy.startingGold` (`number`, default `0`)
+- `window.__ABYSS_TEST_FLAGS__.visual.disableFx` (`boolean`, default `false`)
 
 Notes:
 
 - These controls are ignored in production builds.
 - Default behavior with no flags remains normal gameplay flow.
 - Acceptance tests follow natural mode transitions and may seed chips with `economy.startingGold` to exercise camp buy paths quickly.
+- Visual regression tests set `visual.disableFx = true` to stabilize cosmetic-only motion during baseline snapshots.
 - Scene runtime method names and global test hooks are unchanged.
 
 Hook publisher source:

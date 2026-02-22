@@ -1,7 +1,5 @@
 import Phaser from "phaser";
 
-const DESKTOP_HOVER_MEDIA = "(hover: hover) and (pointer: fine)";
-
 function colorHex(value) {
   return `#${(value >>> 0).toString(16).padStart(6, "0").slice(-6)}`;
 }
@@ -87,11 +85,14 @@ function resolveStyle(styleSet, styleName) {
   };
 }
 
-function canUseDesktopHoverScale() {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+function canUseDesktopHoverScale(scene) {
+  const deviceInput = scene?.sys?.game?.device?.input;
+  if (!deviceInput || typeof deviceInput !== "object") {
     return false;
   }
-  return window.matchMedia(DESKTOP_HOVER_MEDIA).matches;
+  const hasTouchInput = Boolean(deviceInput.touch);
+  const mouseEnabled = scene?.input?.manager?.mouse?.enabled !== false;
+  return mouseEnabled && !hasTouchInput;
 }
 
 function applyButtonScale(button, targetScale) {
@@ -220,7 +221,7 @@ export function createGradientButton(
     currentScale: 1,
     hoverScale: Number.isFinite(hoverScale) ? hoverScale : 1.02,
     pressedScale: Number.isFinite(pressedScale) ? pressedScale : 0.985,
-    allowDesktopHoverScale: Boolean(enableDesktopHoverScale) && canUseDesktopHoverScale(),
+    allowDesktopHoverScale: Boolean(enableDesktopHoverScale) && canUseDesktopHoverScale(scene),
     scaleTween: null,
   };
 

@@ -1,14 +1,28 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { expectNoRuntimeErrors } from "./helpers/assertions.mjs";
+import { comparePngFiles } from "./helpers/image-diff.mjs";
 import { closeSharedAcceptanceBrowser, createAcceptanceSession, captureFailureArtifacts } from "./helpers/page.mjs";
+import {
+  createVisualRunId,
+  ensureVisualDirs,
+  getBaselinePath,
+  getLatestCapturePath,
+  getVisualDiffPaths,
+  getVisualRunRoot,
+  isVisualUpdateMode,
+  resetVisualCaptureRoots,
+  VISUAL_DIFF_DEFAULTS,
+  writeBaselineFromCapture,
+} from "./helpers/visual-baseline.mjs";
 import { advanceTime, menuAction, overlayAction, runAction, waitForMode } from "./helpers/runtime.mjs";
 import { startAcceptanceServer, stopAcceptanceServer } from "./helpers/server.mjs";
 
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const SMOKE_ROOT = path.join(REPO_ROOT, "artifacts", "visual-smoke", "latest");
+const VISUAL_UPDATE_MODE = isVisualUpdateMode();
+const VISUAL_RUN_ID = createVisualRunId();
+const VISUAL_RUN_ROOT = getVisualRunRoot(VISUAL_RUN_ID);
+
 const VIEWPORTS = [
   {
     label: "desktop-1280x720",
@@ -18,6 +32,13 @@ const VIEWPORTS = [
     label: "mobile-430x932",
     viewport: { width: 430, height: 932 },
   },
+];
+
+const SHOTS = [
+  "01-menu",
+  "02-collection",
+  "03-playing",
+  "03b-playing-actions",
 ];
 
 async function readRuntimeDebugSnapshot(page) {
@@ -74,24 +95,76 @@ async function readRuntimeDebugSnapshot(page) {
       sceneStates,
       runSnapshotMode: runSnapshot?.mode || "",
       runSnapshotHasStatus: Boolean(runSnapshot?.status),
+      visualFxDisabled: Boolean(runtime?.testFlags?.visual?.disableFx),
     };
   });
 }
 
-async function runViewportSmoke(config) {
-  const session = await createAcceptanceSession({ viewport: config.viewport });
-  try {
-    const outputDir = path.join(SMOKE_ROOT, config.label);
-    await fs.mkdir(outputDir, { recursive: true });
+async function assertVisualShot(viewportLabel, shotName, capturePath) {
+  if (VISUAL_UPDATE_MODE) {
+    await writeBaselineFromCapture(viewportLabel, shotName, capturePath);
+    return;
+  }
 
+  const baselinePath = getBaselinePath(viewportLabel, shotName);
+  let baselineExists = true;
+  try {
+    await fs.access(baselinePath);
+  } catch {
+    baselineExists = false;
+  }
+  if (!baselineExists) {
+    throw new Error(`Missing visual baseline: ${baselinePath}. Run npm run test:visual:update to create it.`);
+  }
+
+  const diffPaths = getVisualDiffPaths(VISUAL_RUN_ID, viewportLabel, shotName);
+  await fs.mkdir(path.dirname(diffPaths.base), { recursive: true });
+  await fs.copyFile(baselinePath, diffPaths.expectedCopy);
+  await fs.copyFile(capturePath, diffPaths.actualCopy);
+
+  const metrics = await comparePngFiles({
+    expectedPath: baselinePath,
+    actualPath: capturePath,
+    diffPath: diffPaths.diff,
+    threshold: VISUAL_DIFF_DEFAULTS.threshold,
+    maxDiffRatio: VISUAL_DIFF_DEFAULTS.maxDiffRatio,
+    maxDiffPixels: VISUAL_DIFF_DEFAULTS.maxDiffPixels,
+  });
+
+  await fs.writeFile(diffPaths.metrics, JSON.stringify(metrics, null, 2), "utf8");
+
+  if (!metrics.passed) {
+    throw new Error(
+      `Visual regression for ${viewportLabel}/${shotName}: diffPixels=${metrics.diffPixels}, ` +
+      `diffRatio=${metrics.diffRatio}, maxDiffPixels=${metrics.maxDiffPixels}, ` +
+      `maxDiffRatio=${metrics.maxDiffRatio}. Artifacts: ${path.dirname(diffPaths.base)}`
+    );
+  }
+}
+
+async function captureAndAssert(session, viewportLabel, shotName) {
+  const capturePath = getLatestCapturePath(viewportLabel, shotName);
+  await fs.mkdir(path.dirname(capturePath), { recursive: true });
+  await session.page.screenshot({ path: capturePath, fullPage: true });
+  await assertVisualShot(viewportLabel, shotName, capturePath);
+}
+
+async function runViewportSmoke(config) {
+  const session = await createAcceptanceSession({
+    viewport: config.viewport,
+    visual: {
+      disableFx: true,
+    },
+  });
+  try {
     const initialMenuMode = await waitForMode(session.page, "menu", { maxTicks: 80, stepMs: 120 });
     expect(initialMenuMode).toBe("menu");
-    await session.page.screenshot({ path: path.join(outputDir, "01-menu.png"), fullPage: true });
+    await captureAndAssert(session, config.label, "01-menu");
 
     await menuAction(session.page, "openCollection");
     const collectionMode = await waitForMode(session.page, "collection", { maxTicks: 80, stepMs: 120 });
     expect(collectionMode).toBe("collection");
-    await session.page.screenshot({ path: path.join(outputDir, "02-collection.png"), fullPage: true });
+    await captureAndAssert(session, config.label, "02-collection");
 
     await overlayAction(session.page, "confirm");
     const menuMode = await waitForMode(session.page, "menu", { maxTicks: 80, stepMs: 120 });
@@ -102,7 +175,7 @@ async function runViewportSmoke(config) {
     expect(playingMode).toBe("playing");
 
     await advanceTime(session.page, 220);
-    await session.page.screenshot({ path: path.join(outputDir, "03-playing.png"), fullPage: true });
+    await captureAndAssert(session, config.label, "03-playing");
 
     const snapshot = await runAction(session.page, "getSnapshot");
     if (snapshot?.intro?.active) {
@@ -110,7 +183,7 @@ async function runViewportSmoke(config) {
       await advanceTime(session.page, 180);
     }
     await advanceTime(session.page, 240);
-    await session.page.screenshot({ path: path.join(outputDir, "03b-playing-actions.png"), fullPage: true });
+    await captureAndAssert(session, config.label, "03b-playing-actions");
 
     const debug = await readRuntimeDebugSnapshot(session.page);
     process.stdout.write(`[${config.label}] playing debug: ${JSON.stringify(debug)}\n`);
@@ -121,6 +194,7 @@ async function runViewportSmoke(config) {
     expect(debug.externalRendererActive).toBe(true);
     expect(debug.runSnapshotMode).toBe("playing");
     expect(debug.runSnapshotHasStatus).toBe(true);
+    expect(debug.visualFxDisabled).toBe(true);
 
     expectNoRuntimeErrors(session);
   } catch (error) {
@@ -136,7 +210,11 @@ async function runViewportSmoke(config) {
 
 describe("acceptance: visual smoke artifacts", () => {
   beforeAll(async () => {
-    await fs.rm(SMOKE_ROOT, { recursive: true, force: true });
+    await resetVisualCaptureRoots();
+    await ensureVisualDirs(VIEWPORTS.map((viewport) => viewport.label));
+    if (!VISUAL_UPDATE_MODE) {
+      await fs.rm(VISUAL_RUN_ROOT, { recursive: true, force: true });
+    }
     await startAcceptanceServer();
   });
 
@@ -148,6 +226,11 @@ describe("acceptance: visual smoke artifacts", () => {
   test("captures desktop/mobile smoke screenshots from acceptance flow", async () => {
     for (const config of VIEWPORTS) {
       await runViewportSmoke(config);
+    }
+
+    if (VISUAL_UPDATE_MODE) {
+      const summary = `Updated visual baselines for ${VIEWPORTS.length} viewports and ${SHOTS.length} shots.`;
+      process.stdout.write(`${summary}\n`);
     }
   }, 180_000);
 });

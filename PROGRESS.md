@@ -5,19 +5,24 @@
 - Phaser-first runtime migration is active in production with acceptance tests in place as a refactor gate.
 - Runtime now uses MP3 background music with SFX-priority mixing (ducking + lower BGM baseline).
 - GitHub Actions CI is now wired with required quality gate checks and non-blocking smoke coverage.
+- Visual regression is now a required CI gate with committed golden images (`tests/visual-baseline/*`) and near-strict pixel diff thresholds.
 - Legacy canvas draw/input fallback paths have been removed from active runtime execution.
 - Docs-first checkpoint completed and runtime docs are synced to Phaser-native runtime architecture.
 - Runtime entry now uses `src/engine/runtime/runtime-engine.js` with direct app/runtime seam wiring.
 - Scene/runtime contracts now flow only through `game.__ABYSS_RUNTIME__.apis` and runtime context handlers.
 - Runtime mode sync routes through direct runtime context callbacks in `src/engine/app.js`.
 - Runtime frame stepping is now runtime-context owned (`runtime.setStepHandler`/`runtime.tick`), not legacy shim owned.
+- Runtime host loop now requires Phaser step-handler wiring (browser RAF fallback removed).
+- Scene-side browser viewport fallbacks have been removed; scene sizing/input checks use Phaser APIs.
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
 - Smoke coverage is now acceptance-backed (`tests/acceptance/visual-smoke.spec.mjs`) with dedicated `test:smoke` targeting that spec.
-- Last Updated: 2026-02-21 19:38:49 EST
+- `test:smoke` is a focused subset rerun of acceptance smoke coverage (artifact refresh), not an extra required gate when `test:acceptance` already passed.
+- Last Updated: 2026-02-22 20:13:00 EST
 
 ## Current Focus
 
 - Keep acceptance tests green before each cleanup/modularization pass.
+- Keep visual baselines stable and intentionally updated only through `npm run test:visual:update`.
 - Continue shrinking `src/engine/runtime/runtime-engine.js` by extracting focused orchestration slices into `src/engine/runtime/core/*`.
 - Keep runtime contracts stable while continuing Phaser-native cleanup.
 - Keep docs aligned with runtime contracts and test-only controls.
@@ -109,12 +114,20 @@
 - Reduced `src/engine/runtime/runtime-engine.js` from 878 lines to 875 lines in this slice.
 - Consolidated wrapper-only runtime resource wiring into `src/engine/runtime/core/enemy-avatars.js` (`createRuntimeResources`) and removed `src/engine/runtime/core/runtime-resources.js`.
 - Consolidated wrapper-only bridge and snapshot registry wiring into `src/engine/runtime/core/phaser-runtime-apis.js` (`createRuntimeBridgeRegistry`, `createRuntimeSnapshotRegistry`) and removed `src/engine/runtime/core/runtime-bridge-registry.js` and `src/engine/runtime/core/runtime-snapshot-registry.js`.
-- Kept `src/engine/runtime/runtime-engine.js` lean while removing extra indirection layers; current size is 867 lines.
+- Extracted additional orchestration helpers into `src/engine/runtime/core/runtime-sanitizers.js`, `src/engine/runtime/core/runtime-ui-helpers.js`, and `src/engine/runtime/core/runtime-passive-helpers.js`.
+- Reduced `src/engine/runtime/runtime-engine.js` from 857 lines to 803 lines in this slice.
+- Added visual baseline/diff helpers (`tests/acceptance/helpers/{visual-baseline,image-diff}.mjs`) and committed golden snapshots under `tests/visual-baseline/*`.
+- Added strict visual scripts (`test:visual`, `test:visual:update`) and CI upload of visual diff artifacts (`artifacts/visual-regression/*`) on failures.
+- Added test-only visual stabilization flag support (`window.__ABYSS_TEST_FLAGS__.visual.disableFx`) and wired runtime cosmetic FX gating for deterministic captures.
+- Removed `window.visualViewport`/DOM resize dispatch usage from `MenuScene`; menu viewport sizing now uses Phaser scale manager dimensions.
+- Moved menu shell `menu-screen` class toggling from scene DOM access to app-level mode sync (`src/engine/app.js`).
+- Removed runtime loop browser RAF fallback; runtime step updates now require `runtime.setStepHandler`.
 
 ## Next Up
 
 - Reintroduce a reliable long-run balancing probe with explicit guardrails and bounded runtime behavior.
 - Continue trimming wrapper-only indirection while keeping `src/engine/runtime/runtime-engine.js` as a thin Phaser runtime orchestrator (avoid both monolith growth and over-abstraction).
+- Reduce `src/engine/runtime/runtime-engine.js` further by extracting cohesive orchestration slices without pass-through wrapper bloat.
 - Keep docs synced when runtime contracts, test hooks, or mode flows change.
 
 ## Risks / Blockers
@@ -122,11 +135,13 @@
 - No automated long-run balance regression probe currently exists.
 - Runtime and scene contracts are tightly coupled; contract drift can break UI flow if docs/tests are not updated together.
 - Audio balance tuning (BGM vs SFX) may need iteration based on play feedback on different devices.
+- Visual baseline refreshes need deliberate review; unintended golden updates can mask regressions.
 
 ## Verification Snapshot
 
 - `npm run test:unit`: passing (runtime module tests).
 - `npm run test:acceptance`: passing (contracts + one-hand core/camp flow + seeded economy + persistence/resume).
+- `npm run test:visual`: passing (golden diff gate for desktop/mobile smoke shots).
 - `npm run test:smoke`: passing (acceptance-backed desktop/mobile flow snapshots).
 - `npm run build`: passing (Vite production bundle).
 - `npm run test:dead-refs`: passing (no stale bootstrap/legacy-adapter symbol references).
@@ -138,4 +153,7 @@
 - Treat `src/engine/runtime/runtime-engine.js` as the gameplay runtime entrypoint and runtime contract source.
 - Preserve runtime method names and test hooks (`window.render_game_to_text`, `window.advanceTime`) unless a coordinated migration is planned.
 - Preserve non-production economy seed interface (`window.__ABYSS_TEST_FLAGS__.economy.startingGold`) used by acceptance tests.
+- Preserve non-production visual stabilization flag (`window.__ABYSS_TEST_FLAGS__.visual.disableFx`) used by visual regression tests.
+- Treat `test:acceptance` as the primary browser gate; use `test:smoke` only for targeted smoke reruns/artifact refresh.
+- Use `npm run test:visual:update` only when visual changes are intentional and reviewed.
 - Keep branch protection on `main` requiring the `quality-gate` workflow check.

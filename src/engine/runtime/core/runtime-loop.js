@@ -2,16 +2,10 @@ export function createRuntimeLoop({
   state,
   width,
   height,
-  gameShell,
-  canvas,
   runtimeContext,
   phaserGame,
-  globalWindow,
-  globalDocument,
   update,
   render,
-  performanceNow = () => performance.now(),
-  requestAnimationFrameFn = (callback) => globalWindow.requestAnimationFrame(callback),
 }) {
   function tickFrame(dt) {
     update(dt);
@@ -28,30 +22,19 @@ export function createRuntimeLoop({
   }
 
   function resizeCanvas() {
+    const parentWidth = Number(phaserGame?.scale?.parentSize?.width) || 0;
+    const parentHeight = Number(phaserGame?.scale?.parentSize?.height) || 0;
+    const gameWidth = Number(phaserGame?.scale?.gameSize?.width) || 0;
+    const gameHeight = Number(phaserGame?.scale?.gameSize?.height) || 0;
     const viewportWidth = Math.max(
       1,
-      Math.floor(
-        globalWindow.visualViewport?.width ||
-          globalDocument.documentElement.clientWidth ||
-          globalWindow.innerWidth ||
-          width
-      )
+      Math.floor(parentWidth || gameWidth || width)
     );
     const viewportHeight = Math.max(
       120,
-      Math.floor(
-        globalWindow.visualViewport?.height ||
-          globalDocument.documentElement.clientHeight ||
-          globalWindow.innerHeight ||
-          height
-      )
+      Math.floor(parentHeight || gameHeight || height)
     );
-    gameShell.style.width = `${viewportWidth}px`;
-    gameShell.style.height = `${viewportHeight}px`;
-    canvas.style.width = `${viewportWidth}px`;
-    canvas.style.height = `${viewportHeight}px`;
-    canvas.style.left = "0px";
-    canvas.style.top = "0px";
+
     state.viewport = {
       width: viewportWidth,
       height: viewportHeight,
@@ -69,33 +52,28 @@ export function createRuntimeLoop({
     }
   }
 
-  let lastFrame = performanceNow();
-  function gameLoop(now) {
-    const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000));
-    lastFrame = now;
-    tickFrame(dt);
-    requestAnimationFrameFn(gameLoop);
-  }
-
   function startRuntimeLoop() {
     resizeCanvas();
     render();
     if (runtimeContext && typeof runtimeContext.setStepHandler === "function") {
-      let priorTime = performanceNow();
+      let priorTime = null;
       runtimeContext.setStepHandler((dtSeconds, timeMs) => {
         let dt = dtSeconds;
         if (!Number.isFinite(dt) || dt < 0) {
-          const now = Number.isFinite(timeMs) ? timeMs : performanceNow();
-          dt = Math.max(0, (now - priorTime) / 1000);
-          priorTime = now;
-        } else if (Number.isFinite(timeMs)) {
+          if (Number.isFinite(timeMs) && Number.isFinite(priorTime)) {
+            dt = Math.max(0, (timeMs - priorTime) / 1000);
+          } else {
+            dt = 1 / 60;
+          }
+        }
+        if (Number.isFinite(timeMs)) {
           priorTime = timeMs;
         }
         tickFrame(Math.min(0.05, Math.max(0, dt)));
       });
       return;
     }
-    requestAnimationFrameFn(gameLoop);
+    throw new Error("Runtime loop requires runtimeContext.setStepHandler.");
   }
 
   return {

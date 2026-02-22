@@ -106,6 +106,9 @@ export function createRuntimeState({ width, height, audioEnabled }) {
       cropWorldX: 0,
       portraitZoomed: false,
     },
+    visual: {
+      disableFx: false,
+    },
     lastIntroDialogue: "",
   };
 }

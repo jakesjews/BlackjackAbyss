@@ -11,12 +11,12 @@ describe("runtime startup bootstrap", () => {
     const requestLandscapeLock = vi.fn();
     const createLandscapeLockRequesterFn = vi.fn(() => requestLandscapeLock);
     const bindRuntimeLifecycle = vi.fn();
+    const phaserGame = { id: "phaser-game" };
     const installRuntimeTestHooksFn = vi.fn();
     const startRuntimeLoop = vi.fn();
 
     const globalWindow = {};
-    const globalDocument = {};
-    const bindRuntimeWindowLifecycle = vi.fn();
+    const bindRuntimeHostLifecycle = vi.fn();
     const unlockAudio = vi.fn();
     const resizeCanvas = vi.fn();
     const saveRunSnapshot = vi.fn();
@@ -33,9 +33,9 @@ describe("runtime startup bootstrap", () => {
       runtimeApiRegistration,
       createLandscapeLockRequesterFn,
       globalWindow,
-      globalDocument,
+      phaserGame,
       bindRuntimeLifecycle,
-      bindRuntimeWindowLifecycle,
+      bindRuntimeHostLifecycle,
       unlockAudio,
       resizeCanvas,
       saveRunSnapshot,
@@ -53,9 +53,9 @@ describe("runtime startup bootstrap", () => {
     expect(registerRuntimeApisFn).toHaveBeenCalledWith(runtimeApiRegistration);
     expect(createLandscapeLockRequesterFn).toHaveBeenCalledWith(globalWindow);
     expect(bindRuntimeLifecycle).toHaveBeenCalledWith({
-      bindRuntimeWindowLifecycle,
+      bindRuntimeHostLifecycle,
+      phaserGame,
       globalWindow,
-      globalDocument,
       unlockAudio,
       requestLandscapeLock,
       resizeCanvas,

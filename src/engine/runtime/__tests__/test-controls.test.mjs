@@ -5,6 +5,7 @@ describe("runtime test controls", () => {
   it("returns safe defaults when flags are absent", () => {
     const flags = readRuntimeTestFlags({});
     expect(flags.economy.startingGold).toBe(0);
+    expect(flags.visual.disableFx).toBe(false);
   });
 
   it("normalizes economy seed chips", () => {
@@ -23,5 +24,14 @@ describe("runtime test controls", () => {
       },
     });
     expect(flags.economy.startingGold).toBe(0);
+  });
+
+  it("normalizes visual flags", () => {
+    const flags = readRuntimeTestFlags({
+      __ABYSS_TEST_FLAGS__: {
+        visual: { disableFx: 1 },
+      },
+    });
+    expect(flags.visual.disableFx).toBe(true);
   });
 });

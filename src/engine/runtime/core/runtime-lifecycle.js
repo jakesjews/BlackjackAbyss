@@ -1,12 +1,8 @@
 export function handleRuntimeHidden({
-  globalDocument,
   state,
   saveRunSnapshot,
   saveProfile,
 }) {
-  if (!globalDocument.hidden) {
-    return;
-  }
   saveRunSnapshot();
   saveProfile();
   if (state.audio.context && state.audio.context.state === "running") {
@@ -46,9 +42,9 @@ export function handleRuntimeBeforeUnload({
 }
 
 export function bindRuntimeLifecycle({
-  bindRuntimeWindowLifecycle,
+  bindRuntimeHostLifecycle,
+  phaserGame,
   globalWindow,
-  globalDocument,
   unlockAudio,
   requestLandscapeLock,
   resizeCanvas,
@@ -56,15 +52,14 @@ export function bindRuntimeLifecycle({
   saveRunSnapshot,
   saveProfile,
 }) {
-  bindRuntimeWindowLifecycle({
+  bindRuntimeHostLifecycle({
+    phaserGame,
     globalWindow,
-    globalDocument,
     unlockAudio,
     requestLandscapeLock,
     resizeCanvas,
     onHidden: () => {
       handleRuntimeHidden({
-        globalDocument,
         state,
         saveRunSnapshot,
         saveProfile,

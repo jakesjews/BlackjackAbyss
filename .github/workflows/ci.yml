@@ -42,6 +42,9 @@ jobs:
       - name: Run acceptance tests
         run: npm run test:acceptance
 
+      - name: Run visual regression tests
+        run: npm run test:visual
+
       - name: Build
         run: npm run build
 
@@ -51,6 +54,15 @@ jobs:
         with:
           name: acceptance-failures-${{ github.run_id }}
           path: artifacts/acceptance/failures
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload visual regression artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regression-${{ github.run_id }}
+          path: artifacts/visual-regression
           if-no-files-found: ignore
           retention-days: 14
 

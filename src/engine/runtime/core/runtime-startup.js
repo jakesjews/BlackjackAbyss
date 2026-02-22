@@ -6,9 +6,9 @@ export function initializeRuntimeStartup({
   runtimeApiRegistration,
   createLandscapeLockRequesterFn,
   globalWindow,
-  globalDocument,
+  phaserGame,
   bindRuntimeLifecycle,
-  bindRuntimeWindowLifecycle,
+  bindRuntimeHostLifecycle,
   unlockAudio,
   resizeCanvas,
   saveRunSnapshot,
@@ -26,9 +26,9 @@ export function initializeRuntimeStartup({
   const requestLandscapeLock = createLandscapeLockRequesterFn(globalWindow);
 
   bindRuntimeLifecycle({
-    bindRuntimeWindowLifecycle,
+    bindRuntimeHostLifecycle,
+    phaserGame,
     globalWindow,
-    globalDocument,
     unlockAudio,
     requestLandscapeLock,
     resizeCanvas,

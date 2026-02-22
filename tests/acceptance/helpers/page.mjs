@@ -32,6 +32,17 @@ function normalizeEconomyFlags(economy = null) {
   };
 }
 
+function normalizeVisualFlags(visual = null) {
+  if (!visual || typeof visual !== "object") {
+    return {
+      disableFx: false,
+    };
+  }
+  return {
+    disableFx: Boolean(visual.disableFx),
+  };
+}
+
 function sanitizeLabel(value) {
   return String(value || "acceptance")
     .toLowerCase()
@@ -47,7 +58,7 @@ async function ensureBrowser() {
   return sharedBrowser;
 }
 
-export async function createAcceptanceSession({ economy = null, viewport: requestedViewport = null } = {}) {
+export async function createAcceptanceSession({ economy = null, visual = null, viewport: requestedViewport = null } = {}) {
   const browser = await ensureBrowser();
   const defaultViewport = { width: 1280, height: 720 };
   const viewport = requestedViewport && typeof requestedViewport === "object"
@@ -77,6 +88,7 @@ export async function createAcceptanceSession({ economy = null, viewport: reques
 
   const testFlags = {
     economy: normalizeEconomyFlags(economy),
+    visual: normalizeVisualFlags(visual),
   };
   await page.addInitScript((flags) => {
     window.__ABYSS_TEST_FLAGS__ = flags;

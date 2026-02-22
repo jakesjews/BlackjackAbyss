@@ -42,6 +42,10 @@ function createRuntimeContext() {
 }
 
 function syncPhaserScenesForMode(game, mode) {
+  if (typeof document !== "undefined" && document.body?.classList) {
+    document.body.classList.toggle("menu-screen", mode === "menu");
+  }
+
   const manager = game?.scene;
   if (!manager) {
     return;

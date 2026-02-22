@@ -82,40 +82,25 @@ import {
 } from "./core/runtime-text-snapshot.js";
 import { createRuntimeUpdater } from "./core/runtime-update.js";
 import { goHomeFromActiveRun as goHomeFromActiveRunModule } from "./core/run-lifecycle.js";
-import { applyTestEconomyToNewRun as applyTestEconomyToNewRunFromModule, createRun as createRunFromModule } from "./core/run-factory.js";
+import {
+  applyTestEconomyToNewRun as applyTestEconomyToNewRunFromModule,
+  createRun as createRunFromModule,
+} from "./core/run-factory.js";
 import {
   applyChipDelta as applyChipDeltaFromModule,
   finalizeRunIntoProfile as finalizeRunIntoProfileFromModule,
   updateProfileBest as updateProfileBestFromModule,
 } from "./core/run-results.js";
 import {
-  collectionEntries as collectionEntriesFromModule,
-  collectionPageLayout as collectionPageLayoutFromModule,
   passiveDescription as passiveDescriptionFromModule,
-  passiveStacksForRun as passiveStacksForRunFromModule,
   passiveSummary as passiveSummaryFromModule,
-  passiveThumbUrl as passiveThumbUrlFromModule,
 } from "./core/passive-view.js";
 import { createRuntimeProfileHandlers } from "./core/runtime-profile.js";
 import { createRuntimeSaveResumeHandlers } from "./core/runtime-save-resume.js";
-import {
-  addLogToRun,
-  getRunEventLog as getRunEventLogFromModule,
-  hasSavedRunState,
-  hidePassiveTooltipState,
-  moveSelectionState,
-  openCollectionState,
-  setAnnouncementState,
-} from "./core/runtime-ui-state.js";
-import {
-  sanitizeCard as sanitizeCardFromModule,
-  sanitizeCardList as sanitizeCardListFromModule,
-  sanitizeEncounter as sanitizeEncounterFromModule,
-  sanitizeRun as sanitizeRunFromModule,
-} from "./core/state-sanitizers.js";
+import { addLogToRun, setAnnouncementState } from "./core/runtime-ui-state.js";
 import { installRuntimeTestHooks } from "./core/test-hooks.js";
 import { installRuntimeModeSync } from "./core/runtime-mode-sync.js";
-import { bindRuntimeWindowLifecycle, createLandscapeLockRequester } from "./core/audio-system.js";
+import { createLandscapeLockRequester } from "./core/audio-system.js";
 import {
   CARD_SOURCES,
   GRUNT_SOURCES,
@@ -123,6 +108,10 @@ import {
   createRuntimeVisualSeeds,
 } from "./core/runtime-content-seeds.js";
 import { createRuntimeEffects } from "./core/runtime-effects.js";
+import { bindRuntimePhaserHostLifecycle } from "./core/runtime-phaser-host.js";
+import { createRuntimeSanitizers } from "./core/runtime-sanitizers.js";
+import { createRuntimeUiHelpers } from "./core/runtime-ui-helpers.js";
+import { createRuntimePassiveHelpers } from "./core/runtime-passive-helpers.js";
 
 let runtimeEngineStarted = false;
 
@@ -138,15 +127,17 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
   const runtimeContext = phaserRuntimePayload.runtime || null;
   const phaserGame = phaserRuntimePayload.game || runtimeContext?.game || null;
   const runtimeApis = runtimeContext?.apis && typeof runtimeContext.apis === "object" ? runtimeContext.apis : null;
-  const gameShell = phaserGame?.canvas?.parentElement || null;
-  const canvas = phaserGame?.canvas || null;
   const reportMode = runtimeContext?.reportMode;
   const isExternalRendererActive = runtimeContext?.isExternalRendererActive;
-  if (!runtimeContext || !runtimeApis || !phaserGame || !gameShell || !canvas) {
+  const setStepHandler = runtimeContext?.setStepHandler;
+  if (!runtimeContext || !runtimeApis || !phaserGame) {
     throw new Error("Unable to initialize Phaser runtime context.");
   }
   if (typeof reportMode !== "function" || typeof isExternalRendererActive !== "function") {
     throw new Error("Runtime context is missing Phaser-native mode sync handlers.");
+  }
+  if (typeof setStepHandler !== "function") {
+    throw new Error("Runtime context is missing Phaser step handler wiring.");
   }
 
   const WIDTH = RUNTIME_WIDTH;
@@ -170,6 +161,8 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     audioEnabled: loadAudioEnabled(STORAGE_KEYS),
   });
   const runtimeTestFlags = readRuntimeTestFlags(window);
+  state.visual.disableFx = Boolean(runtimeTestFlags?.visual?.disableFx);
+  runtimeContext.testFlags = runtimeTestFlags;
 
   installRuntimeModeSync({
     state,
@@ -204,37 +197,22 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     saveProfile,
   } = runtimeProfileHandlers;
 
-  function sanitizeCard(cardLike) {
-    return sanitizeCardFromModule(cardLike, { ranks: RANKS, suits: SUITS });
-  }
-
-  function sanitizeCardList(listLike) {
-    return sanitizeCardListFromModule(listLike, { ranks: RANKS, suits: SUITS });
-  }
-
-  function sanitizeRun(runLike) {
-    return sanitizeRunFromModule({
-      runLike,
-      createRun,
-      nonNegInt,
-      clampNumber,
-      mergePlayerStats,
-    });
-  }
-
-  function sanitizeEncounter(encounterLike, run) {
-    return sanitizeEncounterFromModule({
-      encounterLike,
-      run,
-      resolveRoomType,
-      createEnemy,
-      createEncounterIntroState,
-      sanitizeCardListFn: sanitizeCardList,
-      maxSplitHands: MAX_SPLIT_HANDS,
-      nonNegInt,
-      clampNumber,
-    });
-  }
+  const runtimeSanitizers = createRuntimeSanitizers({
+    ranks: RANKS,
+    suits: SUITS,
+    createRun,
+    nonNegInt,
+    clampNumber,
+    mergePlayerStats,
+    resolveRoomType,
+    createEnemy,
+    createEncounterIntroState,
+    maxSplitHands: MAX_SPLIT_HANDS,
+  });
+  const {
+    sanitizeRun,
+    sanitizeEncounter,
+  } = runtimeSanitizers;
 
   function updateProfileBest(run) {
     updateProfileBestFromModule({
@@ -294,27 +272,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
   }
 
   const passiveDescription = passiveDescriptionFromModule;
-
-  function passiveThumbUrl(relic) {
-    return passiveThumbUrlFromModule({
-      relic,
-      cache: passiveThumbCache,
-      applyHexAlpha,
-    });
-  }
-
-  function passiveStacksForRun(run = state.run) {
-    return passiveStacksForRunFromModule({
-      run,
-      relicById: RELIC_BY_ID,
-      nonNegInt,
-    });
-  }
-
-  function hidePassiveTooltip() {
-    hidePassiveTooltipState(state);
-  }
-
   const passiveSummary = passiveSummaryFromModule;
 
   function createRun() {
@@ -361,10 +318,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     setAnnouncementState({ state, message, duration });
   }
 
-  function getRunEventLog(run = state.run) {
-    return getRunEventLogFromModule(run);
-  }
-
   function isExternalModeRendering(mode = state.mode) {
     return isExternalRendererActive.call(runtimeContext, mode);
   }
@@ -395,6 +348,39 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     playGruntSfx,
     updateMusic,
   } = runtimeAudio;
+  const runtimeUiHelpers = createRuntimeUiHelpers({
+    state,
+    playUiSfx,
+    nonNegInt,
+    createProfile,
+    relics: RELICS,
+    bossRelic: BOSS_RELIC,
+    normalizeRelicRarity,
+    rarityMeta: RELIC_RARITY_META,
+    rarityOrder: RELIC_RARITY_ORDER,
+    isRelicUnlocked,
+    relicUnlockLabel,
+  });
+  const {
+    getRunEventLog,
+    hidePassiveTooltip,
+    moveSelection,
+    hasSavedRun,
+    collectionEntries,
+    collectionPageLayout,
+    openCollection,
+  } = runtimeUiHelpers;
+  const runtimePassiveHelpers = createRuntimePassiveHelpers({
+    state,
+    passiveThumbCache,
+    applyHexAlpha,
+    relicById: RELIC_BY_ID,
+    nonNegInt,
+  });
+  const {
+    passiveThumbUrl,
+    passiveStacksForRun,
+  } = runtimePassiveHelpers;
   let handBounds = null;
   const runtimeEffects = createRuntimeEffects({
     state,
@@ -639,41 +625,6 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     shopItemDescription,
   } = rewardShopHandlers;
 
-  function moveSelection(delta, length) {
-    moveSelectionState({ state, delta, length, playUiSfx });
-  }
-
-  function hasSavedRun() {
-    return hasSavedRunState(state);
-  }
-
-  function collectionEntries(profile = state.profile) {
-    const safeProfile = profile || createProfile();
-    return collectionEntriesFromModule({
-      profile: safeProfile,
-      relics: [...RELICS, BOSS_RELIC],
-      normalizeRelicRarity,
-      rarityMeta: RELIC_RARITY_META,
-      rarityOrder: RELIC_RARITY_ORDER,
-      isRelicUnlocked,
-      relicUnlockLabel,
-      nonNegInt,
-    });
-  }
-
-  function collectionPageLayout() {
-    return collectionPageLayoutFromModule(Boolean(state.viewport?.portraitZoomed));
-  }
-
-  function openCollection(page = 0) {
-    openCollectionState({
-      state,
-      page,
-      nonNegInt,
-      playUiSfx,
-    });
-  }
-
   const runtimeUpdater = createRuntimeUpdater({
     state,
     width: WIDTH,
@@ -706,16 +657,10 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     state,
     width: WIDTH,
     height: HEIGHT,
-    gameShell,
-    canvas,
     runtimeContext,
     phaserGame,
-    globalWindow: window,
-    globalDocument: document,
     update,
     render,
-    performanceNow: () => performance.now(),
-    requestAnimationFrameFn: (callback) => requestAnimationFrame(callback),
   });
 
   function availableActions() {
@@ -842,9 +787,9 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     runtimeApiRegistration,
     createLandscapeLockRequesterFn: createLandscapeLockRequester,
     globalWindow: window,
-    globalDocument: document,
     bindRuntimeLifecycle: bindRuntimeLifecycleFromModule,
-    bindRuntimeWindowLifecycle,
+    bindRuntimeHostLifecycle: bindRuntimePhaserHostLifecycle,
+    phaserGame,
     unlockAudio,
     resizeCanvas,
     saveRunSnapshot,
