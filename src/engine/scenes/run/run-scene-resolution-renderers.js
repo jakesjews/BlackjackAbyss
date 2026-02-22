@@ -6,6 +6,58 @@ import {
   RUN_FIRE_GLOW_PARTICLE_KEY,
 } from "./run-scene-config.js";
 
+export function getRunSceneEncounterTypeLabel(type) {
+  if (type === "elite") {
+    return "Elite Encounter";
+  }
+  if (type === "boss") {
+    return "Boss Encounter";
+  }
+  return "Normal Encounter";
+}
+
+export function getRunSceneTransitionState(snapshot) {
+  const transition = snapshot?.transition;
+  if (!transition || typeof transition !== "object") {
+    return null;
+  }
+  const target = transition.target === "player" ? "player" : transition.target === "enemy" ? "enemy" : "";
+  if (!target) {
+    return null;
+  }
+  const duration = Math.max(0.001, Number(transition.duration) || Number(transition.remaining) || 0.001);
+  const remaining = Phaser.Math.Clamp(Number(transition.remaining) || 0, 0, duration);
+  const rawProgress = Number(transition.progress);
+  const progress = Number.isFinite(rawProgress)
+    ? Phaser.Math.Clamp(rawProgress, 0, 1)
+    : Phaser.Math.Clamp(1 - remaining / duration, 0, 1);
+  const waiting = Boolean(transition.waiting);
+  return {
+    target,
+    duration,
+    remaining,
+    progress,
+    waiting,
+  };
+}
+
+export function tryStartRunSceneQueuedEnemyDefeatTransition(scene, snapshot, { deferResolutionUi = false } = {}) {
+  const transitionState = getRunSceneTransitionState(snapshot);
+  if (!transitionState || transitionState.target !== "enemy" || !transitionState.waiting) {
+    return;
+  }
+  if (snapshot?.intro?.active) {
+    return;
+  }
+  if (deferResolutionUi) {
+    return;
+  }
+  if (scene.hasActiveResolutionAnimations()) {
+    return;
+  }
+  scene.playRunSfx("startEnemyDefeatTransition");
+}
+
 export function renderRunSceneEnemyDefeatEffect(scene, transitionState, layout) {
   const enemyAvatarRect = layout?.enemyAvatarRect || null;
   if (!transitionState || transitionState.target !== "enemy" || transitionState.waiting || !enemyAvatarRect) {

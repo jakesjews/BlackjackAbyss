@@ -5,9 +5,11 @@ import {
   RUN_ACTION_ICON_KEYS,
   RUN_ACTION_SHORTCUTS,
   RUN_MOBILE_BUTTON_SCALE,
+  RUN_RELIC_ICON_KEY,
+  RUN_SECONDARY_BUTTON_STYLE,
   RUN_TOP_ACTION_ICON_KEYS,
 } from "./run-scene-config.js";
-import { closeRunSceneModals, toggleRunSceneModal } from "./run-scene-modals.js";
+import { closeRunSceneModals, setRunSceneModalOpen, toggleRunSceneModal } from "./run-scene-modals.js";
 
 export function rebuildRunSceneButtons(scene, actions, styleSet) {
   const safeActions = Array.isArray(actions) ? actions : [];
@@ -283,4 +285,96 @@ export function renderRunSceneTopActions(scene, { snapshot, width, runLayout, st
       logs.icon.setDisplaySize(buttonSize * 0.56, buttonSize * 0.56);
     }
   }
+}
+
+export function renderRunSceneRelicButton(scene, { snapshot, layout, runLayout, applyButtonStyle }) {
+  if (!scene.relicButton) {
+    scene.relicButton = createGradientButton(scene, {
+      id: "relics",
+      label: "RELICS",
+      styleSet: RUN_SECONDARY_BUTTON_STYLE,
+      onPress: () => {
+        const count = Array.isArray(scene.lastSnapshot?.passives) ? scene.lastSnapshot.passives.length : 0;
+        if (count <= 0) {
+          return;
+        }
+        toggleRunSceneModal(scene, "relics");
+      },
+      width: 144,
+      height: 38,
+      fontSize: 18,
+      hoverScale: 1,
+      pressedScale: 0.98,
+    });
+    scene.relicButton.container.setDepth(86);
+    const icon = scene.add
+      .image(0, 0, RUN_RELIC_ICON_KEY)
+      .setDisplaySize(18, 18)
+      .setTint(0xffffff)
+      .setAlpha(0.92);
+    const shortcut = scene.add
+      .text(0, 0, "TAB", {
+        fontFamily: '"Sora", "Segoe UI", sans-serif',
+        fontSize: "12px",
+        color: "#f2f6fb",
+        fontStyle: "700",
+      })
+      .setOrigin(1, 0.5)
+      .setAlpha(0.76);
+    scene.relicButton.container.add([icon, shortcut]);
+    scene.relicButton.icon = icon;
+    scene.relicButton.shortcut = shortcut;
+  }
+  const entries = Array.isArray(snapshot?.passives) ? snapshot.passives : [];
+  const count = entries.length;
+  if (count <= 0) {
+    setRunSceneModalOpen(scene, "relics", false);
+  }
+  const compact = Boolean(runLayout?.compact);
+  const mobileButtonScale = compact ? RUN_MOBILE_BUTTON_SCALE : 1;
+  const showKeyboardHints = scene.shouldShowKeyboardHints(scene.scale.gameSize.width);
+  const desiredButtonW = compact ? Math.round(170 * mobileButtonScale) : 220;
+  const availableButtonW = Math.max(120, Math.round(layout.playerInfoWidth || desiredButtonW));
+  const buttonW = Math.max(120, Math.min(desiredButtonW, availableButtonW));
+  const buttonH = compact ? Math.max(30, Math.round(40 * mobileButtonScale)) : 50;
+  const x = Math.round(layout.playerInfoLeft + buttonW * 0.5);
+  const y = Math.round(layout.playerHpY + layout.playerHpH + (compact ? 30 : 36));
+  setGradientButtonSize(scene.relicButton, buttonW, buttonH);
+  scene.relicButton.container.setPosition(x, y);
+  const relicLabel = `RELICS (${count})`;
+  scene.relicButton.text.setText(relicLabel);
+  let relicFontSize = compact ? Math.max(12, Math.round(16 * mobileButtonScale)) : 18;
+  scene.relicButton.text.setFontSize(relicFontSize);
+  scene.relicButton.text.setFontStyle(compact ? "800" : "700");
+  const relicTextMaxW = Math.max(64, buttonW - (compact ? 82 : 98));
+  while (scene.relicButton.text.width > relicTextMaxW && relicFontSize > 12) {
+    relicFontSize -= 1;
+    scene.relicButton.text.setFontSize(relicFontSize);
+  }
+  scene.relicButton.text.setOrigin(0, 0.5);
+  scene.relicButton.text.setPosition(-buttonW * 0.5 + (compact ? Math.round(36 * mobileButtonScale) : 46), 0);
+  scene.relicButton.text.setAlign("left");
+  if (scene.relicButton.icon) {
+    scene.relicButton.icon.setTexture(RUN_RELIC_ICON_KEY);
+    scene.relicButton.icon.setDisplaySize(
+      compact ? Math.max(13, Math.round(18 * mobileButtonScale)) : 22,
+      compact ? Math.max(13, Math.round(18 * mobileButtonScale)) : 22
+    );
+    scene.relicButton.icon.setTint(0xffffff);
+    scene.relicButton.icon.setPosition(-buttonW * 0.5 + (compact ? Math.round(16 * mobileButtonScale) : 22), 0);
+    scene.relicButton.icon.setVisible(true);
+  }
+  if (scene.relicButton.shortcut) {
+    scene.relicButton.shortcut.setText("TAB");
+    scene.relicButton.shortcut.setFontSize(compact ? Math.max(8, Math.round(11 * mobileButtonScale)) : 13);
+    scene.relicButton.shortcut.setColor("#f2f6fb");
+    scene.relicButton.shortcut.setAlpha(0.76);
+    scene.relicButton.shortcut.setPosition(buttonW * 0.5 - (compact ? Math.round(16 * mobileButtonScale) : 24), 0);
+    scene.relicButton.shortcut.setVisible(showKeyboardHints);
+  }
+  scene.relicButton.enabled = count > 0;
+  applyButtonStyle(scene.relicButton, scene.relicButton.enabled ? "idle" : "disabled");
+  scene.relicButton.text.setColor(scene.relicButton.enabled ? "#f8fbff" : "#dbe2ea");
+  scene.relicButton.container.setAlpha(scene.relicButton.enabled ? 1 : 0.84);
+  scene.relicButton.container.setVisible(true);
 }

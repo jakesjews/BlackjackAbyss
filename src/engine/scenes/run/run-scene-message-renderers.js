@@ -3,7 +3,11 @@ import { createGradientButton, setGradientButtonSize } from "../ui/gradient-butt
 import { coverSizeForTexture } from "../ui/texture-processing.js";
 import { RUN_MODAL_BASE_DEPTH, RUN_MODAL_CONTENT_OFFSET } from "./run-scene-config.js";
 import { resolveRunSceneEnemyAvatarTexture } from "./run-scene-encounter-renderers.js";
-import { animateRunSceneResultMessage } from "./run-scene-resolution-renderers.js";
+import {
+  animateRunSceneResultMessage,
+  getRunSceneEncounterTypeLabel,
+  getRunSceneTransitionState,
+} from "./run-scene-resolution-renderers.js";
 
 export function drawRunSceneMessages(
   scene,
@@ -113,7 +117,7 @@ export function drawRunSceneMessages(
     const textX = avatarOuterX + avatarOuter + (compact ? 8 : 14);
     const textW = Math.max(70, modalW - (textX - x) - (compact ? 10 : 16));
     const title = String(enemy.name || "ENEMY").toUpperCase();
-    const encounterType = scene.getEncounterTypeLabel(enemy.type);
+    const encounterType = getRunSceneEncounterTypeLabel(enemy.type);
     const bodyText = intro.text || "";
     const typeCursor = !intro.ready && Math.floor(scene.time.now / 220) % 2 === 0 ? "|" : "";
     const titleSize = Math.round((compact ? 10 : 24) * introScale);
@@ -197,7 +201,7 @@ export function drawRunSceneMessages(
     scene.lastResultSignature = "";
     return;
   }
-  const transitionState = scene.getTransitionState(snapshot);
+  const transitionState = getRunSceneTransitionState(snapshot);
   const enemyDefeatActive = Boolean(transitionState && transitionState.target === "enemy" && !transitionState.waiting);
   const resultText = enemyDefeatActive ? "Defeated Opponent" : snapshot?.resultText || snapshot?.announcement || "";
   if (!resultText) {

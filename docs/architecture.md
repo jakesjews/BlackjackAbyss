@@ -24,6 +24,7 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 - Runtime orchestration helper modules: `src/engine/runtime/core/{runtime-sanitizers,runtime-ui-helpers,runtime-passive-helpers}.js`
 - Runtime run/encounter orchestration helpers: `src/engine/runtime/core/{runtime-run-helpers,runtime-encounter-helpers}.js`
 - Scene layer: `src/engine/scenes/*`
+- Scene modularization folders: `src/engine/scenes/{menu,run,reward,shop,overlay}/*`
 - Scene run config module: `src/engine/scenes/run/run-scene-config.js` (RunScene/BootScene shared run asset keys + style constants).
 - Scene run modal state helper: `src/engine/scenes/run/run-scene-modals.js` (RunScene modal order/state/blocker synchronization helpers).
 - Scene run modal renderer helper: `src/engine/scenes/run/run-scene-modal-renderers.js` (RunScene logs/relics modal rendering and close-button plumbing).

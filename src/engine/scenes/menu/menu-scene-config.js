@@ -1,0 +1,10 @@
+export const MENU_SPLASH_BUNDLED_URL = new URL("../../../assets/splash_art.png", import.meta.url).href;
+export const MENU_SPLASH_KEY = "__menu-splash-art__";
+export const MENU_SPLASH_KEY_ALT = "__menu-splash-art-alt__";
+export const MENU_EMBER_TEXTURE_KEYS = ["__menu-ember-diamond__", "__menu-ember-shard__", "__menu-ember-tri__", "__menu-ember-chip__"];
+export const MENU_SPLASH_FALLBACK_KEY = "__menu-splash-fallback__";
+export const MENU_FRAME_RADIUS = 24;
+export const MENU_BUTTON_SIZE_SCALE = 0.8625;
+export const MENU_BUTTON_FONT_SCALE = 0.55;
+export const EMBER_MIN_SIZE = 0.14;
+export const EMBER_MAX_SIZE = 1.48;

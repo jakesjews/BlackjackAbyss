@@ -16,10 +16,15 @@
 - Runtime host loop now requires Phaser step-handler wiring (browser RAF fallback removed).
 - Scene-side browser viewport fallbacks have been removed; scene sizing/input checks use Phaser APIs.
 - RunScene static config (icons, texture keys, style constants, avatar-key map) is now extracted into a dedicated module.
+- RunScene lifecycle setup/teardown now lives in `src/engine/scenes/run/run-scene-lifecycle.js`; `RunScene` remains orchestration-focused.
+- ShopScene is now modularized under `src/engine/scenes/shop/*` with config, lifecycle, input, layout, action, card, and modal modules.
+- RewardScene is now modularized under `src/engine/scenes/reward/*` with config, lifecycle, layout, action, card, and modal modules.
+- OverlayScene is now modularized under `src/engine/scenes/overlay/*` with config, lifecycle/input, and renderer modules.
+- MenuScene is now modularized under `src/engine/scenes/menu/*` with config, lifecycle/runtime actions, layout, and ember simulation modules.
 - Removed global bridge facade publication and switched acceptance contracts to runtime-only checks.
 - Smoke coverage is now split from acceptance: `test:acceptance` covers gameplay/browser flow while `test:smoke`/`test:visual` target visual snapshots.
 - `test:smoke` is a focused visual rerun path for artifact refresh.
-- Last Updated: 2026-02-22 23:09:00 EST
+- Last Updated: 2026-02-23 00:37:00 EST
 
 ## Current Focus
 
@@ -145,9 +150,28 @@
 - Reduced `src/engine/scenes/RunScene.js` from 1345 lines to 1274 lines in this slice.
 - Moved texture-cover sizing helpers out of `RunScene` into shared Phaser texture utilities (`src/engine/scenes/ui/texture-processing.js`) and updated run-scene renderer modules to consume those shared helpers directly.
 - Reduced `src/engine/scenes/RunScene.js` from 1274 lines to 1255 lines in this slice.
+- Extracted run-scene layout/background/HUD rendering into `src/engine/scenes/run/run-scene-layout-renderers.js` and removed in-class `getRunLayout`, `drawBackground`, `drawHud`, and `drawChipIcon` methods from `RunScene`.
+- Reduced `src/engine/scenes/RunScene.js` from 1255 lines to 1108 lines in this slice.
+- Extracted relic button rendering into `src/engine/scenes/run/run-scene-action-renderers.js` (`renderRunSceneRelicButton`) and removed in-class `renderRelicButton` from `RunScene`.
+- Reduced `src/engine/scenes/RunScene.js` from 1108 lines to 1019 lines in this slice.
+- Moved run-scene encounter type + transition-state helpers into `src/engine/scenes/run/run-scene-resolution-renderers.js` and removed in-class `getEncounterTypeLabel`, `getTransitionState`, and `tryStartQueuedEnemyDefeatTransition` from `RunScene`.
+- Reduced `src/engine/scenes/RunScene.js` from 1019 lines to 971 lines in this slice.
+- Extracted keyboard/pointer input wiring into `src/engine/scenes/run/run-scene-input-handlers.js` and removed in-class `bindKeyboardInput`, `bindPointerInput`, and `pointInRect` from `RunScene`.
+- Reduced `src/engine/scenes/RunScene.js` from 971 lines to 903 lines in this slice.
+- Extracted run-scene asset preload wiring into `src/engine/scenes/run/run-scene-asset-preload.js` and moved generated texture seeding helpers into `src/engine/scenes/run/run-scene-texture-seeding.js`.
+- Removed in-class preload texture table wiring + `ensureRunParticleTexture`/`ensureRadialParticleTexture`/`ensureCardShadowTexture` from `RunScene`.
+- Reduced `src/engine/scenes/RunScene.js` from 903 lines to 742 lines in this slice.
 - Switched web fonts to local packaged assets (`@fontsource/chakra-petch`, `@fontsource/sora`) and removed remote Google Fonts links to reduce visual test nondeterminism.
 - Added acceptance font-readiness waits around reload bootstrapping (`tests/acceptance/helpers/page.mjs`) to reduce snapshot race conditions.
 - Relaxed absolute visual diff tolerance from `250` to `500` pixels while keeping strict diff-ratio threshold (`0.0005`) to avoid failing on tiny anti-aliasing churn during UI migration.
+- Extracted RunScene lifecycle initialization + teardown into `src/engine/scenes/run/run-scene-lifecycle.js` and reduced `src/engine/scenes/RunScene.js` from 742 lines to 468 lines.
+- Added `src/engine/scenes/shop/shop-scene-config.js`, `src/engine/scenes/shop/shop-scene-input-handlers.js`, `src/engine/scenes/shop/shop-scene-lifecycle.js`, and `src/engine/scenes/shop/shop-scene-layout-renderers.js`; reduced `src/engine/scenes/ShopScene.js` from 1295 lines to 985 lines.
+- Added `src/engine/scenes/shop/shop-scene-action-renderers.js`, `src/engine/scenes/shop/shop-scene-card-renderers.js`, and `src/engine/scenes/shop/shop-scene-modal-renderers.js`; reduced `src/engine/scenes/ShopScene.js` from 985 lines to 254 lines.
+- Visual checks are stable when run serially; running `test:smoke` and `test:visual` in parallel can cause nondeterministic mobile diff churn.
+- Added `src/engine/scenes/reward/reward-scene-{config,lifecycle,layout-renderers,action-renderers,card-renderers,modal-renderers}.js`; reduced `src/engine/scenes/RewardScene.js` from 792 lines to 159 lines.
+- Added `src/engine/scenes/overlay/overlay-scene-{config,lifecycle,renderers}.js`; reduced `src/engine/scenes/OverlayScene.js` from 858 lines to 99 lines.
+- Added `src/engine/scenes/menu/menu-scene-{config,lifecycle,layout-renderers,ember-renderers}.js`; reduced `src/engine/scenes/MenuScene.js` from 634 lines to 71 lines.
+- Removed remaining RunScene button-style pass-through wrapper and now route modal/action/relic button visual styling directly through shared gradient style utilities.
 
 ## Next Up
 
@@ -167,7 +191,7 @@
 
 - `npm run test:unit`: passing (runtime module tests).
 - `npm run test:acceptance`: passing (contracts + one-hand core/camp flow + seeded economy + persistence/resume).
-- `npm run test:visual`: not rerun in verify mode in this slice (CI remains warning-only during UI churn).
+- `npm run test:visual`: passing (visual smoke spec; warning-only gate in CI during UI churn).
 - `npm run test:smoke`: passing (desktop/mobile visual smoke captures + runtime debug assertions).
 - `npm run build`: passing (Vite production bundle).
 - `npm run test:dead-refs`: passing (no stale bootstrap/legacy-adapter symbol references).

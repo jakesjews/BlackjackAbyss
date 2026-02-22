@@ -19,6 +19,10 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Consolidated shared scene brown-theme helpers (graphics patching + text/color conversion) into `src/engine/scenes/ui/brown-theme.js` and removed duplicated theme helper methods from `RunScene`, `RewardScene`, and `ShopScene`.
 - Extracted RunScene modal order/state/blocker helpers into `src/engine/scenes/run/run-scene-modals.js` and removed duplicated modal helper methods from `RunScene`.
 - Extracted RunScene modal rendering/close-button plumbing into `src/engine/scenes/run/run-scene-modal-renderers.js` and removed duplicated in-class logs/relics modal rendering methods from `RunScene`.
+- Modularized `ShopScene` into focused modules under `src/engine/scenes/shop/*` (config, lifecycle, input, layout, action, card, modal renderers) and reduced `ShopScene` to orchestration flow.
+- Modularized `RewardScene` into focused modules under `src/engine/scenes/reward/*` (config, lifecycle, layout, action, card, modal renderers) and reduced `RewardScene` to orchestration flow.
+- Modularized `OverlayScene` into focused modules under `src/engine/scenes/overlay/*` (config, lifecycle/input, renderers) and reduced `OverlayScene` to orchestration flow.
+- Modularized `MenuScene` into focused modules under `src/engine/scenes/menu/*` (config, lifecycle/runtime actions, layout, ember simulation) and reduced `MenuScene` to orchestration flow.
 - Dead runtime audio shim removed (`src/engine/runtime/audio/audio-engine.js`, `MUSIC_STEP_SECONDS`, `audio.stepTimer`, `audio.stepIndex`).
 - Broken balance probe tooling removed temporarily.
 - Added acceptance test harness with one-hand core/camp/persistence coverage.
