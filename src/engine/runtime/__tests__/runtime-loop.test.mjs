@@ -38,7 +38,7 @@ describe("runtime loop module", () => {
       ...env,
       width: 1280,
       height: 720,
-      phaserBridge: null,
+      runtimeContext: null,
       performanceNow: () => 0,
       requestAnimationFrameFn: () => {},
     });
@@ -69,7 +69,7 @@ describe("runtime loop module", () => {
       ...env,
       width: 1280,
       height: 720,
-      phaserBridge: null,
+      runtimeContext: null,
       performanceNow: () => 0,
       requestAnimationFrameFn: () => {},
     });
@@ -95,7 +95,7 @@ describe("runtime loop module", () => {
   it("startRuntimeLoop uses Phaser step handler when available", () => {
     let handler = null;
     const env = createEnv({
-      phaserBridge: {
+      runtimeContext: {
         setStepHandler: (fn) => {
           handler = fn;
         },
@@ -133,7 +133,7 @@ describe("runtime loop module", () => {
       ...env,
       width: 1280,
       height: 720,
-      phaserBridge: null,
+      runtimeContext: null,
       performanceNow: () => 1000,
       requestAnimationFrameFn,
     });

@@ -30,11 +30,12 @@ Blackjack Abyss runs as a Phaser app that boots scene infrastructure first, then
 2. `createPhaserApp()` creates the Phaser game and scene manager.
 3. `src/main.js` starts runtime state/logic entry.
 4. Runtime entry registers scene-facing APIs and test hooks.
-5. Scene mode changes are synchronized via bridge mode reporting.
+5. Scene mode changes are synchronized through direct runtime context mode reporting (forwarded to bridge for compatibility).
 
 ## Runtime Seam
 
 - `src/engine/app.js` exposes a direct runtime context: `game`, runtime API slots (`runtime.apis.*`), runtime bridge facade, and runtime tick function.
+- Runtime frame stepping is scene-driven through runtime context handlers (`runtime.tick` + `runtime.setStepHandler`) rather than bridge plumbing.
 - Scenes consume runtime APIs through `src/engine/scenes/runtime-bridge.js` by reading `game.__ABYSS_RUNTIME__.apis`.
 - `window.__ABYSS_PHASER_BRIDGE__` is kept as a thin compatibility facade for test/tool contracts.
 

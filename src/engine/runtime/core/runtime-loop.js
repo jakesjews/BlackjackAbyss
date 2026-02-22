@@ -4,8 +4,8 @@ export function createRuntimeLoop({
   height,
   gameShell,
   canvas,
+  runtimeContext,
   phaserGame,
-  phaserBridge,
   globalWindow,
   globalDocument,
   update,
@@ -80,9 +80,9 @@ export function createRuntimeLoop({
   function startRuntimeLoop() {
     resizeCanvas();
     render();
-    if (phaserBridge && typeof phaserBridge.setStepHandler === "function") {
+    if (runtimeContext && typeof runtimeContext.setStepHandler === "function") {
       let priorTime = performanceNow();
-      phaserBridge.setStepHandler((dtSeconds, timeMs) => {
+      runtimeContext.setStepHandler((dtSeconds, timeMs) => {
         let dt = dtSeconds;
         if (!Number.isFinite(dt) || dt < 0) {
           const now = Number.isFinite(timeMs) ? timeMs : performanceNow();

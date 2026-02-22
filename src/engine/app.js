@@ -10,11 +10,20 @@ import { OverlayScene } from "./scenes/OverlayScene.js";
 
 function createRuntimeContext() {
   const bridgeCompat = createPhaserBridgeCompat();
-
-  return {
-    bridge: bridgeCompat.bridge,
-    tick: bridgeCompat.tick,
-    setGame: bridgeCompat.setGame,
+  const { bridge } = bridgeCompat;
+  let runtimeStepHandler = null;
+  const runtime = {
+    bridge,
+    tick(deltaMs, timeMs) {
+      if (typeof runtimeStepHandler !== "function") {
+        return;
+      }
+      const safeDeltaSeconds = Math.max(0, Number.isFinite(deltaMs) ? deltaMs : 0) / 1000;
+      runtimeStepHandler(safeDeltaSeconds, Number.isFinite(timeMs) ? timeMs : performance.now());
+    },
+    setStepHandler(handler) {
+      runtimeStepHandler = typeof handler === "function" ? handler : null;
+    },
     apis: {
       menuActions: null,
       runApi: null,
@@ -23,7 +32,21 @@ function createRuntimeContext() {
       overlayApi: null,
     },
     game: null,
+    reportMode(mode) {
+      syncPhaserScenesForMode(runtime.game, mode);
+      if (typeof bridge.reportMode === "function") {
+        bridge.reportMode(mode);
+      }
+    },
+    isExternalRendererActive(mode) {
+      if (typeof bridge.isExternalRendererActive !== "function") {
+        return false;
+      }
+      return bridge.isExternalRendererActive(mode);
+    },
   };
+
+  return runtime;
 }
 
 function syncPhaserScenesForMode(game, mode) {
@@ -31,7 +54,6 @@ function syncPhaserScenesForMode(game, mode) {
   if (!manager) {
     return;
   }
-  const activeModes = new Set(["menu", "playing", "reward", "shop", "collection", "gameover", "victory"]);
   const activeSceneKeys = [SCENE_KEYS.menu, SCENE_KEYS.run, SCENE_KEYS.reward, SCENE_KEYS.shop, SCENE_KEYS.overlay];
   const desired = new Set();
 
@@ -123,14 +145,7 @@ export function createPhaserApp() {
           }
           runtime.game = bootedGame;
           bootedGame.__ABYSS_RUNTIME__ = runtime;
-
-          runtime.setGame(bootedGame);
           const bridge = runtime.bridge;
-          if (typeof bridge.setModeHandler === "function") {
-            bridge.setModeHandler((mode) => {
-              syncPhaserScenesForMode(bootedGame, mode);
-            });
-          }
 
           window.__ABYSS_PHASER_GAME__ = bootedGame;
           window.__ABYSS_PHASER_BRIDGE__ = bridge;

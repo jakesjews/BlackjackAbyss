@@ -65,7 +65,7 @@ export class MenuScene extends Phaser.Scene {
     }
     this.cameras.main.setBackgroundColor("#081420");
     this.cameras.main.setAlpha(1);
-    this.hideLegacyMenuDom();
+    this.setMenuShellActive(true);
     this.buildMenuUi();
     this.ensureRuntimeSplashTexture();
     this.bindKeyboardInput();
@@ -140,7 +140,7 @@ export class MenuScene extends Phaser.Scene {
   }
 
   teardown() {
-    document.body.classList.remove("menu-screen");
+    this.setMenuShellActive(false);
     this.scale.off("resize", this.onResize, this);
     this.keyboardHandlers.forEach(({ eventName, handler }) => {
       this.input.keyboard?.off(eventName, handler);
@@ -167,27 +167,8 @@ export class MenuScene extends Phaser.Scene {
     this.menuFrameRect = null;
   }
 
-  hideLegacyMenuDom() {
-    document.body.classList.add("menu-screen");
-    const menuHome = document.getElementById("menu-home");
-    if (menuHome) {
-      menuHome.hidden = true;
-    }
-    const topRight = document.getElementById("top-right-actions");
-    if (topRight) {
-      topRight.hidden = true;
-    }
-    const mobileControls = document.getElementById("mobile-controls");
-    if (mobileControls) {
-      mobileControls.classList.remove("active");
-    }
-    const overlays = ["logs-modal", "collection-modal", "passive-modal", "passive-tooltip", "topbar-tooltip"];
-    overlays.forEach((id) => {
-      const node = document.getElementById(id);
-      if (node) {
-        node.hidden = true;
-      }
-    });
+  setMenuShellActive(isActive) {
+    document.body.classList.toggle("menu-screen", Boolean(isActive));
   }
 
   ensureMenuParticleTexture() {

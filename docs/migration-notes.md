@@ -38,6 +38,10 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 - Flattened Phaser API registration into a single runtime call (`registerRuntimeApis`) instead of wrapper registries.
 - Scenes now consume runtime APIs directly from `game.__ABYSS_RUNTIME__.apis` (bridge fallback removed from scene helpers).
 - Runtime engine startup now requires the Phaser runtime payload from app boot (no window-global fallback path).
+- Runtime mode synchronization now flows through direct runtime context callbacks in `src/engine/app.js` (bridge report forwarding retained for compatibility only).
+- Removed dead bridge compatibility stubs no longer used by runtime/scenes (`setGame`, `getCanvas`, `setInputHandlers`).
+- Runtime frame stepping now uses direct runtime context handlers (`runtime.setStepHandler` + `runtime.tick`) instead of bridge step-handler plumbing.
+- Acceptance boot contracts now validate runtime API method sets and bridge API method sets independently (no runtime contract fallback to bridge).
 
 ## Transitional / Still Present
 
@@ -56,7 +60,7 @@ Maintain a Phaser-first game where scenes are the primary renderer and runtime m
 ## Fully Migrated Position
 
 - Phaser is renderer/UI host of record.
-- Scene mode transitions are synchronized through bridge mode reporting.
+- Scene mode transitions are synchronized through runtime context mode reporting (bridge-forwarded for compatibility).
 - Runtime modules own state, rules, progression, persistence, and API surface.
 
 ## Deferred / Future Work

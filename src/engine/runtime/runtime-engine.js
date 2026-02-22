@@ -142,7 +142,17 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
   const runtimeApis = runtimeContext?.apis && typeof runtimeContext.apis === "object" ? runtimeContext.apis : null;
   const gameShell = phaserGame?.canvas?.parentElement || null;
   const canvas = phaserGame?.canvas || null;
-  if (!runtimeContext || !runtimeApis || !phaserGame || !phaserBridge || !gameShell || !canvas) {
+  const reportMode = typeof runtimeContext?.reportMode === "function"
+    ? runtimeContext.reportMode.bind(runtimeContext)
+    : (mode) => {
+      if (phaserBridge && typeof phaserBridge.reportMode === "function") {
+        phaserBridge.reportMode(mode);
+      }
+    };
+  const isExternalRendererActive = typeof runtimeContext?.isExternalRendererActive === "function"
+    ? runtimeContext.isExternalRendererActive.bind(runtimeContext)
+    : (mode) => Boolean(phaserBridge?.isExternalRendererActive?.(mode));
+  if (!runtimeContext || !runtimeApis || !phaserGame || !gameShell || !canvas) {
     throw new Error("Unable to initialize Phaser runtime context.");
   }
 
@@ -170,11 +180,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
 
   installRuntimeModeBridge({
     state,
-    reportMode: (mode) => {
-      if (phaserBridge && typeof phaserBridge.reportMode === "function") {
-        phaserBridge.reportMode(mode);
-      }
-    },
+    reportMode,
     resizeCanvas,
   });
 
@@ -367,11 +373,7 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
   }
 
   function isExternalModeRendering(mode = state.mode) {
-    return (
-      Boolean(phaserBridge) &&
-      typeof phaserBridge.isExternalRendererActive === "function" &&
-      phaserBridge.isExternalRendererActive(mode)
-    );
+    return isExternalRendererActive(mode);
   }
 
   const runtimeAudio = createRuntimeAudioFromModule({
@@ -713,8 +715,8 @@ export function startRuntimeEngine(phaserRuntimePayload = null) {
     height: HEIGHT,
     gameShell,
     canvas,
+    runtimeContext,
     phaserGame,
-    phaserBridge,
     globalWindow: window,
     globalDocument: document,
     update,

@@ -9,7 +9,9 @@
 - Docs-first checkpoint completed and runtime docs are synced to Phaser-native runtime architecture.
 - Runtime entry now uses `src/engine/runtime/runtime-engine.js` with direct app/runtime seam wiring.
 - Scene runtime access now reads `game.__ABYSS_RUNTIME__.apis` directly; bridge remains compatibility-only for tests/tools.
-- Last Updated: 2026-02-21 19:10:11 EST
+- Runtime mode sync now routes through direct runtime context callbacks in `src/engine/app.js` and only forwards to bridge for compatibility.
+- Runtime frame stepping is now runtime-context owned (`runtime.setStepHandler`/`runtime.tick`), not bridge-owned.
+- Last Updated: 2026-02-21 19:21:53 EST
 
 ## Current Focus
 
@@ -24,6 +26,11 @@
 - Flattened runtime API registration into one direct call path (`registerRuntimeApis`) and removed wrapper-heavy API registration registry flow.
 - Switched scene runtime helper consumption to direct runtime APIs (`game.__ABYSS_RUNTIME__.apis`) instead of bridge fallback.
 - Tightened runtime startup to require explicit Phaser runtime payload from app boot (removed runtime-engine window-global fallback path).
+- Removed dead bridge compatibility stubs (`setGame`, `getCanvas`, `setInputHandlers`) that were no longer used by runtime/scenes.
+- Removed legacy menu DOM suppression path that targeted stale pre-Phaser DOM IDs; menu shell styling now only toggles via `menu-screen` class.
+- Shifted scene mode sync ownership to app runtime context (`runtime.reportMode`) and kept bridge mode reporting as compatibility forwarding.
+- Moved scene-driven runtime frame stepping off the bridge and onto direct runtime context step handlers (`runtime.setStepHandler` in runtime loop + `runtime.tick` in scene updates).
+- Tightened acceptance boot contracts so runtime API contracts and bridge API contracts are both asserted independently.
 - Updated app boot flow so `src/main.js` initializes Phaser then runtime bootstrap.
 - Removed obsolete compatibility wrapper `game.js` and package export pointer.
 - Added runtime unit tests and stabilized smoke checks.

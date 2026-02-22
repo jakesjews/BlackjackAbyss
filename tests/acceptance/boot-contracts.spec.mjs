@@ -44,6 +44,11 @@ describe("acceptance: boot contracts", () => {
       expectMethodContract(contracts.rewardMethods, REWARD_METHODS, "reward");
       expectMethodContract(contracts.shopMethods, SHOP_METHODS, "shop");
       expectMethodContract(contracts.overlayMethods, OVERLAY_METHODS, "overlay");
+      expectMethodContract(contracts.bridgeMenuMethods, MENU_METHODS, "bridge menu");
+      expectMethodContract(contracts.bridgeRunMethods, RUN_METHODS, "bridge run");
+      expectMethodContract(contracts.bridgeRewardMethods, REWARD_METHODS, "bridge reward");
+      expectMethodContract(contracts.bridgeShopMethods, SHOP_METHODS, "bridge shop");
+      expectMethodContract(contracts.bridgeOverlayMethods, OVERLAY_METHODS, "bridge overlay");
       expect(contracts.hasRenderHook).toBe(true);
       expect(contracts.hasAdvanceHook).toBe(true);
 

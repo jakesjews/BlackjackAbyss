@@ -61,15 +61,17 @@ export async function readBridgeContracts(page) {
         ? Object.keys(obj).filter((name) => typeof obj[name] === "function").sort()
         : [];
 
-    const menuApi =
-      runtimeApis?.menuActions || (bridge && typeof bridge.getMenuActions === "function" ? bridge.getMenuActions() : null);
-    const runApi = runtimeApis?.runApi || (bridge && typeof bridge.getRunApi === "function" ? bridge.getRunApi() : null);
-    const rewardApi =
-      runtimeApis?.rewardApi || (bridge && typeof bridge.getRewardApi === "function" ? bridge.getRewardApi() : null);
-    const shopApi =
-      runtimeApis?.shopApi || (bridge && typeof bridge.getShopApi === "function" ? bridge.getShopApi() : null);
-    const overlayApi =
-      runtimeApis?.overlayApi || (bridge && typeof bridge.getOverlayApi === "function" ? bridge.getOverlayApi() : null);
+    const menuApi = runtimeApis?.menuActions || null;
+    const runApi = runtimeApis?.runApi || null;
+    const rewardApi = runtimeApis?.rewardApi || null;
+    const shopApi = runtimeApis?.shopApi || null;
+    const overlayApi = runtimeApis?.overlayApi || null;
+
+    const bridgeMenuApi = bridge && typeof bridge.getMenuActions === "function" ? bridge.getMenuActions() : null;
+    const bridgeRunApi = bridge && typeof bridge.getRunApi === "function" ? bridge.getRunApi() : null;
+    const bridgeRewardApi = bridge && typeof bridge.getRewardApi === "function" ? bridge.getRewardApi() : null;
+    const bridgeShopApi = bridge && typeof bridge.getShopApi === "function" ? bridge.getShopApi() : null;
+    const bridgeOverlayApi = bridge && typeof bridge.getOverlayApi === "function" ? bridge.getOverlayApi() : null;
 
     return {
       phaserReady: Boolean(window.__ABYSS_PHASER_GAME__),
@@ -80,6 +82,11 @@ export async function readBridgeContracts(page) {
       rewardMethods: extractMethods(rewardApi),
       shopMethods: extractMethods(shopApi),
       overlayMethods: extractMethods(overlayApi),
+      bridgeMenuMethods: extractMethods(bridgeMenuApi),
+      bridgeRunMethods: extractMethods(bridgeRunApi),
+      bridgeRewardMethods: extractMethods(bridgeRewardApi),
+      bridgeShopMethods: extractMethods(bridgeShopApi),
+      bridgeOverlayMethods: extractMethods(bridgeOverlayApi),
       hasRenderHook: typeof window.render_game_to_text === "function",
       hasAdvanceHook: typeof window.advanceTime === "function",
     };

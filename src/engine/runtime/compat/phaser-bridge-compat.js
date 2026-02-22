@@ -13,8 +13,6 @@ function asMethodMap(source, methodNames) {
 
 export function createPhaserBridgeCompat({ externalRenderModes = EXTERNAL_RENDER_MODES } = {}) {
   const state = {
-    game: null,
-    stepHandler: null,
     mode: "menu",
     modeHandler: null,
     menuActions: null,
@@ -34,28 +32,7 @@ export function createPhaserBridgeCompat({ externalRenderModes = EXTERNAL_RENDER
     }
   }
 
-  function setGame(game) {
-    state.game = game || null;
-  }
-
-  function tick(deltaMs, timeMs) {
-    if (typeof state.stepHandler !== "function") {
-      return;
-    }
-    const safeDeltaSeconds = Math.max(0, Number.isFinite(deltaMs) ? deltaMs : 0) / 1000;
-    state.stepHandler(safeDeltaSeconds, Number.isFinite(timeMs) ? timeMs : performance.now());
-  }
-
   const bridge = {
-    setStepHandler(handler) {
-      state.stepHandler = typeof handler === "function" ? handler : null;
-    },
-    getCanvas() {
-      return state.game?.canvas || null;
-    },
-    setInputHandlers() {
-      // Legacy no-op kept for compatibility while scenes own input in Phaser.
-    },
     reportMode(mode) {
       setMode(mode);
     },
@@ -115,8 +92,5 @@ export function createPhaserBridgeCompat({ externalRenderModes = EXTERNAL_RENDER
 
   return {
     bridge,
-    setGame,
-    setMode,
-    tick,
   };
 }
